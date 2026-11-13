@@ -58,6 +58,57 @@ const PRESET_COLORS = ['#7A9D8C', '#E2A98B', '#8FA8C8', '#D4B886', '#B0A3D4'];
 const REGIONS = ['北海道・東北', '関東', '中部', '関西', '中国・四国', '九州・沖縄'];
 const PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
 
+// ★ 住んでいる都道府県と最寄り駅の都道府県が異なる場合（県境・隣県利用）にも対応するための隣接都道府県マップ
+const ADJACENT_PREFECTURES_MAP = {
+  '北海道': ['青森県'],
+  '青森県': ['北海道', '岩手県', '秋田県'],
+  '岩手県': ['青森県', '宮城県', '秋田県'],
+  '宮城県': ['岩手県', '秋田県', '山形県', '福島県'],
+  '秋田県': ['青森県', '岩手県', '宮城県', '山形県'],
+  '山形県': ['宮城県', '秋田県', '福島県', '新潟県'],
+  '福島県': ['宮城県', '山形県', '茨城県', '栃木県', '群馬県', '新潟県'],
+  '茨城県': ['福島県', '栃木県', '埼玉県', '千葉県'],
+  '栃木県': ['福島県', '茨城県', '群馬県', '埼玉県'],
+  '群馬県': ['福島県', '栃木県', '埼玉県', '新潟県', '長野県'],
+  '埼玉県': ['茨城県', '栃木県', '群馬県', '千葉県', '東京都', '山梨県', '長野県'],
+  '千葉県': ['茨城県', '埼玉県', '東京都', '神奈川県'],
+  '東京都': ['埼玉県', '千葉県', '神奈川県', '山梨県'],
+  '神奈川県': ['千葉県', '東京都', '山梨県', '静岡県'],
+  '新潟県': ['山形県', '福島県', '群馬県', '富山県', '長野県'],
+  '富山県': ['新潟県', '石川県', '長野県', '岐阜県'],
+  '石川県': ['富山県', '福井県', '岐阜県'],
+  '福井県': ['石川県', '岐阜県', '滋賀県', '京都府'],
+  '山梨県': ['埼玉県', '東京都', '神奈川県', '長野県', '静岡県'],
+  '長野県': ['群馬県', '埼玉県', '新潟県', '富山県', '山梨県', '岐阜県', '静岡県', '愛知県'],
+  '岐阜県': ['富山県', '石川県', '福井県', '長野県', '愛知県', '三重県', '滋賀県'],
+  '静岡県': ['神奈川県', '山梨県', '長野県', '愛知県'],
+  '愛知県': ['長野県', '岐阜県', '静岡県', '三重県'],
+  '三重県': ['岐阜県', '愛知県', '滋賀県', '京都府', '奈良県', '和歌山県'],
+  '滋賀県': ['福井県', '岐阜県', '三重県', '京都府'],
+  '京都府': ['福井県', '三重県', '滋賀県', '大阪府', '兵庫県', '奈良県'],
+  '大阪府': ['京都府', '兵庫県', '奈良県', '和歌山県'],
+  '兵庫県': ['京都府', '大阪府', '鳥取県', '岡山県', '徳島県', '香川県'],
+  '奈良県': ['三重県', '京都府', '大阪府', '和歌山県'],
+  '和歌山県': ['三重県', '大阪府', '奈良県', '徳島県'],
+  '鳥取県': ['兵庫県', '島根県', '岡山県', '広島県'],
+  '島根県': ['鳥取県', '広島県', '山口県'],
+  '岡山県': ['兵庫県', '鳥取県', '広島県', '香川県'],
+  '広島県': ['鳥取県', '島根県', '岡山県', '山口県', '愛媛県'],
+  '山口県': ['島根県', '広島県', '愛媛県', '福岡県', '大分県'],
+  '徳島県': ['兵庫県', '和歌山県', '香川県', '愛媛県', '高知県'],
+  '香川県': ['兵庫県', '岡山県', '徳島県', '愛媛県'],
+  '愛媛県': ['広島県', '山口県', '徳島県', '香川県', '高知県', '大分県'],
+  '高知県': ['徳島県', '愛媛県'],
+  '福岡県': ['山口県', '佐賀県', '熊本県', '大分県'],
+  '佐賀県': ['福岡県', '長崎県'],
+  '長崎県': ['佐賀県', '熊本県'],
+  '熊本県': ['福岡県', '長崎県', '大分県', '宮崎県', '鹿児島県'],
+  '大分県': ['山口県', '愛媛県', '福岡県', '熊本県', '宮崎県'],
+  '宮崎県': ['熊本県', '大分県', '鹿児島県'],
+  '鹿児島県': ['熊本県', '宮崎県', '沖縄県'],
+  '沖縄県': ['鹿児島県']
+};
+
 // ==========================================
 // ★ 日本全国・市区町村 旅バッジ図鑑＆日本地図データ
 // ==========================================
@@ -2056,56 +2107,56 @@ function DepartureSelectorBox({
         ) : null}
       </div>
 
-      {/* セグメントタブ（🏠自宅 / ⭐登録先 / ✏️その他） */}
-      <div className={`grid ${extraQuickPoint ? 'grid-cols-4' : 'grid-cols-3'} gap-1 bg-stone-200/75 p-1 rounded-xl`}>
+      {/* セグメントタブ（スマホでも文字が「自...」と切れないよう、4項目の時は見やすい2列×2段グリッドに自動最適化） */}
+      <div className={`grid ${extraQuickPoint ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-1.5 bg-stone-200/75 p-1 rounded-xl`}>
         <button
           type="button"
           onClick={() => handleSelectMode('home')}
-          className={`py-1.5 px-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1 truncate ${
+          className={`py-1.5 px-2 rounded-lg text-[11px] font-extrabold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
             mode === 'home'
               ? 'bg-white text-[#4A6B5D] shadow-xs ring-1 ring-[#7A9D8C]/35'
               : 'text-stone-600 hover:text-stone-800'
           }`}
         >
-          <span className="truncate">🏠 自宅({homePoint.replace(/（.*?）/g, '').slice(0, 4)})</span>
+          <span>🏠 自宅</span>
         </button>
 
         {extraQuickPoint && (
           <button
             type="button"
             onClick={() => handleSelectMode('prev')}
-            className={`py-1.5 px-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1 truncate ${
+            className={`py-1.5 px-2 rounded-lg text-[11px] font-extrabold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
               mode === 'prev'
                 ? 'bg-white text-[#4A6B5D] shadow-xs ring-1 ring-[#7A9D8C]/35'
                 : 'text-stone-600 hover:text-stone-800'
             }`}
           >
-            <span className="truncate">📍 {extraQuickLabel}</span>
+            <span>📍 {extraQuickLabel}</span>
           </button>
         )}
 
         <button
           type="button"
           onClick={() => handleSelectMode('saved')}
-          className={`py-1.5 px-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1 truncate ${
+          className={`py-1.5 px-2 rounded-lg text-[11px] font-extrabold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
             mode === 'saved'
               ? 'bg-white text-[#4A6B5D] shadow-xs ring-1 ring-[#7A9D8C]/35'
               : 'text-stone-600 hover:text-stone-800'
           }`}
         >
-          <span className="truncate">⭐ 登録先{savedPoints.length > 0 ? `(${savedPoints.length})` : ''}</span>
+          <span>⭐ 登録先{savedPoints.length > 0 ? `(${savedPoints.length})` : ''}</span>
         </button>
 
         <button
           type="button"
           onClick={() => handleSelectMode('custom')}
-          className={`py-1.5 px-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1 truncate ${
+          className={`py-1.5 px-2 rounded-lg text-[11px] font-extrabold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
             mode === 'custom'
               ? 'bg-white text-[#4A6B5D] shadow-xs ring-1 ring-[#7A9D8C]/35'
               : 'text-stone-600 hover:text-stone-800'
           }`}
         >
-          <span className="truncate">✏️ その他</span>
+          <span>✏️ その他</span>
         </button>
       </div>
 
@@ -2525,6 +2576,312 @@ const getTodayString = () => { const d = new Date(); return `${d.getFullYear()}-
 const safeParse = (key, fallback) => { try { const item = localStorage.getItem(key); return item ? JSON.parse(item) : fallback; } catch (e) { return fallback; } };
 
 // ==========================================
+// ★ ドラムロール式ホイール日付選択コンポーネント (WheelDateRangePicker)
+// 上が「出発日：YYYY年M月D日(曜)」、下が「最終日：YYYY年M月D日(曜)」（時間表示なし）
+// タップするとその行のすぐ下にクルクル回せるドラムロール式ホイール（「11月10日 火」形式・時間なし）がスッと開く
+// ==========================================
+const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
+const formatJapaneseDateWithDay = (dateStr) => {
+  if (!dateStr) return '未設定';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return dateStr;
+  const dt = new Date(y, m - 1, d);
+  const w = WEEKDAY_JA[dt.getDay()] || '';
+  return `${y}年${m}月${d}日(${w})`;
+};
+
+function SingleColumnWheel({ items, selectedValue, onSelect }) {
+  const ITEM_HEIGHT = 38;
+  const scrollerRef = useRef(null);
+  const scrollTimerRef = useRef(null);
+
+  const currentIndex = useMemo(() => {
+    const idx = items.findIndex((it) => it.value === selectedValue);
+    return idx >= 0 ? idx : 0;
+  }, [items, selectedValue]);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const targetTop = currentIndex * ITEM_HEIGHT;
+    if (Math.abs(el.scrollTop - targetTop) > 4) {
+      el.scrollTop = targetTop;
+    }
+  }, [currentIndex, items.length]);
+
+  const handleWheelScroll = (e) => {
+    const top = e.currentTarget.scrollTop;
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      const idx = Math.max(0, Math.min(items.length - 1, Math.round(top / ITEM_HEIGHT)));
+      const picked = items[idx];
+      if (picked && picked.value !== selectedValue) {
+        onSelect(picked.value);
+      }
+    }, 65);
+  };
+
+  const handleClickItem = (idx) => {
+    const picked = items[idx];
+    if (!picked) return;
+    if (scrollerRef.current) {
+      scrollerRef.current.scrollTo({
+        top: idx * ITEM_HEIGHT,
+        behavior: 'smooth'
+      });
+    }
+    onSelect(picked.value);
+  };
+
+  return (
+    <div
+      ref={scrollerRef}
+      onScroll={handleWheelScroll}
+      style={{
+        WebkitOverflowScrolling: 'touch',
+        scrollSnapType: 'y mandatory',
+        paddingTop: `${ITEM_HEIGHT * 2}px`,
+        paddingBottom: `${ITEM_HEIGHT * 2}px`
+      }}
+      className="relative z-20 flex-1 h-full overflow-y-auto no-scrollbar select-none"
+    >
+      {items.map((item, idx) => {
+        const isSelected = item.value === selectedValue;
+        return (
+          <div
+            key={item.value}
+            onClick={() => handleClickItem(idx)}
+            style={{
+              height: `${ITEM_HEIGHT}px`,
+              scrollSnapAlign: 'center'
+            }}
+            className={`flex items-center justify-center gap-1 px-1 cursor-pointer transition-all whitespace-nowrap ${
+              isSelected
+                ? 'text-stone-900 font-extrabold text-sm sm:text-base scale-105'
+                : 'text-stone-400 font-bold text-xs opacity-75 hover:opacity-100'
+            }`}
+          >
+            <span>{item.label}</span>
+            {item.subLabel && (
+              <span className={`text-[11px] ${item.subColor || ''}`}>
+                {item.subLabel}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DrumWheelSingleDateRoller({ value, minDate, onChange }) {
+  const ITEM_HEIGHT = 38;
+
+  const parsed = useMemo(() => {
+    const parts = (value || getTodayString()).split('-').map(Number);
+    const now = new Date();
+    const y = parts.length === 3 && !isNaN(parts[0]) ? parts[0] : now.getFullYear();
+    const m = parts.length === 3 && !isNaN(parts[1]) ? parts[1] : now.getMonth() + 1;
+    const d = parts.length === 3 && !isNaN(parts[2]) ? parts[2] : now.getDate();
+    return { year: y, month: m, day: d };
+  }, [value]);
+
+  const yearItems = useMemo(() => {
+    const baseYear = new Date().getFullYear();
+    const startY = Math.min(baseYear - 2, parsed.year - 1);
+    const endY = Math.max(baseYear + 5, parsed.year + 2);
+    const arr = [];
+    for (let y = startY; y <= endY; y++) {
+      arr.push({ value: y, label: `${y}年` });
+    }
+    return arr;
+  }, [parsed.year]);
+
+  const monthItems = useMemo(() => {
+    const arr = [];
+    for (let m = 1; m <= 12; m++) {
+      arr.push({ value: m, label: `${m}月` });
+    }
+    return arr;
+  }, []);
+
+  const daysInMonth = useMemo(() => {
+    return new Date(parsed.year, parsed.month, 0).getDate();
+  }, [parsed.year, parsed.month]);
+
+  const dayItems = useMemo(() => {
+    const arr = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(parsed.year, parsed.month - 1, d);
+      const dow = dt.getDay();
+      const w = WEEKDAY_JA[dow];
+      const subColor = dow === 0 ? 'text-rose-500' : dow === 6 ? 'text-sky-600' : 'text-stone-500';
+      arr.push({
+        value: d,
+        label: `${d}日`,
+        subLabel: `(${w})`,
+        subColor
+      });
+    }
+    return arr;
+  }, [parsed.year, parsed.month, daysInMonth]);
+
+  const emitDateChange = (nextY, nextM, nextD) => {
+    const maxD = new Date(nextY, nextM, 0).getDate();
+    const clampedD = Math.min(nextD, maxD);
+    const iso = `${nextY}-${String(nextM).padStart(2, '0')}-${String(clampedD).padStart(2, '0')}`;
+    if (minDate && iso < minDate) {
+      onChange(minDate);
+    } else {
+      onChange(iso);
+    }
+  };
+
+  return (
+    <div
+      data-no-swipe="true"
+      className="relative h-[190px] bg-stone-50/95 border-t border-stone-200/80 select-none overflow-hidden animate-in fade-in duration-150"
+    >
+      {/* 上下のグラデーションフェード */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-stone-50 via-stone-50/85 to-transparent z-10" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-stone-50 via-stone-50/85 to-transparent z-10" />
+
+      {/* 中央の選択ハイライトバー */}
+      <div
+        className="pointer-events-none absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-xl bg-[#7A9D8C]/15 border border-[#7A9D8C]/40 z-0"
+        style={{ height: `${ITEM_HEIGHT}px` }}
+      />
+
+      {/* 独立した「年」「月」「日」の3列ドラムロール */}
+      <div className="relative z-20 h-full flex items-center divide-x divide-stone-200/60 px-3">
+        <SingleColumnWheel
+          items={yearItems}
+          selectedValue={parsed.year}
+          onSelect={(y) => emitDateChange(y, parsed.month, parsed.day)}
+        />
+        <SingleColumnWheel
+          items={monthItems}
+          selectedValue={parsed.month}
+          onSelect={(m) => emitDateChange(parsed.year, m, parsed.day)}
+        />
+        <SingleColumnWheel
+          items={dayItems}
+          selectedValue={Math.min(parsed.day, daysInMonth)}
+          onSelect={(d) => emitDateChange(parsed.year, parsed.month, d)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function WheelDateRangePicker({
+  startDate,
+  endDate,
+  onChangeStart,
+  onChangeEnd,
+  singleDateMode = false,
+  startLabel = '出発日',
+  endLabel = '最終日',
+  compact = false
+}) {
+  const [openTarget, setOpenTarget] = useState(null); // 'start' | 'end' | null
+
+  const toggleRow = (target) => {
+    setOpenTarget((prev) => (prev === target ? null : target));
+  };
+
+  return (
+    <div
+      data-no-swipe="true"
+      className="bg-white rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs divide-y divide-stone-100"
+    >
+      {/* 上段：出発日：YYYY年M月D日(曜) */}
+      <div>
+        <button
+          type="button"
+          onClick={() => toggleRow('start')}
+          className={`w-full ${
+            compact ? 'px-3 py-2' : 'px-3.5 py-2.5'
+          } flex items-center justify-between gap-2 text-left hover:bg-stone-50/80 transition-colors cursor-pointer`}
+        >
+          <span className="text-xs font-extrabold text-stone-600 flex items-center gap-1.5 shrink-0">
+            <Calendar size={13} className="text-[#7A9D8C] shrink-0" />
+            <span>{startLabel}</span>
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-xs sm:text-sm font-extrabold px-2.5 py-1 rounded-xl transition-colors ${
+                openTarget === 'start'
+                  ? 'bg-[#7A9D8C]/15 text-[#4A6B5D] ring-1 ring-[#7A9D8C]/40'
+                  : 'bg-stone-100/90 text-stone-800'
+              }`}
+            >
+              {formatJapaneseDateWithDay(startDate)}
+            </span>
+          </div>
+        </button>
+
+        {openTarget === 'start' && (
+          <DrumWheelSingleDateRoller
+            value={startDate || getTodayString()}
+            onChange={(nextStart) => {
+              if (onChangeStart) onChangeStart(nextStart);
+              if (!singleDateMode && onChangeEnd && endDate && endDate < nextStart) {
+                onChangeEnd(nextStart);
+              }
+            }}
+          />
+        )}
+      </div>
+
+      {/* 下段：最終日：YYYY年M月D日(曜)（singleDateMode=false のとき表示） */}
+      {!singleDateMode && (
+        <div>
+          <button
+            type="button"
+            onClick={() => toggleRow('end')}
+            className={`w-full ${
+              compact ? 'px-3 py-2' : 'px-3.5 py-2.5'
+            } flex items-center justify-between gap-2 text-left hover:bg-stone-50/80 transition-colors cursor-pointer`}
+          >
+            <span className="text-xs font-extrabold text-stone-600 flex items-center gap-1.5 shrink-0">
+              <Calendar size={13} className="text-[#7A9D8C] shrink-0" />
+              <span>{endLabel}</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`text-xs sm:text-sm font-extrabold px-2.5 py-1 rounded-xl transition-colors ${
+                  openTarget === 'end'
+                    ? 'bg-[#7A9D8C]/15 text-[#4A6B5D] ring-1 ring-[#7A9D8C]/40'
+                    : 'bg-stone-100/90 text-stone-800'
+                }`}
+              >
+                {formatJapaneseDateWithDay(endDate || startDate)}
+              </span>
+            </div>
+          </button>
+
+          {openTarget === 'end' && (
+            <DrumWheelSingleDateRoller
+              value={endDate || startDate || getTodayString()}
+              minDate={startDate}
+              onChange={(nextEnd) => {
+                if (onChangeEnd) onChangeEnd(nextEnd);
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
 // ★ Google AI (Gemini API) コスト削減＆悪用防止エンジン
 // ==========================================
 // 1. 無料ユーザーの1日あたりの基本AI生成回数上限（いたずら連打・高額請求を100%防止）
@@ -2594,9 +2951,7 @@ const setCachedAiResponse = (cacheKey, data) => {
   } catch (e) {}
 };
 
-// Google Gemini API 構造化出力呼び出し（ハードコードされたAPIキーを除去し、.envのVITE_GEMINI_API_KEYのみを参照）
-const DEFAULT_GEMINI_API_KEY = "";
-
+// Google Gemini API 構造化出力呼び出し（APIキーは環境変数で管理し、コード内に秘密情報は置かない）
 const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
   let envKey = "";
   try {
@@ -2604,9 +2959,9 @@ const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSc
       envKey = import.meta.env.VITE_GEMINI_API_KEY;
     }
   } catch (e) {}
-  const apiKey = (envKey || DEFAULT_GEMINI_API_KEY || "").trim();
+  const apiKey = envKey.trim();
   if (!apiKey) {
-    throw new Error('VITE_GEMINI_API_KEY is not set');
+    throw new Error('VITE_GEMINI_API_KEY is not configured. Add it to your .env file.');
   }
 
   const payload = {
@@ -3090,503 +3445,19 @@ function HeartRailsCreditBadge({ className = '', showGeo = true }) {
 
 // HeartRails Geo API (method=getCities) のレスポンスを都道府県ごとにキャッシュするマップ
 const geoApiCityCache = {};
-// HeartRails Geo API (method=getTowns) および市区町村内の実在駅リストをキャッシュするマップ
-const geoApiTownCache = {};
-const cityStationsCache = {};
-const postalToCityCache = {};
 
 // カタカナをひらがなに変換するヘルパー（よみがな検索用）
 const toHiragana = (str = '') =>
   str.replace(/[\u30a1-\u30f6]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0x60));
 
-// ひらがなをカタカナに変換するヘルパー
-const toKatakana = (str = '') =>
-  str.replace(/[\u3041-\u3096]/g, (m) => String.fromCharCode(m.charCodeAt(0) + 0x60));
-
-// ローマ字入力をひらがなに変換するヘルパー（例: matsumoto -> まつもと, shinjuku -> しんじゅく）
-const romajiToHiragana = (input = '') => {
-  let s = input.toLowerCase().trim();
-  if (!/^[a-z\-]+$/.test(s)) return s;
-  const table = [
-    ['shinjuku', 'しんじゅく'], ['shibuya', 'しぶや'], ['tokyo', 'とうきょう'], ['yokohama', 'よこはま'],
-    ['matsumoto', 'まつもと'], ['nagano', 'ながの'], ['karuizawa', 'かるいざわ'], ['kanazawa', 'かなざわ'],
-    ['kyoto', 'きょうと'], ['osaka', 'おおさか'], ['umeda', 'うめだ'], ['nanba', 'なんば'], ['namba', 'なんば'],
-    ['hakata', 'はかた'], ['fukuoka', 'ふくおか'], ['sapporo', 'さっぽろ'], ['sendai', 'せんだい'], ['hiroshima', 'ひろしま'],
-    ['nagoya', 'なごや'], ['kobe', 'こうべ'], ['nara', 'なら'], ['okinawa', 'おきなわ'], ['naha', 'なは'],
-    ['sha', 'しゃ'], ['shi', 'し'], ['shu', 'しゅ'], ['she', 'しぇ'], ['sho', 'しょ'],
-    ['cha', 'ちゃ'], ['chi', 'ち'], ['chu', 'ちゅ'], ['che', 'ちぇ'], ['cho', 'ちょ'],
-    ['tsu', 'つ'], ['kya', 'きゃ'], ['kyu', 'きゅ'], ['kyo', 'きょ'],
-    ['nya', 'にゃ'], ['nyu', 'にゅ'], ['nyo', 'にょ'],
-    ['hya', 'ひゃ'], ['hyu', 'ひゅ'], ['hyo', 'ひょ'],
-    ['mya', 'みゃ'], ['myu', 'みゅ'], ['myo', 'みょ'],
-    ['rya', 'りゃ'], ['ryu', 'りゅ'], ['ryo', 'りょ'],
-    ['gya', 'ぎゃ'], ['gyu', 'ぎゅ'], ['gyo', 'ぎょ'],
-    ['ja', 'じゃ'], ['ji', 'じ'], ['ju', 'じゅ'], ['je', 'じぇ'], ['jo', 'じょ'],
-    ['bya', 'びゃ'], ['byu', 'びゅ'], ['byo', 'びょ'],
-    ['pya', 'ぴゃ'], ['pyu', 'ぴゅ'], ['pyo', 'ぴょ'],
-    ['fu', 'ふ'],
-    ['ka', 'か'], ['ki', 'き'], ['ku', 'く'], ['ke', 'け'], ['ko', 'こ'],
-    ['sa', 'さ'], ['su', 'す'], ['se', 'せ'], ['so', 'そ'],
-    ['ta', 'た'], ['te', 'て'], ['to', 'と'],
-    ['na', 'な'], ['ni', 'に'], ['nu', 'ぬ'], ['ne', 'ね'], ['no', 'の'],
-    ['ha', 'は'], ['hi', 'ひ'], ['he', 'へ'], ['ho', 'ほ'],
-    ['ma', 'ま'], ['mi', 'み'], ['mu', 'む'], ['me', 'め'], ['mo', 'も'],
-    ['ya', 'や'], ['yu', 'ゆ'], ['yo', 'よ'],
-    ['ra', 'ら'], ['ri', 'り'], ['ru', 'る'], ['re', 'れ'], ['ro', 'ろ'],
-    ['wa', 'わ'], ['wo', 'を'], ['nn', 'ん'],
-    ['ga', 'が'], ['gi', 'ぎ'], ['gu', 'ぐ'], ['ge', 'げ'], ['go', 'ご'],
-    ['za', 'ざ'], ['zu', 'ず'], ['ze', 'ぜ'], ['zo', 'ぞ'],
-    ['da', 'だ'], ['di', 'ぢ'], ['du', 'づ'], ['de', 'で'], ['do', 'ど'],
-    ['ba', 'ば'], ['bi', 'び'], ['bu', 'ぶ'], ['be', 'べ'], ['bo', 'ぼ'],
-    ['pa', 'ぱ'], ['pi', 'ぴ'], ['pu', 'ぷ'], ['pe', 'ぺ'], ['po', 'ぽ'],
-    ['a', 'あ'], ['i', 'い'], ['u', 'う'], ['e', 'え'], ['o', 'お'], ['n', 'ん']
-  ];
-  s = s.replace(/([bcdfghjklmnpqrstvwxyz])\1/g, 'っ$1');
-  for (const [rom, hira] of table) {
-    s = s.split(rom).join(hira);
-  }
-  return s;
-};
-
-// ひらがな入力から実在の漢字（市区町村・駅名）へ即座に解決するための全国主要よみがな辞書
-const HIRAGANA_TO_KANJI_PLACE_MAP = [
-  // 北海道・東北
-  { kana: 'さっぽろ', kanji: '札幌', pref: '北海道' },
-  { kana: 'はこだて', kanji: '函館', pref: '北海道' },
-  { kana: 'おたる', kanji: '小樽', pref: '北海道' },
-  { kana: 'あさひかわ', kanji: '旭川', pref: '北海道' },
-  { kana: 'ふらの', kanji: '富良野', pref: '北海道' },
-  { kana: 'びえい', kanji: '美瑛', pref: '北海道' },
-  { kana: 'のぼりべつ', kanji: '登別', pref: '北海道' },
-  { kana: 'くしろ', kanji: '釧路', pref: '北海道' },
-  { kana: 'おびひろ', kanji: '帯広', pref: '北海道' },
-  { kana: 'あばしり', kanji: '網走', pref: '北海道' },
-  { kana: 'ちとせ', kanji: '千歳', pref: '北海道' },
-  { kana: 'しんちとせくうこう', kanji: '新千歳空港', pref: '北海道' },
-  { kana: 'あおもり', kanji: '青森', pref: '青森県' },
-  { kana: 'ひろさき', kanji: '弘前', pref: '青森県' },
-  { kana: 'はちのへ', kanji: '八戸', pref: '青森県' },
-  { kana: 'もりおか', kanji: '盛岡', pref: '岩手県' },
-  { kana: 'ひらいずみ', kanji: '平泉', pref: '岩手県' },
-  { kana: 'せんだい', kanji: '仙台', pref: '宮城県' },
-  { kana: 'まつしま', kanji: '松島', pref: '宮城県' },
-  { kana: 'あきた', kanji: '秋田', pref: '秋田県' },
-  { kana: 'かくのだて', kanji: '角館', pref: '秋田県' },
-  { kana: 'やまがた', kanji: '山形', pref: '山形県' },
-  { kana: 'つるおか', kanji: '鶴岡', pref: '山形県' },
-  { kana: 'さかた', kanji: '酒田', pref: '山形県' },
-  { kana: 'ふくしま', kanji: '福島', pref: '福島県' },
-  { kana: 'あいづわかまつ', kanji: '会津若松', pref: '福島県' },
-  { kana: 'こおりやま', kanji: '郡山', pref: '福島県' },
-  { kana: 'いわき', kanji: 'いわき', pref: '福島県' },
-  // 関東
-  { kana: 'とうきょう', kanji: '東京', pref: '東京都' },
-  { kana: 'しんじゅく', kanji: '新宿', pref: '東京都' },
-  { kana: 'しぶや', kanji: '渋谷', pref: '東京都' },
-  { kana: 'いけぶくろ', kanji: '池袋', pref: '東京都' },
-  { kana: 'しながわ', kanji: '品川', pref: '東京都' },
-  { kana: 'うえの', kanji: '上野', pref: '東京都' },
-  { kana: 'あさくさ', kanji: '浅草', pref: '東京都' },
-  { kana: 'あきはばら', kanji: '秋葉原', pref: '東京都' },
-  { kana: 'えびす', kanji: '恵比寿', pref: '東京都' },
-  { kana: 'きちじょうじ', kanji: '吉祥寺', pref: '東京都' },
-  { kana: 'なかめぐろ', kanji: '中目黒', pref: '東京都' },
-  { kana: 'しもきたざわ', kanji: '下北沢', pref: '東京都' },
-  { kana: 'まちだ', kanji: '町田', pref: '東京都' },
-  { kana: 'たちかわ', kanji: '立川', pref: '東京都' },
-  { kana: 'はちおうじ', kanji: '八王子', pref: '東京都' },
-  { kana: 'ちよだ', kanji: '千代田', pref: '東京都' },
-  { kana: 'ちゅうおう', kanji: '中央', pref: '東京都' },
-  { kana: 'みなと', kanji: '港', pref: '東京都' },
-  { kana: 'せたがや', kanji: '世田谷', pref: '東京都' },
-  { kana: 'よこはま', kanji: '横浜', pref: '神奈川県' },
-  { kana: 'しんよこはま', kanji: '新横浜', pref: '神奈川県' },
-  { kana: 'みなとみらい', kanji: 'みなとみらい', pref: '神奈川県' },
-  { kana: 'かわさき', kanji: '川崎', pref: '神奈川県' },
-  { kana: 'かまくら', kanji: '鎌倉', pref: '神奈川県' },
-  { kana: 'ふじさわ', kanji: '藤沢', pref: '神奈川県' },
-  { kana: 'えのしま', kanji: '江ノ島', pref: '神奈川県' },
-  { kana: 'おだわら', kanji: '小田原', pref: '神奈川県' },
-  { kana: 'はこね', kanji: '箱根', pref: '神奈川県' },
-  { kana: 'はこねゆもと', kanji: '箱根湯本', pref: '神奈川県' },
-  { kana: 'よこすか', kanji: '横須賀', pref: '神奈川県' },
-  { kana: 'さいたま', kanji: 'さいたま', pref: '埼玉県' },
-  { kana: 'おおみや', kanji: '大宮', pref: '埼玉県' },
-  { kana: 'うらわ', kanji: '浦和', pref: '埼玉県' },
-  { kana: 'かわごえ', kanji: '川越', pref: '埼玉県' },
-  { kana: 'ちちぶ', kanji: '秩父', pref: '埼玉県' },
-  { kana: 'رباط', kanji: '所沢', pref: '埼玉県' },
-  { kana: 'ところざわ', kanji: '所沢', pref: '埼玉県' },
-  { kana: 'ちば', kanji: '千葉', pref: '千葉県' },
-  { kana: 'まいはま', kanji: '舞浜', pref: '千葉県' },
-  { kana: 'うらやす', kanji: '浦安', pref: '千葉県' },
-  { kana: 'ふなばし', kanji: '船橋', pref: '千葉県' },
-  { kana: 'かしわ', kanji: '柏', pref: '千葉県' },
-  { kana: 'なりた', kanji: '成田', pref: '千葉県' },
-  { kana: 'みと', kanji: '水戸', pref: '茨城県' },
-  { kana: 'つくば', kanji: 'つくば', pref: '茨城県' },
-  { kana: 'うつのみや', kanji: '宇都宮', pref: '栃木県' },
-  { kana: 'にっこう', kanji: '日光', pref: '栃木県' },
-  { kana: 'なす', kanji: '那須', pref: '栃木県' },
-  { kana: 'たかさき', kanji: '高崎', pref: '群馬県' },
-  { kana: 'まえばし', kanji: '前橋', pref: '群馬県' },
-  { kana: 'くさつ', kanji: '草津', pref: '群馬県' },
-  // 中部・北陸・甲信越
-  { kana: 'まつもと', kanji: '松本', pref: '長野県' },
-  { kana: 'きたまつもと', kanji: '北松本', pref: '長野県' },
-  { kana: 'みなみまつもと', kanji: '南松本', pref: '長野県' },
-  { kana: 'にしまつもと', kanji: '西松本', pref: '長野県' },
-  { kana: 'しまない', kanji: '島内', pref: '長野県' },
-  { kana: 'しまたかまつ', kanji: '島高松', pref: '長野県' },
-  { kana: 'あずさばし', kanji: '梓橋', pref: '長野県' },
-  { kana: 'ひらた', kanji: '平田', pref: '長野県' },
-  { kana: 'むらい', kanji: '村井', pref: '長野県' },
-  { kana: 'なぎさ', kanji: '渚', pref: '長野県' },
-  { kana: 'しなのあらい', kanji: '信濃荒井', pref: '長野県' },
-  { kana: 'おおば', kanji: '大庭', pref: '長野県' },
-  { kana: 'しもにい', kanji: '下新', pref: '長野県' },
-  { kana: 'きたにい', kanji: '北新・松本大学前', pref: '長野県' },
-  { kana: 'にいむら', kanji: '新村', pref: '長野県' },
-  { kana: 'さみぞ', kanji: '三溝', pref: '長野県' },
-  { kana: 'もりぐち', kanji: '森口', pref: '長野県' },
-  { kana: 'しもじま', kanji: '下島', pref: '長野県' },
-  { kana: 'はた', kanji: '波田', pref: '長野県' },
-  { kana: 'えんどう', kanji: '渕東', pref: '長野県' },
-  { kana: 'しんしましま', kanji: '新島々', pref: '長野県' },
-  { kana: 'ながの', kanji: '長野', pref: '長野県' },
-  { kana: 'かるいざわ', kanji: '軽井沢', pref: '長野県' },
-  { kana: 'うえだ', kanji: '上田', pref: '長野県' },
-  { kana: 'すわ', kanji: '諏訪', pref: '長野県' },
-  { kana: 'しおじり', kanji: '塩尻', pref: '長野県' },
-  { kana: 'あづみの', kanji: '安曇野', pref: '長野県' },
-  { kana: 'はくば', kanji: '白馬', pref: '長野県' },
-  { kana: 'にいがた', kanji: '新潟', pref: '新潟県' },
-  { kana: 'ながおか', kanji: '長岡', pref: '新潟県' },
-  { kana: 'とやま', kanji: '富山', pref: '富山県' },
-  { kana: 'かなざわ', kanji: '金沢', pref: '石川県' },
-  { kana: 'ふくい', kanji: '福井', pref: '福井県' },
-  { kana: 'こうふ', kanji: '甲府', pref: '山梨県' },
-  { kana: 'かわぐちこ', kanji: '河口湖', pref: '山梨県' },
-  { kana: 'ぎふ', kanji: '岐阜', pref: '岐阜県' },
-  { kana: 'たかやま', kanji: '高山', pref: '岐阜県' },
-  { kana: 'げろ', kanji: '下呂', pref: '岐阜県' },
-  { kana: 'しずおか', kanji: '静岡', pref: '静岡県' },
-  { kana: 'はままつ', kanji: '浜松', pref: '静岡県' },
-  { kana: 'あたみ', kanji: '熱海', pref: '静岡県' },
-  { kana: 'いとう', kanji: '伊東', pref: '静岡県' },
-  { kana: 'みしま', kanji: '三島', pref: '静岡県' },
-  { kana: 'なごや', kanji: '名古屋', pref: '愛知県' },
-  { kana: 'とよはし', kanji: '豊橋', pref: '愛知県' },
-  { kana: 'おかざき', kanji: '岡崎', pref: '愛知県' },
-  // 関西・中国・四国・九州・沖縄
-  { kana: 'いせ', kanji: '伊勢', pref: '三重県' },
-  { kana: 'とば', kanji: '鳥羽', pref: '三重県' },
-  { kana: 'おおつ', kanji: '大津', pref: '滋賀県' },
-  { kana: 'ひこね', kanji: '彦根', pref: '滋賀県' },
-  { kana: 'きょうと', kanji: '京都', pref: '京都府' },
-  { kana: 'あらしやま', kanji: '嵐山', pref: '京都府' },
-  { kana: 'うじ', kanji: '宇治', pref: '京都府' },
-  { kana: 'おおさか', kanji: '大阪', pref: '大阪府' },
-  { kana: 'しんおおさか', kanji: '新大阪', pref: '大阪府' },
-  { kana: 'うめだ', kanji: '梅田', pref: '大阪府' },
-  { kana: 'なんば', kanji: '難波', pref: '大阪府' },
-  { kana: 'てんのうじ', kanji: '天王寺', pref: '大阪府' },
-  { kana: 'さかい', kanji: '堺', pref: '大阪府' },
-  { kana: 'こうべ', kanji: '神戸', pref: '兵庫県' },
-  { kana: 'さんのみや', kanji: '三ノ宮', pref: '兵庫県' },
-  { kana: 'ひめじ', kanji: '姫路', pref: '兵庫県' },
-  { kana: 'きのさきおんせん', kanji: '城崎温泉', pref: '兵庫県' },
-  { kana: 'なら', kanji: '奈良', pref: '奈良県' },
-  { kana: 'わかやま', kanji: '和歌山', pref: '和歌山県' },
-  { kana: 'しらはま', kanji: '白浜', pref: '和歌山県' },
-  { kana: 'とっとり', kanji: '鳥取', pref: '鳥取県' },
-  { kana: 'よなご', kanji: '米子', pref: '鳥取県' },
-  { kana: 'まつえ', kanji: '松江', pref: '島根県' },
-  { kana: 'いずも', kanji: '出雲', pref: '島根県' },
-  { kana: 'おかやま', kanji: '岡山', pref: '岡山県' },
-  { kana: 'くらしき', kanji: '倉敷', pref: '岡山県' },
-  { kana: 'ひろしま', kanji: '広島', pref: '広島県' },
-  { kana: 'おのみち', kanji: '尾道', pref: '広島県' },
-  { kana: 'みやじまぐち', kanji: '宮島口', pref: '広島県' },
-  { kana: 'ふくやま', kanji: '福山', pref: '広島県' },
-  { kana: 'しものせき', kanji: '下関', pref: '山口県' },
-  { kana: 'やまぐち', kanji: '山口', pref: '山口県' },
-  { kana: 'とくしま', kanji: '徳島', pref: '徳島県' },
-  { kana: 'たかまつ', kanji: '高松', pref: '香川県' },
-  { kana: 'ことひら', kanji: '琴平', pref: '香川県' },
-  { kana: 'まつやま', kanji: '松山', pref: '愛媛県' },
-  { kana: 'いまばり', kanji: '今治', pref: '愛媛県' },
-  { kana: 'こうち', kanji: '高知', pref: '高知県' },
-  { kana: 'ふくおか', kanji: '福岡', pref: '福岡県' },
-  { kana: 'はかた', kanji: '博多', pref: '福岡県' },
-  { kana: 'てんじん', kanji: '天神', pref: '福岡県' },
-  { kana: 'こくら', kanji: '小倉', pref: '福岡県' },
-  { kana: 'だざいふ', kanji: '太宰府', pref: '福岡県' },
-  { kana: 'さが', kanji: '佐賀', pref: '佐賀県' },
-  { kana: 'ながさき', kanji: '長崎', pref: '長崎県' },
-  { kana: 'させぼ', kanji: '佐世保', pref: '長崎県' },
-  { kana: 'くまもと', kanji: '熊本', pref: '熊本県' },
-  { kana: 'あそ', kanji: '阿蘇', pref: '熊本県' },
-  { kana: 'おおいた', kanji: '大分', pref: '大分県' },
-  { kana: 'べっぷ', kanji: '別府', pref: '大分県' },
-  { kana: 'ゆふいん', kanji: '由布院', pref: '大分県' },
-  { kana: 'みやざき', kanji: '宮崎', pref: '宮崎県' },
-  { kana: 'かごしま', kanji: '鹿児島', pref: '鹿児島県' },
-  { kana: 'いぶすき', kanji: '指宿', pref: '鹿児島県' },
-  { kana: 'なは', kanji: '那覇', pref: '沖縄県' },
-  { kana: 'おきなわ', kanji: '沖縄', pref: '沖縄県' }
-];
-
-// ひらがな・カタカナ・ローマ字クエリから漢字の地名・駅名候補を解決する関数（内蔵辞書＋町名よみがな＋Wikipedia API併用）
-const resolveKanjiPlaceCandidates = async (rawQuery, suffixType = '駅', extraKanaMap = []) => {
-  const cleaned = (rawQuery || '').trim().replace(/(駅|市|区|町|村)$/, '');
-  if (!cleaned) return [];
-
-  const hira = toHiragana(romajiToHiragana(cleaned));
-  const kata = toKatakana(hira);
-
-  // 1) 内蔵よみがな辞書＋市区町村の町名よみがなデータから漢字候補を取得
-  // ※「しま」で「まつしま（松島）」がヒットして「松」から「松本」が誤爆しないよう、前方一致を最優先し、2文字以上のときのみ部分一致を許可
-  const combinedDict = [...extraKanaMap, ...HIRAGANA_TO_KANJI_PLACE_MAP];
-  const prefixMatches = combinedDict
-    .filter((entry) => entry.kana && (entry.kana.startsWith(hira) || entry.kanji.startsWith(cleaned)))
-    .map((entry) => entry.kanji);
-
-  const partialMatches =
-    hira.length >= 2
-      ? combinedDict
-          .filter(
-            (entry) =>
-              entry.kana &&
-              !entry.kana.startsWith(hira) &&
-              (entry.kana.includes(hira) || entry.kanji.includes(cleaned))
-          )
-          .map((entry) => entry.kanji)
-      : [];
-
-  // すでに漢字が含まれている場合はそのまま先頭に追加
-  const hasKanji = /[\u4e00-\u9faf]/.test(cleaned);
-  const baseCandidates = Array.from(
-    new Set([...(hasKanji ? [cleaned] : []), ...prefixMatches, ...partialMatches, kata])
-  );
-
-  // 2) ひらがなのみが入力されている場合、Wikipedia CORS APIで全国の駅名・自治体名の漢字表記を補完
-  if (!hasKanji && hira.length >= 2) {
-    try {
-      const wikiUrl = `https://ja.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=8&srsearch=${encodeURIComponent(
-        `${hira} ${suffixType}`
-      )}`;
-      const res = await fetch(wikiUrl);
-      const data = await res.json();
-      const searchItems = data?.query?.search || [];
-      searchItems.forEach((item) => {
-        const title = (item.title || '').replace(/\s*\(.*?\)\s*/g, '');
-        if (suffixType === '駅' && title.endsWith('駅')) {
-          baseCandidates.push(title.replace(/駅$/, ''));
-        } else if (suffixType !== '駅' && /(市|区|町|村)$/.test(title)) {
-          baseCandidates.push(title);
-        }
-      });
-    } catch (e) {
-      // オフライン時は内蔵辞書でフォールバック
-    }
-  }
-
-  return Array.from(new Set(baseCandidates)).slice(0, 8);
-};
-
-// 指定された市区町村（例: 松本市）の町名・郵便番号・よみがな・実在駅一覧を取得するヘルパー
-const fetchCityStationsAndTowns = async (rawCityName, prefContext = '') => {
-  const cleanCity = (rawCityName || '').replace(/（.*?）/g, '').trim();
-  if (!cleanCity) return null;
-
-  const cacheKey = `${prefContext || 'ALL'}_${cleanCity}`;
-  if (cityStationsCache[cacheKey]) {
-    return cityStationsCache[cacheKey];
-  }
-
-  try {
-    // 1. HeartRails Geo API (getTowns) でその市区町村の全町名・よみがな・郵便番号・座標範囲を取得
-    const townUrl = `https://geoapi.heartrails.com/api/json?method=getTowns&city=${encodeURIComponent(
-      cleanCity
-    )}${prefContext && prefContext !== '未設定' ? `&prefecture=${encodeURIComponent(prefContext)}` : ''}`;
-    const townRes = await fetch(townUrl);
-    const townData = await townRes.json();
-    const locations = townData?.response?.location || [];
-
-    if (!Array.isArray(locations) || locations.length === 0) {
-      return null;
-    }
-
-    const detectedPref = locations[0].prefecture || prefContext || '';
-    const postalSet7 = new Set();
-    const postalPrefix5Set = new Set();
-    const townKanaList = [];
-    let minX = 180, maxX = -180, minY = 90, maxY = -90;
-
-    locations.forEach((loc) => {
-      if (loc.postal) {
-        postalSet7.add(loc.postal);
-        postalPrefix5Set.add(loc.postal.slice(0, 5));
-        postalToCityCache[loc.postal] = loc.city;
-      }
-      const x = parseFloat(loc.x);
-      const y = parseFloat(loc.y);
-      if (!isNaN(x) && !isNaN(y)) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-      if (loc.town && loc.town_kana) {
-        const cleanTown = loc.town.replace(/（.*?）/g, '').replace(/(町|丁目|番地|字|大字)$/, '');
-        const cleanKana = toHiragana(loc.town_kana).replace(/(まち|ちょう|ちょうめ)$/, '');
-        if (cleanTown && cleanKana) {
-          townKanaList.push({ kana: cleanKana, kanji: cleanTown, pref: detectedPref });
-        }
-      }
-    });
-
-    const centerX = ((minX + maxX) / 2).toFixed(4);
-    const centerY = ((minY + maxY) / 2).toFixed(4);
-    const cityBase = cleanCity.replace(/^(.*?市)(.+区)$/, '$2').replace(/(市|区|町|村)$/, '');
-
-    // 2. その市区町村を通る鉄道路線を取得（代表駅検索＋中心座標検索）
-    const [byNameRes, byCoordRes] = await Promise.all([
-      fetch(`https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(cityBase)}`)
-        .then((r) => r.json())
-        .catch(() => null),
-      fetch(`https://express.heartrails.com/api/json?method=getStations&x=${centerX}&y=${centerY}`)
-        .then((r) => r.json())
-        .catch(() => null)
-    ]);
-
-    const seedStations = [
-      ...(byNameRes?.response?.station || []),
-      ...(byCoordRes?.response?.station || [])
-    ].filter((s) => !detectedPref || s.prefecture === detectedPref);
-
-    const candidateLines = Array.from(new Set(seedStations.map((s) => s.line).filter(Boolean)));
-
-    // もし路線が見つからなかった場合は都道府県の全路線から探索
-    if (candidateLines.length === 0 && detectedPref) {
-      try {
-        const lineRes = await fetch(
-          `https://express.heartrails.com/api/json?method=getLines&prefecture=${encodeURIComponent(detectedPref)}`
-        );
-        const lineData = await lineRes.json();
-        const allLines = lineData?.response?.line || [];
-        candidateLines.push(...allLines.slice(0, 12));
-      } catch (e) {}
-    }
-
-    // 3. 各路線の駅一覧を取得し、この市区町村（cleanCity）に存在する駅だけを厳密に抽出
-    const lineResponses = await Promise.all(
-      candidateLines.slice(0, 10).map((line) =>
-        fetch(`https://express.heartrails.com/api/json?method=getStations&line=${encodeURIComponent(line)}`)
-          .then((r) => r.json())
-          .then((d) => d?.response?.station || [])
-          .catch(() => [])
-      )
-    );
-
-    const rawStations = [...seedStations, ...lineResponses.flat()];
-    const uniqueMap = new Map();
-    rawStations.forEach((s) => {
-      if (detectedPref && s.prefecture !== detectedPref) return;
-      const key = `${s.name}_${s.line}_${s.prefecture}`;
-      if (!uniqueMap.has(key)) uniqueMap.set(key, s);
-    });
-
-    const verifiedStations = [];
-    const margin = 0.045; // 座標バウンディングボックスの許容マージン
-
-    for (const s of uniqueMap.values()) {
-      const sx = parseFloat(s.x);
-      const sy = parseFloat(s.y);
-      const inBbox =
-        !isNaN(sx) &&
-        !isNaN(sy) &&
-        sx >= minX - margin &&
-        sx <= maxX + margin &&
-        sy >= minY - margin &&
-        sy <= maxY + margin;
-
-      if (!inBbox) continue;
-
-      let belongsToCity = false;
-      if (s.postal && postalSet7.has(s.postal)) {
-        belongsToCity = true;
-      } else if (s.postal && postalPrefix5Set.has(s.postal.slice(0, 5))) {
-        belongsToCity = true;
-      } else if (s.postal) {
-        // 郵便番号APIで正確な市区町村名を確認（キャッシュ付き）
-        if (!postalToCityCache[s.postal]) {
-          try {
-            const pRes = await fetch(
-              `https://geoapi.heartrails.com/api/json?method=searchByPostal&postal=${encodeURIComponent(s.postal)}`
-            );
-            const pData = await pRes.json();
-            const matchedCity = pData?.response?.location?.[0]?.city || '';
-            postalToCityCache[s.postal] = matchedCity;
-          } catch (e) {}
-        }
-        const resolvedCity = postalToCityCache[s.postal] || '';
-        if (
-          resolvedCity === cleanCity ||
-          resolvedCity.endsWith(cleanCity) ||
-          cleanCity.endsWith(resolvedCity)
-        ) {
-          belongsToCity = true;
-        }
-      }
-
-      if (belongsToCity) {
-        // 駅のよみがなを辞書または町名かなから付与（完全一致を最優先して誤判定を防止）
-        const allKanaDict = [...HIRAGANA_TO_KANJI_PLACE_MAP, ...townKanaList];
-        const exactHit = allKanaDict.find((d) => d.kanji === s.name);
-        const prefixHit =
-          exactHit ||
-          allKanaDict.find(
-            (d) => d.kanji.length >= 2 && (s.name.startsWith(d.kanji) || d.kanji.startsWith(s.name))
-          );
-        verifiedStations.push({
-          ...s,
-          reading: prefixHit ? prefixHit.kana : ''
-        });
-      }
-    }
-
-    const resultObj = {
-      prefecture: detectedPref,
-      city: cleanCity,
-      postalSet7,
-      postalPrefix5Set,
-      townKanaList,
-      minX: minX - margin,
-      maxX: maxX + margin,
-      minY: minY - margin,
-      maxY: maxY + margin,
-      stations: verifiedStations
-    };
-    cityStationsCache[cacheKey] = resultObj;
-    return resultObj;
-  } catch (e) {
-    return null;
-  }
-};
-
-// ★ HeartRails Geo API (https://geoapi.heartrails.com/api.html#city) を使った実在市区町村サジェスト検索コンポーネント
-// ・実在する日本の市区町村のみを選択可能（架空の市区町村名は設定不可）
-// ・ひらがな（例: しんじゅく / よこはま）、カタカナ、ローマ字、漢字のすべてに対応
-// ・都道府県が未選択でも市区町村を選ぶと自動で都道府県もセット
+// ★ HeartRails Geo API (https://geoapi.heartrails.com/api.html#city) を使った市区町村サジェスト検索コンポーネント
+// 都道府県選択時はAPIからその都道府県の全自治体（漢字＋よみがな）を取得し、未選択時も全国検索＆都道府県の自動セットに対応
 function MunicipalitySearchInput({
   value,
   onChange,
   prefectureContext = '未設定',
   onSelectPrefecture,
-  onValidityChange,
-  placeholder = '市区町村 (例: 新宿区 / 横浜市 / 大阪市)'
+  placeholder = '市区町村 (例: 新宿区 / 横浜市 / 松本市)'
 }) {
   const [query, setQuery] = useState(value || '');
   const [isOpen, setIsOpen] = useState(false);
@@ -3612,23 +3483,17 @@ function MunicipalitySearchInput({
     };
   }, []);
 
-  // 全国47都道府県の実在市区町村マスターリスト（よみがな辞書連携つき）
+  // ローカルフォールバック兼・全国横断検索用のマスターリスト
   const localAllMunicipalities = useMemo(() => {
     const list = [];
     PREFECTURES.forEach((pref) => {
       const munis = FULL_MUNICIPALITIES_BY_PREF[pref] || SAMPLE_MUNICIPALITIES_BY_PREF[pref] || [];
       munis.forEach((rawMuni) => {
         const cleanMuni = rawMuni.replace(/（.*?）/g, '');
-        const baseNoSuffix = cleanMuni.replace(/(市|区|町|村)$/, '');
-        const matchedDict = HIRAGANA_TO_KANJI_PLACE_MAP.find(
-          (d) =>
-            (d.pref === pref && (cleanMuni.includes(d.kanji) || d.kanji.includes(baseNoSuffix))) ||
-            cleanMuni.startsWith(d.kanji)
-        );
         list.push({
           pref,
           city: cleanMuni,
-          city_kana: matchedDict ? matchedDict.kana : '',
+          city_kana: '',
           rawName: rawMuni
         });
       });
@@ -3636,139 +3501,102 @@ function MunicipalitySearchInput({
     return list;
   }, []);
 
-  // 入力中または選択中の値が「実在する市区町村」かどうかを判定する
-  const matchedRealMunicipality = useMemo(() => {
-    const trimmed = (query || '').trim();
-    if (!trimmed) return null;
-    const pool = [...apiCities, ...localAllMunicipalities];
-    return (
-      pool.find(
-        (m) =>
-          m.city === trimmed ||
-          m.rawName === trimmed ||
-          m.city.replace(/(市|区|町|村)$/, '') === trimmed
-      ) || null
-    );
-  }, [query, apiCities, localAllMunicipalities]);
-
-  const isInvalidInput = Boolean((query || '').trim()) && !matchedRealMunicipality;
-
-  useEffect(() => {
-    if (onValidityChange) {
-      onValidityChange(!isInvalidInput);
-    }
-  }, [isInvalidInput, onValidityChange]);
-
-  // 都道府県が選択されている（またはひらがな・漢字入力から都道府県が推測できる）場合、HeartRails Geo API (method=getCities) から公式市区町村リスト（漢字＋ひらがなよみがな）を取得
+  // 都道府県が選択されている（または検索語から都道府県が推測できる）場合、HeartRails Geo API (method=getCities) から市区町村一覧を取得
   useEffect(() => {
     const trimmed = (query || '').trim();
-    const hira = toHiragana(romajiToHiragana(trimmed)).replace(/(し|く|まち|ちょう|むら|そん)$/, '');
+    let targetPref =
+      prefectureContext && prefectureContext !== '未設定' ? prefectureContext : null;
 
-    let targetPrefs = [];
-    if (prefectureContext && prefectureContext !== '未設定') {
-      targetPrefs.push(prefectureContext);
+    // 都道府県が未選択でも、入力文字から該当する都道府県が見つかればその県の公式リストもGeo APIから取得する
+    if (!targetPref && trimmed.length >= 1) {
+      const matchedLocal = localAllMunicipalities.find(
+        (m) => m.city.includes(trimmed) || m.rawName.includes(trimmed)
+      );
+      if (matchedLocal) {
+        targetPref = matchedLocal.pref;
+      }
     }
 
-    if (trimmed.length >= 1) {
-      // ひらがな辞書または漢字マスターから該当しそうな都道府県を特定してGeo APIから公式よみがなデータを取得
-      HIRAGANA_TO_KANJI_PLACE_MAP.forEach((d) => {
-        if (d.kana.startsWith(hira) || d.kana.includes(hira) || d.kanji.includes(trimmed)) {
-          if (!targetPrefs.includes(d.pref)) targetPrefs.push(d.pref);
-        }
-      });
-      localAllMunicipalities.forEach((m) => {
-        if (m.city.includes(trimmed) || (hira.length >= 2 && m.city_kana.includes(hira))) {
-          if (!targetPrefs.includes(m.pref)) targetPrefs.push(m.pref);
-        }
-      });
-    }
-
-    targetPrefs = targetPrefs.slice(0, 3);
-    if (targetPrefs.length === 0) {
+    if (!targetPref) {
       setApiCities([]);
       return;
     }
 
-    let cancelled = false;
-    const fetchPrefs = async () => {
-      const uncached = targetPrefs.filter((p) => !geoApiCityCache[p]);
-      if (uncached.length > 0) {
-        setIsLoading(true);
-        await Promise.all(
-          uncached.map(async (prefName) => {
-            try {
-              const res = await fetch(
-                `https://geoapi.heartrails.com/api/json?method=getCities&prefecture=${encodeURIComponent(
-                  prefName
-                )}`
-              );
-              const data = await res.json();
-              const locations = data?.response?.location || [];
-              if (Array.isArray(locations) && locations.length > 0) {
-                geoApiCityCache[prefName] = locations.map((loc) => ({
-                  pref: prefName,
-                  city: loc.city,
-                  city_kana: loc.city_kana || '',
-                  rawName: loc.city
-                }));
-              }
-            } catch (e) {}
-          })
-        );
-      }
-      if (!cancelled) {
-        const merged = [];
-        targetPrefs.forEach((p) => {
-          if (geoApiCityCache[p]) merged.push(...geoApiCityCache[p]);
-        });
-        setApiCities(merged);
-        setIsLoading(false);
-      }
-    };
+    if (geoApiCityCache[targetPref]) {
+      setApiCities(geoApiCityCache[targetPref]);
+      return;
+    }
 
-    fetchPrefs();
+    let cancelled = false;
+    setIsLoading(true);
+    fetch(
+      `https://geoapi.heartrails.com/api/json?method=getCities&prefecture=${encodeURIComponent(
+        targetPref
+      )}`
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const locations = data?.response?.location || [];
+        if (Array.isArray(locations) && locations.length > 0) {
+          const formatted = locations.map((loc) => ({
+            pref: targetPref,
+            city: loc.city,
+            city_kana: loc.city_kana || '',
+            rawName: loc.city
+          }));
+          geoApiCityCache[targetPref] = formatted;
+          setApiCities(formatted);
+        } else {
+          setApiCities([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setApiCities([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
   }, [prefectureContext, query, localAllMunicipalities]);
 
-  // 実在する市区町村候補のフィルタリング（ひらがな・カタカナ・ローマ字・漢字すべて対応、架空の直接設定は不可）
   const filteredCandidates = useMemo(() => {
     const trimmed = (query || '').trim();
-    const hiraQuery = toHiragana(romajiToHiragana(trimmed));
-    const hiraBase = hiraQuery.replace(/(し|く|まち|ちょう|むら|そん)$/, '');
+    const hiraQuery = toHiragana(trimmed);
     const hasPref = prefectureContext && prefectureContext !== '未設定';
 
-    // ひらがなから変換された漢字キーワード
-    const kanjiHints = HIRAGANA_TO_KANJI_PLACE_MAP.filter(
-      (d) =>
-        hiraBase.length >= 1 &&
-        (d.kana.startsWith(hiraBase) || d.kana.includes(hiraBase))
-    ).map((d) => d.kanji);
-
-    // HeartRails Geo API から取得した市区町村リストと内蔵マスターを統合（重複排除）
-    const seen = new Set();
-    const combinedPool = [];
-    [...apiCities, ...localAllMunicipalities].forEach((item) => {
-      if (hasPref && item.pref !== prefectureContext) return;
-      const key = `${item.pref}_${item.city}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        combinedPool.push(item);
-      }
-    });
+    // HeartRails Geo API から取得した市区町村リストがあれば最優先で使用
+    const basePool =
+      apiCities.length > 0
+        ? hasPref
+          ? apiCities
+          : [
+              ...apiCities,
+              ...localAllMunicipalities.filter(
+                (m) => !apiCities.some((a) => a.pref === m.pref && a.city === m.city)
+              )
+            ]
+        : hasPref
+        ? localAllMunicipalities.filter((item) => item.pref === prefectureContext)
+        : localAllMunicipalities;
 
     if (!trimmed) {
-      if (hasPref) return combinedPool.slice(0, 50);
+      if (hasPref) return basePool.slice(0, 40);
       const majorCities = [
         '新宿区',
         '渋谷区',
         '港区',
-        '中央区',
         '横浜市西区',
+        '鎌倉市',
         'さいたま市大宮区',
         '札幌市中央区',
         '仙台市青葉区',
+        '松本市',
+        '長野市',
+        '金沢市',
         '名古屋市中村区',
         '京都市中京区',
         '大阪市北区',
@@ -3777,34 +3605,32 @@ function MunicipalitySearchInput({
         '福岡市博多区',
         '那覇市'
       ];
-      return combinedPool.filter((m) => majorCities.includes(m.city)).slice(0, 20);
+      return localAllMunicipalities.filter((m) => majorCities.includes(m.city)).slice(0, 18);
     }
 
-    // スコアリングで前方一致（よみがな・漢字）を最優先してソート
-    const scored = [];
-    combinedPool.forEach((item) => {
-      let score = 0;
-      if (item.city === trimmed || item.rawName === trimmed) score = 100;
-      else if (item.city.startsWith(trimmed)) score = 90;
-      else if (item.city_kana && hiraBase && item.city_kana.startsWith(hiraBase)) score = 85;
-      else if (kanjiHints.some((k) => item.city.startsWith(k))) score = 80;
-      else if (item.city.includes(trimmed) || item.rawName.includes(trimmed)) score = 60;
-      else if (item.city_kana && hiraBase.length >= 2 && item.city_kana.includes(hiraBase)) score = 50;
-      else if (kanjiHints.some((k) => k.length >= 2 && item.city.includes(k))) score = 40;
+    const matched = basePool.filter(
+      (item) =>
+        item.city.includes(trimmed) ||
+        item.rawName.includes(trimmed) ||
+        (item.city_kana && item.city_kana.includes(hiraQuery)) ||
+        item.pref.includes(trimmed)
+    );
 
-      if (score > 0) {
-        scored.push({ item, score });
-      }
-    });
+    const directItem = {
+      pref: hasPref ? prefectureContext : '',
+      city: trimmed,
+      city_kana: '',
+      rawName: `${trimmed}（そのまま設定）`,
+      isDirect: true
+    };
 
-    scored.sort((a, b) => b.score - a.score);
-    return scored.map((s) => s.item).slice(0, 35);
+    return matched.length > 0 ? [...matched.slice(0, 30), directItem] : [directItem];
   }, [query, prefectureContext, apiCities, localAllMunicipalities]);
 
   const handleSelect = (item) => {
     setQuery(item.city);
     onChange(item.city);
-    if (item.pref && onSelectPrefecture) {
+    if (item.pref && (!prefectureContext || prefectureContext === '未設定') && onSelectPrefecture) {
       onSelectPrefecture(item.pref);
     }
     setIsOpen(false);
@@ -3817,39 +3643,17 @@ function MunicipalitySearchInput({
           type="text"
           value={query}
           onFocus={() => setIsOpen(true)}
-          onBlur={() => {
-            // フォーカスが外れた際、実在の市区町村と完全一致していれば正規化して確定
-            setTimeout(() => {
-              if (matchedRealMunicipality && query.trim() !== matchedRealMunicipality.city) {
-                setQuery(matchedRealMunicipality.city);
-                onChange(matchedRealMunicipality.city);
-                if (matchedRealMunicipality.pref && onSelectPrefecture) {
-                  onSelectPrefecture(matchedRealMunicipality.pref);
-                }
-              }
-            }, 160);
-          }}
           onChange={(e) => {
             const nextVal = e.target.value;
             setQuery(nextVal);
+            onChange(nextVal);
             setIsOpen(true);
-
-            const trimmed = nextVal.trim();
-            if (!trimmed) {
-              onChange('');
-              return;
-            }
-            // 実在する市区町村に一致した場合のみ親のステートを更新し、都道府県も自動セット
-            const exact = [...apiCities, ...localAllMunicipalities].find(
-              (m) => m.city === trimmed || m.rawName === trimmed
-            );
-            if (exact) {
-              onChange(exact.city);
-              if (exact.pref && onSelectPrefecture) {
-                onSelectPrefecture(exact.pref);
+            // 入力された市区町村名が特定の都道府県に一意に一致する場合、未選択なら都道府県も自動補完
+            if ((!prefectureContext || prefectureContext === '未設定') && onSelectPrefecture && nextVal.trim().length >= 2) {
+              const exactMatches = localAllMunicipalities.filter((m) => m.city === nextVal.trim());
+              if (exactMatches.length === 1) {
+                onSelectPrefecture(exactMatches[0].pref);
               }
-            } else {
-              onChange(nextVal);
             }
           }}
           onKeyDown={(e) => {
@@ -3859,13 +3663,7 @@ function MunicipalitySearchInput({
             }
           }}
           placeholder={placeholder}
-          className={`w-full p-2 pr-7 bg-white border rounded-xl text-base sm:text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
-            isInvalidInput && !isOpen
-              ? 'border-amber-400 focus:ring-amber-400 bg-amber-50/30'
-              : matchedRealMunicipality
-              ? 'border-[#7A9D8C] focus:ring-[#7A9D8C]'
-              : 'border-stone-200 focus:ring-[#7A9D8C]'
-          }`}
+          className="w-full p-2 pr-7 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
         />
         {query && (
           <button
@@ -3883,21 +3681,13 @@ function MunicipalitySearchInput({
         )}
       </div>
 
-      {/* 未確定（実在リストから未選択）の場合のガイド表示 */}
-      {isInvalidInput && !isOpen && (
-        <p className="mt-1 text-[10px] font-extrabold text-amber-700 flex items-center gap-1 pl-1">
-          <AlertCircle size={11} className="shrink-0" />
-          <span>候補リストから実在する市区町村をタップして選択してください</span>
-        </p>
-      )}
-
       {isOpen && (
         <div className="mt-1 bg-white rounded-xl border-2 border-[#7A9D8C]/60 shadow-md overflow-hidden animate-in fade-in duration-100 z-30">
           <div className="px-2.5 py-1.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between text-[10px] font-bold text-stone-500">
             <span className="truncate">
               {prefectureContext && prefectureContext !== '未設定'
-                ? `${prefectureContext}の実在市区町村 (ひらがな・漢字対応)`
-                : '全国の実在市区町村 (ひらがな・漢字対応)'}
+                ? `${prefectureContext}の市区町村候補 (Geo API)`
+                : '全国の市区町村候補 (よみがな検索可)'}
             </span>
             <div className="flex items-center gap-1.5 shrink-0 ml-1">
               {isLoading && <span className="text-[#7A9D8C] animate-pulse">取得中...</span>}
@@ -3912,36 +3702,34 @@ function MunicipalitySearchInput({
           </div>
 
           <div className="max-h-44 overflow-y-auto divide-y divide-stone-100">
-            {filteredCandidates.length === 0 ? (
-              <div className="px-3 py-3 text-[11px] font-bold text-stone-400 text-center">
-                該当する実在の市区町村が見つかりません（ひらがな・漢字をご確認ください）
-              </div>
-            ) : (
-              filteredCandidates.map((item, idx) => (
-                <button
-                  key={`${item.pref}_${item.city}_${idx}`}
-                  type="button"
-                  onClick={() => handleSelect(item)}
-                  className="w-full px-2.5 py-1.5 hover:bg-emerald-50/70 flex items-center justify-between gap-1.5 text-left transition-colors active:bg-emerald-100/60"
-                >
-                  <div className="min-w-0 flex items-center gap-1.5">
-                    <span className="text-[11px] shrink-0">📍</span>
-                    <div className="min-w-0">
-                      <span className="text-xs font-extrabold text-stone-800 block truncate">
-                        {item.city}
-                      </span>
+            {filteredCandidates.map((item, idx) => (
+              <button
+                key={`${item.pref}_${item.city}_${idx}`}
+                type="button"
+                onClick={() => handleSelect(item)}
+                className="w-full px-2.5 py-1.5 hover:bg-emerald-50/70 flex items-center justify-between gap-1.5 text-left transition-colors active:bg-emerald-100/60"
+              >
+                <div className="min-w-0 flex items-center gap-1.5">
+                  <span className="text-[11px] shrink-0">📍</span>
+                  <div className="min-w-0">
+                    <span className="text-xs font-extrabold text-stone-800 block truncate">
+                      {item.rawName}
+                    </span>
+                    {(item.city_kana || (item.pref && (!prefectureContext || prefectureContext === '未設定'))) && (
                       <span className="text-[9px] font-bold text-stone-400 block truncate">
                         {item.city_kana ? `${item.city_kana} ` : ''}
-                        {item.pref ? `（${item.pref}）` : ''}
+                        {item.pref && (!prefectureContext || prefectureContext === '未設定')
+                          ? `（${item.pref}）`
+                          : ''}
                       </span>
-                    </div>
+                    )}
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
-                    選択
-                  </span>
-                </button>
-              ))
-            )}
+                </div>
+                <span className="px-2 py-0.5 rounded-md bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
+                  選択
+                </span>
+              </button>
+            ))}
           </div>
 
           <div className="px-2.5 py-1 bg-stone-50 border-t border-stone-100">
@@ -3953,19 +3741,15 @@ function MunicipalitySearchInput({
   );
 }
 
-// 駅データAPI（HeartRails Express: https://express.heartrails.com/api.html）を使ったインライン候補展開型の実在駅検索コンポーネント
-// ・ひらがな（例: とうきょう / しんじゅく / うめだ）、カタカナ、ローマ字、漢字のすべてで全国の実在駅を検索可能
-// ・市区町村（例: 新宿区・松本市）が選択されている場合、その市区町村内の実在駅のみで厳密にフィルタリング
-// ・allowCustomText=false（最寄り駅設定など）のときは、必ずAPIで検証された実在駅のみを選択可能
+// 駅データAPI（HeartRails Express: https://express.heartrails.com/api.html）を使ったインライン候補展開型の駅検索コンポーネント
+// （初回登録・プロフィール編集・出発地点設定・予定追加/編集のすべてで共通利用可能）
 function StationSearchInput({
   value,
   onChange,
   cityContext = '',
   prefectureContext = '',
   onSelectPrefecture,
-  onSelectCity,
-  onValidityChange,
-  placeholder = '駅名を検索 (例: 東京駅 / 新宿駅 / 梅田駅)',
+  placeholder = '駅名を入力 (例: 東京 / 横浜 / 梅田 / 博多)',
   allowCustomText = false,
   compact = false
 }) {
@@ -3973,19 +3757,10 @@ function StationSearchInput({
   const [isOpen, setIsOpen] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [cityFilterInfo, setCityFilterInfo] = useState(null);
-  const [verifiedStationNames, setVerifiedStationNames] = useState(() => {
-    const initialSet = new Set(MOCK_STATIONS.map((s) => s.name.split(' (')[0]));
-    if (value && value.trim().endsWith('駅')) initialSet.add(value.trim());
-    return initialSet;
-  });
   const wrapperRef = useRef(null);
 
   useEffect(() => {
     setQuery(value || '');
-    if (value && value.trim().endsWith('駅')) {
-      setVerifiedStationNames((prev) => new Set([...prev, value.trim()]));
-    }
   }, [value]);
 
   // 枠外タップで候補リストを閉じる
@@ -4003,269 +3778,84 @@ function StationSearchInput({
     };
   }, []);
 
-  // 市区町村（cityContext）が指定されている場合、その市区町村に存在する全駅データと町名よみがなデータを取得
+  const kanaToHira = (str) =>
+    str.replace(/[\u30a1-\u30f6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 0x60));
+
   useEffect(() => {
-    const cleanCity = (cityContext || '').replace(/（.*?）/g, '').trim();
-    if (!cleanCity) {
-      setCityFilterInfo(null);
+    if (!isOpen) return;
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
+      setSuggestions(
+        MOCK_STATIONS.slice(0, 6).map((s) => ({
+          label: s.name,
+          stationName: s.name.split(' (')[0],
+          line: (s.name.split(' (')[1] || '').replace(/\)$/, ''),
+          prefecture: ''
+        }))
+      );
       return;
     }
-    let cancelled = false;
-    setIsLoading(true);
-    fetchCityStationsAndTowns(cleanCity, prefectureContext)
-      .then((info) => {
-        if (cancelled) return;
-        setCityFilterInfo(info);
-        if (info && Array.isArray(info.stations)) {
-          const validNamesInCity = new Set(info.stations.map((s) => `${s.name}駅`));
-          setVerifiedStationNames((prev) => {
-            if (!allowCustomText) {
-              // 市区町村でフィルター中は、その市区町村内の駅のみを有効とする
-              return validNamesInCity;
-            }
-            return new Set([...prev, ...validNamesInCity]);
-          });
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [cityContext, prefectureContext, allowCustomText]);
-
-  // 現在の入力値が実在確認済みの駅（かつ市区町村指定時はその市区町村内の駅）かどうかを判定
-  const isConfirmedStation = useMemo(() => {
-    const trimmed = (query || '').trim();
-    if (!trimmed) return true; // 空欄は任意項目としてOK
-    if (allowCustomText) return true;
-    const normalized = trimmed.replace(/駅$/, '') + '駅';
-    if (cityFilterInfo && Array.isArray(cityFilterInfo.stations) && cityFilterInfo.stations.length > 0) {
-      return cityFilterInfo.stations.some((s) => `${s.name}駅` === normalized);
-    }
-    return verifiedStationNames.has(normalized) || verifiedStationNames.has(trimmed);
-  }, [query, allowCustomText, verifiedStationNames, cityFilterInfo]);
-
-  const isInvalidStationInput = Boolean((query || '').trim()) && !isConfirmedStation;
-
-  useEffect(() => {
-    if (onValidityChange) {
-      onValidityChange(!isInvalidStationInput);
-    }
-  }, [isInvalidStationInput, onValidityChange]);
-
-  useEffect(() => {
-    const trimmed = (query || '').trim();
-    const cleanCity = (cityContext || '').replace(/（.*?）/g, '').trim();
-    const hiraQuery = toHiragana(romajiToHiragana(trimmed)).replace(/えき$/, '');
-
-    let cancelled = false;
     const timer = setTimeout(async () => {
-      // ★ ケース1：市区町村（cityContext）が指定されている場合 → その市区町村に実在する駅のみで厳密にフィルタリング
-      if (cleanCity) {
-        setIsLoading(true);
-        try {
-          const info = cityFilterInfo || (await fetchCityStationsAndTowns(cleanCity, prefectureContext));
-          if (cancelled) return;
-
-          const cityStations = info?.stations || [];
-          const extraKana = info?.townKanaList || [];
-
-          // ひらがな入力された場合でも漢字の駅名にマッチさせるため、漢字変換候補を取得
-          let kanjiHints = [];
-          if (trimmed) {
-            kanjiHints = await resolveKanjiPlaceCandidates(trimmed, '駅', extraKana);
-          }
-          if (cancelled) return;
-
-          // スコア付きマッチング（「しま」と打ったときに「松本駅」が誤って混ざらないよう厳密化＆前方一致を最上位にソート）
-          const scoredStations = [];
-          cityStations.forEach((s) => {
-            if (!trimmed) {
-              scoredStations.push({ station: s, score: 10 });
-              return;
-            }
-            const nameWithSuffix = `${s.name}駅`;
-            const sReading = s.reading || '';
-            let score = 0;
-
-            if (s.name === trimmed || nameWithSuffix === trimmed) {
-              score = 100;
-            } else if (s.name.startsWith(trimmed)) {
-              score = 95;
-            } else if (sReading && hiraQuery && sReading === hiraQuery) {
-              score = 92;
-            } else if (sReading && hiraQuery && sReading.startsWith(hiraQuery)) {
-              score = 88;
-            } else if (kanjiHints.some((k) => s.name === k || s.name.startsWith(k))) {
-              score = 82;
-            } else if (s.name.includes(trimmed)) {
-              score = 65;
-            } else if (sReading && hiraQuery.length >= 2 && sReading.includes(hiraQuery)) {
-              score = 55;
-            } else if (kanjiHints.some((k) => k.length >= 2 && s.name.includes(k))) {
-              score = 45;
-            }
-
-            if (score > 0) {
-              scoredStations.push({ station: s, score });
-            }
-          });
-
-          scoredStations.sort((a, b) => b.score - a.score);
-
-          const seen = new Set();
-          const formatted = [];
-          scoredStations.forEach(({ station: s }) => {
-            const fullStationName = `${s.name}駅`;
-            const key = `${s.name}_${s.line}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              formatted.push({
-                label: `${fullStationName} (${s.line} / ${cleanCity})`,
-                stationName: fullStationName,
-                reading: s.reading || '',
-                line: s.line,
-                prefecture: s.prefecture,
-                city: cleanCity,
-                postal: s.postal || ''
-              });
-            }
-          });
-
-          setSuggestions(formatted.slice(0, 30));
-        } finally {
-          if (!cancelled) setIsLoading(false);
-        }
-        return;
-      }
-
-      // ★ ケース2：市区町村が未選択の場合 → 全国（または選択中の都道府県）からひらがな・漢字で実在駅を検索
-      const effectiveSeed =
-        trimmed ||
-        (prefectureContext && prefectureContext !== '未設定'
-          ? prefectureContext.replace(/(都|道|府|県)$/, '')
-          : '');
-
-      if (!effectiveSeed) {
-        setSuggestions(
-          MOCK_STATIONS.slice(0, 8).map((s) => ({
-            label: s.name,
-            stationName: s.name.split(' (')[0],
-            line: (s.name.split(' (')[1] || '').replace(/\)$/, ''),
-            prefecture: ''
-          }))
-        );
-        return;
-      }
-
       setIsLoading(true);
       try {
-        const kanjiCandidates = await resolveKanjiPlaceCandidates(effectiveSeed, '駅');
-        const searchWords =
-          kanjiCandidates.length > 0
-            ? kanjiCandidates
-            : [effectiveSeed.replace(/駅$/, '')];
+        const searchWord = trimmed.replace(/駅$/, '');
+        // HeartRails Express 駅名検索API (getStations)
+        const apiUrl = `https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(searchWord)}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json();
 
-        const responses = await Promise.all(
-          searchWords.slice(0, 4).map(async (word) => {
-            try {
-              const apiUrl = `https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(
-                word
-              )}`;
-              const res = await fetch(apiUrl);
-              const data = await res.json();
-              return data?.response?.station || [];
-            } catch (e) {
-              return [];
-            }
-          })
-        );
-
-        if (cancelled) return;
-        let stations = responses.flat();
-
-        // 都道府県が選択されている場合はその都道府県の駅に絞り込む
+        let stations = data?.response?.station || [];
+        // 都道府県が指定されていて一致する候補がある場合は優先表示
         if (stations.length > 0 && prefectureContext && prefectureContext !== '未設定') {
-          stations = stations.filter((s) => s.prefecture === prefectureContext);
+          const prefMatched = stations.filter((s) => s.prefecture === prefectureContext);
+          const others = stations.filter((s) => s.prefecture !== prefectureContext);
+          stations = [...prefMatched, ...others];
         }
 
         if (stations.length > 0) {
           const seen = new Set();
           const formatted = [];
-          const newVerified = new Set(verifiedStationNames);
-
-          // 入力されたよみがな・漢字に対して前方一致する駅を最優先にソート
-          const scoredList = stations.map((s) => {
-            const matchedReadingObj = HIRAGANA_TO_KANJI_PLACE_MAP.find((d) => d.kanji === s.name);
-            const reading = matchedReadingObj ? matchedReadingObj.kana : '';
-            let score = 10;
-            if (trimmed) {
-              if (s.name === trimmed || `${s.name}駅` === trimmed) score = 100;
-              else if (s.name.startsWith(trimmed)) score = 90;
-              else if (reading && hiraQuery && reading.startsWith(hiraQuery)) score = 85;
-              else if (kanjiCandidates.some((k) => s.name === k || s.name.startsWith(k))) score = 80;
-              else if (s.name.includes(trimmed)) score = 50;
-            }
-            return { s, reading, score };
-          });
-          scoredList.sort((a, b) => b.score - a.score);
-
-          scoredList.forEach(({ s, reading }) => {
-            const fullStationName = `${s.name}駅`;
-            newVerified.add(fullStationName);
+          stations.forEach((s) => {
             const key = `${s.name}_${s.line}_${s.prefecture}`;
             if (!seen.has(key)) {
               seen.add(key);
               formatted.push({
-                label: `${fullStationName} (${s.line} / ${s.prefecture}${s.prev ? `・隣:${s.prev}` : ''})`,
-                stationName: fullStationName,
-                reading,
+                label: `${s.name}駅 (${s.line} / ${s.prefecture}${s.prev ? `・隣:${s.prev}` : ''})`,
+                stationName: `${s.name}駅`,
                 line: s.line,
-                prefecture: s.prefecture,
-                postal: s.postal || ''
+                prefecture: s.prefecture
               });
             }
           });
-
-          setVerifiedStationNames(newVerified);
-
-          if (allowCustomText && trimmed) {
+          if (allowCustomText) {
             formatted.push({
-              label: `「${trimmed}」をスポット名として設定`,
+              label: `「${trimmed}」をそのまま場所として設定`,
               stationName: trimmed,
-              line: 'スポット・施設名',
+              line: '自由入力スポット',
               prefecture: '',
               isRawText: true
             });
           }
-          setSuggestions(formatted.slice(0, 25));
+          setSuggestions(formatted.slice(0, 15));
         } else {
-          fallbackSearch(trimmed || effectiveSeed);
+          fallbackSearch(trimmed);
         }
       } catch (error) {
-        if (!cancelled) fallbackSearch(trimmed || effectiveSeed);
+        fallbackSearch(trimmed);
       } finally {
-        if (!cancelled) setIsLoading(false);
+        setIsLoading(false);
       }
     }, 180);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query, cityContext, prefectureContext, allowCustomText, cityFilterInfo]);
+    return () => clearTimeout(timer);
+  }, [query, isOpen, prefectureContext, cityContext, allowCustomText]);
 
   const fallbackSearch = (val) => {
-    const lowerVal = (val || '').toLowerCase();
-    const hiraVal = toHiragana(romajiToHiragana(lowerVal)).replace(/えき$/, '');
+    const lowerVal = val.toLowerCase();
+    const hiraVal = kanaToHira(lowerVal);
     const localMatches = MOCK_STATIONS.filter(
-      (s) =>
-        s.name.includes(val) ||
-        s.yomi.includes(lowerVal) ||
-        (hiraVal && s.yomi.includes(hiraVal))
+      (s) => s.name.includes(val) || s.yomi.includes(lowerVal) || s.yomi.includes(hiraVal)
     ).map((s) => ({
       label: s.name,
       stationName: s.name.split(' (')[0],
@@ -4273,50 +3863,25 @@ function StationSearchInput({
       prefecture: ''
     }));
 
-    if (allowCustomText && val) {
-      setSuggestions([
-        ...localMatches,
-        {
-          label: `「${val}」をスポット名として設定`,
-          stationName: val,
-          line: 'スポット・施設名',
-          prefecture: '',
-          isRawText: true
-        }
-      ]);
-    } else {
-      // 最寄り駅モード（allowCustomText=false）では実在しない駅名の直接登録は許可しない
-      setSuggestions(localMatches);
-    }
+    const cleanStation = allowCustomText ? val : `${val.replace(/駅$/, '')}駅`;
+    const directItem = {
+      label: `${cleanStation} (そのまま設定)`,
+      stationName: cleanStation,
+      line: '直接入力',
+      prefecture: '',
+      isRawText: allowCustomText
+    };
+    setSuggestions(localMatches.length > 0 ? [...localMatches, directItem] : [directItem]);
   };
 
-  const handleSelect = async (item) => {
+  const handleSelect = (item) => {
     const baseName = item.stationName || item.label.split(' (')[0];
     const cleanName = item.isRawText ? baseName : baseName.replace(/駅$/, '') + '駅';
-    setVerifiedStationNames((prev) => new Set([...prev, cleanName]));
     setQuery(cleanName);
     onChange(cleanName);
-
-    // 駅が選択されたらその駅の都道府県も自動反映
-    if (item.prefecture && onSelectPrefecture) {
+    if (item.prefecture && (!prefectureContext || prefectureContext === '未設定') && onSelectPrefecture) {
       onSelectPrefecture(item.prefecture);
     }
-    // 郵便番号がある場合はHeartRails Geo APIから市区町村も自動補完可能
-    if (item.postal && onSelectCity && !cityContext) {
-      try {
-        const res = await fetch(
-          `https://geoapi.heartrails.com/api/json?method=searchByPostal&postal=${encodeURIComponent(
-            item.postal
-          )}`
-        );
-        const data = await res.json();
-        const loc = data?.response?.location?.[0];
-        if (loc?.city) {
-          onSelectCity(loc.city);
-        }
-      } catch (e) {}
-    }
-
     setIsOpen(false);
   };
 
@@ -4329,29 +3894,9 @@ function StationSearchInput({
           type="text"
           value={query}
           onFocus={() => setIsOpen(true)}
-          onBlur={() => {
-            // 候補が1件以上あり、入力文字が実在駅名と完全一致している場合は自動で「〇〇駅」に確定
-            setTimeout(() => {
-              const trimmed = (query || '').trim();
-              if (!trimmed || allowCustomText) return;
-              const normalized = trimmed.replace(/駅$/, '') + '駅';
-              const matched = suggestions.find(
-                (s) => !s.isRawText && (s.stationName === normalized || s.stationName === trimmed)
-              );
-              if (matched) {
-                setVerifiedStationNames((prev) => new Set([...prev, matched.stationName]));
-                setQuery(matched.stationName);
-                onChange(matched.stationName);
-                if (matched.prefecture && onSelectPrefecture) {
-                  onSelectPrefecture(matched.prefecture);
-                }
-              }
-            }, 160);
-          }}
           onChange={(e) => {
-            const nextVal = e.target.value;
-            setQuery(nextVal);
-            onChange(nextVal);
+            setQuery(e.target.value);
+            onChange(e.target.value);
             setIsOpen(true);
           }}
           onKeyDown={(e) => {
@@ -4361,13 +3906,7 @@ function StationSearchInput({
             }
           }}
           placeholder={placeholder}
-          className={`w-full ${compact ? 'py-2 text-base sm:text-xs' : 'py-2.5 text-base sm:text-sm'} pl-9 pr-14 bg-white rounded-xl border font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
-            isInvalidStationInput && !isOpen
-              ? 'border-amber-400 focus:ring-amber-400 bg-amber-50/30'
-              : query && isConfirmedStation
-              ? 'border-[#7A9D8C] focus:ring-[#7A9D8C]'
-              : 'border-stone-200 focus:border-[#7A9D8C] focus:ring-[#7A9D8C]'
-          }`}
+          className={`w-full ${compact ? 'py-2 text-xs' : 'py-2.5 text-xs sm:text-sm'} pl-9 pr-14 bg-white rounded-xl border border-stone-200 focus:border-[#7A9D8C] font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]`}
         />
         {query && (
           <button
@@ -4384,31 +3923,17 @@ function StationSearchInput({
         )}
       </div>
 
-      {/* 実在駅リストからまだ選択されていない場合のガイドメッセージ */}
-      {isInvalidStationInput && !isOpen && (
-        <p className="text-[10px] font-extrabold text-amber-700 flex items-center gap-1 pl-1">
-          <AlertCircle size={11} className="shrink-0" />
-          <span>
-            {cityContext
-              ? `「${cityContext}」内の実在する駅を候補リストから選択してください`
-              : '候補リストから実在する駅名をタップして選択してください'}
-          </span>
-        </p>
-      )}
-
-      {/* 入力欄のすぐ下にインラインで展開される実在駅候補リスト */}
+      {/* 入力欄のすぐ下にインラインで展開される候補リスト（別ページを開かずその場で選択可能） */}
       {isOpen && (
         <div className="bg-white rounded-xl border-2 border-[#7A9D8C]/60 shadow-md overflow-hidden animate-in fade-in duration-100">
           <div className="px-3 py-1.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between text-[10px] font-bold text-stone-500">
             <span className="truncate">
-              {cityContext
-                ? `${cityContext}内の実在駅候補${query.trim() ? `（「${query.trim()}」で絞り込み）` : ''}`
-                : query.trim()
-                ? `「${query.trim()}」の実在駅候補`
-                : '全国の実在駅候補'}
+              {query.trim()
+                ? `「${query.trim()}」の駅候補`
+                : '全国の駅候補（文字入力でリアルタイム検索）'}
             </span>
             <div className="flex items-center gap-2 shrink-0">
-              {isLoading && <span className="text-[#7A9D8C] animate-pulse">駅検索中...</span>}
+              {isLoading && <span className="text-[#7A9D8C] animate-pulse">検索中...</span>}
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -4420,53 +3945,36 @@ function StationSearchInput({
           </div>
 
           <div className="max-h-48 overflow-y-auto divide-y divide-stone-100">
-            {suggestions.length === 0 ? (
-              <div className="px-3 py-3 text-[11px] font-bold text-stone-400 text-center">
-                {isLoading
-                  ? '実在する駅データを検索しています...'
-                  : cityContext
-                  ? `「${cityContext}」内に該当する駅が見つかりません`
-                  : '該当する実在の駅が見つかりません'}
-              </div>
-            ) : (
-              suggestions.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelect(item)}
-                  className="w-full px-3 py-2 hover:bg-emerald-50/70 flex items-center justify-between gap-2 text-left transition-colors active:bg-emerald-100/60"
-                >
-                  <div className="min-w-0 flex items-center gap-2">
-                    <span className="text-xs shrink-0">{item.isRawText ? '📍' : '🚉'}</span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs sm:text-sm font-extrabold text-stone-800 truncate">
-                          {item.stationName}
-                        </span>
-                        {item.reading && (
-                          <span className="text-[10px] font-bold text-stone-400 shrink-0">
-                            （{item.reading}）
-                          </span>
-                        )}
-                      </div>
-                      {(item.line || item.prefecture) && (
-                        <span className="text-[10px] font-bold text-stone-500 block truncate">
-                          {item.line}
-                          {item.prefecture ? ` / ${item.prefecture}` : ''}
-                        </span>
-                      )}
-                    </div>
+            {suggestions.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSelect(item)}
+                className="w-full px-3 py-2 hover:bg-emerald-50/70 flex items-center justify-between gap-2 text-left transition-colors active:bg-emerald-100/60"
+              >
+                <div className="min-w-0 flex items-center gap-2">
+                  <span className="text-xs shrink-0">{item.isRawText ? '📍' : '🚉'}</span>
+                  <div className="min-w-0">
+                    <span className="text-xs sm:text-sm font-extrabold text-stone-800 block truncate">
+                      {item.stationName}
+                    </span>
+                    {(item.line || item.prefecture) && (
+                      <span className="text-[10px] font-bold text-stone-500 block truncate">
+                        {item.line}
+                        {item.prefecture ? ` / ${item.prefecture}` : ''}
+                      </span>
+                    )}
                   </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
-                    選択
-                  </span>
-                </button>
-              ))
-            )}
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
+                  選択
+                </span>
+              </button>
+            ))}
           </div>
 
           {/* ドロップダウン下部にもHeartRailsの公式クレジットリンクを明記 */}
-          <div className="px-3.5 py-1 bg-stone-50 border-t border-stone-100">
+          <div className="px-3 py-1 bg-stone-50 border-t border-stone-100">
             <HeartRailsCreditBadge showGeo={false} />
           </div>
         </div>
@@ -4519,49 +4027,27 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
   const [name, setName] = useState(
     initialUser?.name && initialUser.name !== 'たびたろう（開発用）' ? initialUser.name : ''
   );
+  const [nameError, setNameError] = useState(false);
   const [residence, setResidence] = useState(initialUser?.residence || '未設定');
   const [city, setCity] = useState(initialUser?.city || '');
   const [station, setStation] = useState(
     initialUser?.station && initialUser?.name !== 'たびたろう（開発用）' ? initialUser.station : ''
   );
-  const [isCityValid, setIsCityValid] = useState(true);
-  const [isStationValid, setIsStationValid] = useState(true);
-  const [locationError, setLocationError] = useState('');
   const [avatar, setAvatar] = useState(initialUser?.avatar || MALE_AVATARS[0]);
   const [customAvatar, setCustomAvatar] = useState(null);
   const [legalModalType, setLegalModalType] = useState(null);
-  const [nameError, setNameError] = useState('');
-  const nameInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const nameInputRef = useRef(null);
 
   const handleStart = (e) => {
     if (e) e.preventDefault();
     if (!name.trim()) {
-      const msg = '⚠️ ニックネームを入力してください（必須）';
-      setNameError(msg);
-      customAlert('お友達に表示されるニックネームを入力してください！');
-      if (nameInputRef.current) {
-        nameInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        nameInputRef.current.focus();
-      }
+      setNameError(true);
+      customAlert('⚠️ お友達に表示されるニックネームを入力してください！');
+      nameInputRef.current?.focus();
       return;
     }
-    setNameError('');
-
-    if (city.trim() && !isCityValid) {
-      const msg = '⚠️ 市区町村は候補リストに表示される実在の自治体から選択してください';
-      setLocationError(msg);
-      customAlert('実在する市区町村を候補リストから選択してください！');
-      return;
-    }
-    if (station.trim() && !isStationValid) {
-      const msg = '⚠️ 駅名は候補リストに表示される実在の駅から選択してください';
-      setLocationError(msg);
-      customAlert('実在する駅名を候補リストから選択してください！');
-      return;
-    }
-    setLocationError('');
-
+    setNameError(false);
     const cleanStation = station.trim() ? station.trim().replace(/駅$/, '') + '駅' : '';
     const newUser = {
       id: initialUser?.id && initialUser.id !== 'dev_user' ? initialUser.id : 'user_' + generateId(),
@@ -4722,10 +4208,14 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
           </div>
 
           {/* 2. ニックネーム入力 */}
-          <div className={`p-2.5 border rounded-2xl shrink-0 transition-colors ${nameError ? 'bg-rose-50/70 border-rose-300' : 'bg-stone-50 border-stone-200/80'}`}>
+          <div className={`p-2.5 rounded-2xl shrink-0 transition-all ${
+            nameError
+              ? 'bg-rose-50/90 border-2 border-rose-400 ring-2 ring-rose-200'
+              : 'bg-stone-50 border border-stone-200/80'
+          }`}>
             <label className="text-xs font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
               <span>② ニックネーム（友達のしおりに表示）</span>
-              <span className="text-[10px] font-extrabold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">必須</span>
+              <span className="text-[10px] font-extrabold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">必須</span>
             </label>
             <input
               ref={nameInputRef}
@@ -4733,9 +4223,9 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                if (nameError && e.target.value.trim()) setNameError('');
+                if (nameError && e.target.value.trim()) setNameError(false);
               }}
-              placeholder="例: たびたろう"
+              placeholder="例: たびたろう / おみやげ買いすぎ子 / 胃袋無限ちゃん"
               className={`w-full p-2 bg-white border rounded-xl text-base sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
                 nameError
                   ? 'border-rose-400 focus:ring-rose-400'
@@ -4743,9 +4233,9 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
               }`}
             />
             {nameError && (
-              <p className="mt-1.5 text-xs font-extrabold text-rose-600 flex items-center gap-1 pl-1 animate-in fade-in">
-                <AlertCircle size={13} className="shrink-0" />
-                <span>{nameError}</span>
+              <p className="mt-1.5 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5 animate-in fade-in">
+                <AlertCircle size={13} className="shrink-0 text-rose-500" />
+                <span>ニックネームが未入力です。お名前を入力してください！</span>
               </p>
             )}
           </div>
@@ -4770,12 +4260,8 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
             <div className="grid grid-cols-2 gap-1.5">
               <select
                 value={residence}
-                onChange={(e) => {
-                  setResidence(e.target.value);
-                  setCity('');
-                  setStation('');
-                }}
-                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-base sm:text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                onChange={(e) => setResidence(e.target.value)}
+                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
               >
                 <option value="未設定">🗾 都道府県（未選択）</option>
                 {PREFECTURES.map((p) => (
@@ -4784,51 +4270,26 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
               </select>
               <MunicipalitySearchInput
                 value={city}
-                onChange={(val) => {
-                  setCity(val);
-                  if (locationError) setLocationError('');
-                }}
+                onChange={setCity}
                 prefectureContext={residence}
                 onSelectPrefecture={(autoPref) => setResidence(autoPref)}
-                onValidityChange={setIsCityValid}
-                placeholder="市区町村 (例: 新宿区 / 横浜市)"
+                placeholder="市区町村 (例: 新宿区 / 横浜市 / 大阪市)"
               />
             </div>
 
             {/* 全国の駅名リアルタイム検索（その場のすぐ下に候補リストを展開） */}
             <StationSearchInput
               value={station}
-              onChange={(val) => {
-                setStation(val);
-                if (locationError) setLocationError('');
-              }}
+              onChange={setStation}
               cityContext={city}
               prefectureContext={residence}
               onSelectPrefecture={(autoPref) => setResidence(autoPref)}
-              onSelectCity={(autoCity) => {
-                if (!city) setCity(autoCity);
-              }}
-              onValidityChange={setIsStationValid}
-              placeholder={city ? `${city}内の駅名を検索` : '駅名を検索 (例: 東京駅 / 新宿駅 / 梅田駅)'}
             />
-
-            {locationError && (
-              <p className="text-xs font-extrabold text-rose-600 flex items-center gap-1 pl-1 animate-in fade-in">
-                <AlertCircle size={13} className="shrink-0" />
-                <span>{locationError}</span>
-              </p>
-            )}
           </div>
         </form>
 
         {/* 下部固定ボタン */}
         <div className="pt-2.5 mt-1 border-t border-stone-100 shrink-0 space-y-1.5">
-          {(nameError || locationError) && (
-            <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-extrabold flex items-center justify-center gap-1.5 animate-in fade-in">
-              <AlertCircle size={14} className="shrink-0" />
-              <span>{nameError || locationError}</span>
-            </div>
-          )}
           <button
             type="button"
             onClick={handleStart}
@@ -4984,23 +4445,63 @@ function TabitabiApp() {
     html.style.overscrollBehavior = 'none';
     body.style.overscrollBehavior = 'none';
     body.style.overflow = 'hidden';
+
+    // ★ iOS Safari / Android 等で入力欄タップ時に勝手に画面がズームされて配置が崩れる現象を防止
+    let metaViewport = document.querySelector('meta[name="viewport"]');
+    const prevViewportContent = metaViewport ? metaViewport.getAttribute('content') : null;
+    if (!metaViewport) {
+      metaViewport = document.createElement('meta');
+      metaViewport.name = 'viewport';
+      document.head.appendChild(metaViewport);
+    }
+    metaViewport.setAttribute(
+      'content',
+      'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
+    );
+
+    const styleEl = document.createElement('style');
+    styleEl.setAttribute('data-tabitabi-no-zoom', 'true');
+    styleEl.textContent = `
+      @media screen and (max-width: 768px) {
+        input, select, textarea {
+          font-size: 16px !important;
+        }
+      }
+    `;
+    document.head.appendChild(styleEl);
+
     return () => {
       html.style.overscrollBehavior = prevHtmlOverscroll;
       body.style.overscrollBehavior = prevBodyOverscroll;
       body.style.overflow = prevBodyOverflow;
+      if (metaViewport && prevViewportContent) {
+        metaViewport.setAttribute('content', prevViewportContent);
+      }
+      if (styleEl.parentNode) {
+        styleEl.parentNode.removeChild(styleEl);
+      }
     };
   }, []);
 
   if (!currentUser) {
     const prevSaved = sanitizeUser(safeParse('tabitabi_user', null));
     return (
-      <BetaWelcomeSetupScreen
-        initialUser={prevSaved}
-        onComplete={(newUser) => {
-          setCurrentUser(newUser);
-          customAlert(`ようこそ、${newUser.name}さん！🎉`);
-        }}
-      />
+      <>
+        <BetaWelcomeSetupScreen
+          initialUser={prevSaved}
+          onComplete={(newUser) => {
+            setCurrentUser(newUser);
+            customAlert(`ようこそ、${newUser.name}さん！🎉`);
+          }}
+        />
+        {toastMsg && (
+          <div className="fixed top-4 inset-x-0 z-[500] flex justify-center px-4 pointer-events-none animate-in fade-in slide-in-from-top-2">
+            <div className="bg-stone-900/95 text-white text-xs font-extrabold px-4 py-3 rounded-2xl shadow-xl border border-white/15 flex items-center gap-2 max-w-sm text-center">
+              <span>{toastMsg}</span>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -5164,6 +4665,14 @@ function TabitabiApp() {
             <button className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-colors"><X size={22} /></button>
             <div className="max-w-md w-full max-h-[80vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
               <img src={enlargedImageUrl} alt="Enlarged view" className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl animate-in zoom-in-95" />
+            </div>
+          </div>
+        )}
+
+        {toastMsg && (
+          <div className="fixed top-4 inset-x-0 z-[500] flex justify-center px-4 pointer-events-none animate-in fade-in slide-in-from-top-2">
+            <div className="bg-stone-900/95 text-white text-xs font-extrabold px-4 py-3 rounded-2xl shadow-xl border border-white/15 flex items-center gap-2 max-w-sm text-center">
+              <span>{toastMsg}</span>
             </div>
           </div>
         )}
@@ -6149,39 +5658,21 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 compact
               />
 
-              {/* 出発日 ＆ 最終日（2列でゆったり見やすく） */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="min-w-0">
-                  <label className="text-xs font-extrabold text-stone-600 mb-1 flex items-center gap-1 pl-1">
-                    <Calendar size={12} className="text-[#7A9D8C]" /> 出発日
-                  </label>
-                  <input
-                    type="date"
-                    value={tripData.startDate}
-                    onChange={e => {
-                      const nextStart = e.target.value;
-                      setTripData(prev => ({
-                        ...prev,
-                        startDate: nextStart,
-                        endDate: prev.endDate < nextStart ? nextStart : prev.endDate
-                      }));
-                    }}
-                    className="w-full min-w-0 p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label className="text-xs font-extrabold text-stone-600 mb-1 flex items-center gap-1 pl-1">
-                    <Calendar size={12} className="text-[#7A9D8C]" /> 最終日
-                  </label>
-                  <input
-                    type="date"
-                    value={tripData.endDate}
-                    min={tripData.startDate}
-                    onChange={e => setTripData({ ...tripData, endDate: e.target.value })}
-                    className="w-full min-w-0 p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                  />
-                </div>
-              </div>
+              {/* 出発日 ＆ 最終日（ドラムロール式ホイール選択） */}
+              <WheelDateRangePicker
+                startDate={tripData.startDate}
+                endDate={tripData.endDate}
+                onChangeStart={(nextStart) =>
+                  setTripData((prev) => ({
+                    ...prev,
+                    startDate: nextStart,
+                    endDate: prev.endDate < nextStart ? nextStart : prev.endDate
+                  }))
+                }
+                onChangeEnd={(nextEnd) =>
+                  setTripData((prev) => ({ ...prev, endDate: nextEnd }))
+                }
+              />
 
               {/* 1人あたり予算（クイック選択ピル付きで入力しやすく） */}
               <div className="p-2.5 bg-stone-50/90 border border-stone-200/90 rounded-2xl space-y-2">
@@ -6951,7 +6442,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="例: たびたろう"
+                  placeholder="例: たびたろう / おみやげ買いすぎ子 / 胃袋無限ちゃん"
                   className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                 />
               </div>
@@ -8433,22 +7924,22 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               })}
             </div>
 
-            {/* 右側：右端に固定配置される「持ち物」「予算」タブ */}
-            <div className="flex items-end gap-1 shrink-0 ml-auto pl-2 border-l border-stone-200/80">
+            {/* 右側：右端に固定配置される「持ち物」「予算」タブ（スマホで日付タブを圧迫しないようコンパクト化） */}
+            <div className="flex items-end gap-0.5 shrink-0 ml-auto pl-1.5 border-l border-stone-200/80">
               {!isReadOnly && (
                 <button
                   type="button"
                   onClick={() => setShioriSubTab('packing')}
-                  className={`py-1.5 px-3 whitespace-nowrap border-b-2 flex items-center gap-1.5 rounded-t-xl transition-all ${
+                  className={`py-1.5 px-2 sm:px-3 whitespace-nowrap border-b-2 flex items-center gap-1 rounded-t-xl transition-all ${
                     shioriSubTab === 'packing'
                       ? 'border-[#7A9D8C] bg-[#7A9D8C]/10 text-[#557465]'
                       : 'border-transparent text-stone-500 hover:bg-stone-50'
                   }`}
                 >
-                  <CheckCircle2 size={13} className={shioriSubTab === 'packing' ? 'text-[#7A9D8C]' : 'text-stone-400'} />
-                  <span className="text-xs font-bold">持ち物</span>
+                  <CheckCircle2 size={12} className={shioriSubTab === 'packing' ? 'text-[#7A9D8C]' : 'text-stone-400'} />
+                  <span className="text-[11px] sm:text-xs font-extrabold">持ち物</span>
                   {myVisiblePackingItems.length > 0 && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                    <span className={`text-[9px] px-1 py-0.2 rounded-full font-extrabold ${
                       shioriSubTab === 'packing' ? 'bg-[#7A9D8C] text-white' : 'bg-stone-100 text-stone-500'
                     }`}>
                       {checkedPackingCount}/{myVisiblePackingItems.length}
@@ -8460,14 +7951,14 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               <button
                 type="button"
                 onClick={() => setShioriSubTab('budget')}
-                className={`py-1.5 px-3 whitespace-nowrap border-b-2 flex items-center gap-1.5 rounded-t-xl transition-all ${
+                className={`py-1.5 px-2 sm:px-3 whitespace-nowrap border-b-2 flex items-center gap-1 rounded-t-xl transition-all ${
                   shioriSubTab === 'budget'
                     ? 'border-[#7A9D8C] bg-[#7A9D8C]/10 text-[#557465]'
                     : 'border-transparent text-stone-500 hover:bg-stone-50'
                 }`}
               >
-                <Banknote size={14} className={shioriSubTab === 'budget' ? 'text-[#7A9D8C]' : 'text-stone-400'} />
-                <span className="text-xs font-bold">予算</span>
+                <Banknote size={13} className={shioriSubTab === 'budget' ? 'text-[#7A9D8C]' : 'text-stone-400'} />
+                <span className="text-[11px] sm:text-xs font-extrabold">予算</span>
               </button>
             </div>
           </div>
@@ -8581,31 +8072,16 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
                   className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-stone-400 block mb-1">出発日</label>
-                  <input
-                    type="date"
-                    value={editStartDate}
-                    onChange={e => {
-                      const nextStart = e.target.value;
-                      setEditStartDate(nextStart);
-                      if (editEndDate < nextStart) setEditEndDate(nextStart);
-                    }}
-                    className="w-full p-2 bg-white border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-stone-400 block mb-1">最終日</label>
-                  <input
-                    type="date"
-                    value={editEndDate}
-                    min={editStartDate}
-                    onChange={e => setEditEndDate(e.target.value)}
-                    className="w-full p-2 bg-white border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                  />
-                </div>
-              </div>
+              <WheelDateRangePicker
+                startDate={editStartDate}
+                endDate={editEndDate}
+                onChangeStart={(nextStart) => {
+                  setEditStartDate(nextStart);
+                  if (editEndDate < nextStart) setEditEndDate(nextStart);
+                }}
+                onChangeEnd={(nextEnd) => setEditEndDate(nextEnd)}
+                compact
+              />
               <button
                 type="button"
                 onClick={handleSaveTripInfo}
@@ -10322,13 +9798,31 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-stone-400 block mb-1">出発日</label>
-                    <input
-                      type="date"
-                      value={newStartDate}
-                      onChange={e => setNewStartDate(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                    />
+                    <label className="text-[10px] font-bold text-stone-400 block mb-1">日程（出発日・最終日）</label>
+                    {(() => {
+                      const parseSafe = (s) => {
+                        const d = new Date(s || getTodayString());
+                        return isNaN(d.getTime()) ? new Date(getTodayString()) : d;
+                      };
+                      const origStart = parseSafe(sourceData?.startDate || getTodayString());
+                      const origEnd = parseSafe(sourceData?.endDate || sourceData?.startDate || getTodayString());
+                      const diffDays = type === 'trip' ? Math.max(0, Math.round((origEnd - origStart) / 86400000)) : 0;
+                      const calcEnd = new Date(parseSafe(newStartDate));
+                      calcEnd.setDate(calcEnd.getDate() + diffDays);
+                      const copyEndDateStr = calcEnd.toISOString().split('T')[0];
+
+                      return (
+                        <WheelDateRangePicker
+                          startDate={newStartDate}
+                          endDate={copyEndDateStr}
+                          onChangeStart={(nextStart) => setNewStartDate(nextStart)}
+                          onChangeEnd={(nextEnd) => {
+                            if (nextEnd < newStartDate) setNewStartDate(nextEnd);
+                          }}
+                          compact
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -10786,10 +10280,10 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                     />
                   </div>
 
-                  {/* 予定間の「＋」ボタンを押した時だけ展開されるインライン追加フォーム */}
+                  {/* 予定間の「＋」ボタンを押した時だけ展開されるインライン追加フォーム（スマホでは横幅いっぱいに広げて入力しやすく表示） */}
                   {canInsertAfter && insertIndex === idx && (
-                    <div className="pl-[56px] py-1 relative animate-in fade-in slide-in-from-top-2">
-                      <div className="absolute left-[43px] top-5 w-2.5 h-2.5 rounded-full bg-[#7A9D8C] ring-4 ring-[#F4F7F5]" />
+                    <div className="pl-0 sm:pl-[56px] py-1.5 relative z-20 animate-in fade-in slide-in-from-top-2">
+                      <div className="hidden sm:block absolute left-[43px] top-5 w-2.5 h-2.5 rounded-full bg-[#7A9D8C] ring-4 ring-[#F4F7F5]" />
                       <InlineEventForm
                         onSave={(newEv) => {
                           updateTrip({ ...trip, events: [...(trip.events || []), newEv] });
@@ -10819,8 +10313,8 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
             })
           )}
           {showAddForm && !isReadOnly && (
-            <div className="pl-[56px] relative animate-in fade-in slide-in-from-top-2">
-              <div className="absolute left-[43px] top-5 w-2.5 h-2.5 rounded-full bg-[#7A9D8C] ring-4 ring-[#F4F7F5]" />
+            <div className="pl-0 sm:pl-[56px] relative z-20 animate-in fade-in slide-in-from-top-2">
+              <div className="hidden sm:block absolute left-[43px] top-5 w-2.5 h-2.5 rounded-full bg-[#7A9D8C] ring-4 ring-[#F4F7F5]" />
               <InlineEventForm
                 onSave={(e) => {
                   updateTrip({ ...trip, events: [...(trip.events || []), e] });
@@ -10847,7 +10341,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
       </div>
 
       {!isReadOnly && !showAddForm && (
-        <div className="mt-3.5 pl-[56px] space-y-2">
+        <div className="mt-3.5 pl-0 sm:pl-[56px] space-y-2">
           {/* メイン：自分で予定を追加するボタン */}
           <button
             type="button"
@@ -11577,10 +11071,8 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
         </div>
       )}
 
-      <div
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        className="flex gap-1.5 overflow-x-auto no-scrollbar [&::-webkit-scrollbar]:hidden pb-0.5"
-      >
+      {/* カテゴリ選択（5つすべてがスマホ画面幅にピタッと収まる5列グリッド） */}
+      <div className="grid grid-cols-5 gap-1">
         {QUICK_TAGS.map(tag => {
           const TagIcon = tag.icon;
           const active = type === tag.id;
@@ -11589,66 +11081,69 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
               key={tag.id}
               type="button"
               onClick={() => setType(tag.id)}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 shrink-0 border transition-all ${
+              className={`py-2 px-1 rounded-xl text-[11px] font-extrabold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 border transition-all whitespace-nowrap ${
                 active
-                  ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                  ? 'bg-[#7A9D8C] text-white border-[#7A9D8C] shadow-2xs'
                   : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
               }`}
             >
-              <TagIcon size={12} /> {tag.label}
+              <TagIcon size={13} className="shrink-0" />
+              <span>{tag.label}</span>
             </button>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div>
-          <label className="text-[10px] font-bold text-stone-400 block mb-0.5">時間</label>
+      {/* 1段目：時間 ＆ 1人あたり予算（iOS Safariで時間枠が隣の入力欄と重ならないようゆとりある2列配置） */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="min-w-0">
+          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">時間</label>
           <input
             type="time"
             value={time}
             onChange={e => setTime(e.target.value)}
-            className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+            className="w-full min-w-0 h-10 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] appearance-none"
           />
         </div>
-        <div className="col-span-2">
-          <label className="text-[10px] font-bold text-stone-400 block mb-0.5">予定のタイトル</label>
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="例: カフェでひと休み"
-            className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[10px] font-bold text-stone-400 block mb-0.5">場所・駅・スポット名（駅名サジェスト対応）</label>
-          <StationSearchInput
-            value={location}
-            onChange={(val) => setLocation(val)}
-            prefectureContext={trip.destination}
-            placeholder="例: 箱根湯本駅 / 嵐山カフェ"
-            allowCustomText
-            compact
-          />
-        </div>
-        <div>
-          <label className="text-[10px] font-bold text-stone-400 block mb-0.5">1人あたり予算 (円)</label>
+        <div className="min-w-0">
+          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">1人あたり予算 (円)</label>
           <input
             type="number"
+            inputMode="numeric"
             value={cost}
             onChange={e => setCost(e.target.value)}
             placeholder="例: 1500"
-            className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+            className="w-full min-w-0 h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
           />
         </div>
       </div>
 
-      {/* ★ 個別の予定ごとの出発地点＆移動手段（Yahoo!ショッピングの配送先選択風に切り替え可能） */}
-      <div className="space-y-1.5">
+      {/* 2段目：予定のタイトル（横幅100%でゆったり入力） */}
+      <div>
+        <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">予定のタイトル</label>
+        <input
+          type="text"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="例: カフェでひと休み / 恐竜博物館見学"
+          className="w-full h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+        />
+      </div>
+
+      {/* 3段目：場所・駅・スポット名（横幅100%で文字切れなし） */}
+      <div>
+        <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">場所・駅・スポット名</label>
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="例: 福井県立恐竜博物館 / 芦原温泉駅"
+          className="w-full h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+        />
+      </div>
+
+      {/* ★ 個別の予定ごとの出発地点＆移動手段（スマホで見やすいレイアウト） */}
+      <div className="space-y-2">
         <DepartureSelectorBox
           user={currentUser}
           value={departureOrigin}
@@ -11660,19 +11155,20 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
           label="この予定の出発地点（任意）"
           compact
         />
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
+        <div className="grid grid-cols-3 gap-1.5">
           {TRANSPORT_METHODS.map(m => (
             <button
               key={m.id}
               type="button"
               onClick={() => setTransportMethod(m.id)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all truncate ${
+              className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold border transition-all whitespace-nowrap flex items-center justify-center gap-1 ${
                 transportMethod === m.id
-                  ? 'bg-[#5E8473] text-white border-[#5E8473]'
+                  ? 'bg-[#5E8473] text-white border-[#5E8473] shadow-2xs'
                   : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
               }`}
             >
-              {m.label}
+              <span>{m.label.split(' ')[0]}</span>
+              <span>{m.short}</span>
             </button>
           ))}
         </div>
@@ -12288,10 +11784,7 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
               </button>
             </div>
 
-            <div
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-              className="flex gap-1.5 overflow-x-auto no-scrollbar [&::-webkit-scrollbar]:hidden pb-0.5"
-            >
+            <div className="grid grid-cols-5 gap-1">
               {QUICK_TAGS.map(tag => {
                 const TIcon = tag.icon;
                 const active = editType === tag.id;
@@ -12300,62 +11793,62 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                     key={tag.id}
                     type="button"
                     onClick={() => setEditType(tag.id)}
-                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 shrink-0 border transition-all ${
+                    className={`py-1.5 px-1 rounded-xl text-[10px] font-extrabold flex flex-col sm:flex-row items-center justify-center gap-0.5 border transition-all whitespace-nowrap ${
                       active
                         ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
                         : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
                     }`}
                   >
-                    <TIcon size={12} /> {tag.label}
+                    <TIcon size={12} />
+                    <span>{tag.label}</span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0">
                 <label className="text-[10px] font-bold text-stone-400 block mb-0.5">時間</label>
                 <input
                   type="time"
                   value={editTime}
                   onChange={e => setEditTime(e.target.value)}
-                  className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  className="w-full min-w-0 h-9 px-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] appearance-none"
                 />
               </div>
-              <div className="col-span-2">
-                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">タイトル</label>
+              <div className="min-w-0">
+                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">1人あたり予算 (円)</label>
                 <input
-                  type="text"
-                  value={editTitle}
-                  onChange={e => setEditTitle(e.target.value)}
-                  placeholder="予定のタイトル"
-                  className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  type="number"
+                  inputMode="numeric"
+                  value={editCost}
+                  onChange={e => setEditCost(e.target.value)}
+                  placeholder="0"
+                  className="w-full min-w-0 h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">場所・駅・店名（駅名サジェスト対応）</label>
-                <StationSearchInput
-                  value={editLocation}
-                  onChange={(val) => setEditLocation(val)}
-                  prefectureContext={trip.destination}
-                  placeholder="例: 城崎温泉駅 / カフェ"
-                  allowCustomText
-                  compact
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">1人あたり予算 (円)</label>
-                <input
-                  type="number"
-                  value={editCost}
-                  onChange={e => setEditCost(e.target.value)}
-                  placeholder="0"
-                  className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                />
-              </div>
+            <div>
+              <label className="text-[10px] font-bold text-stone-400 block mb-0.5">予定のタイトル</label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                placeholder="予定のタイトル"
+                className="w-full h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-stone-400 block mb-0.5">場所・駅・スポット名</label>
+              <input
+                type="text"
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+                placeholder="例: 福井県立恐竜博物館 / 駅名"
+                className="w-full h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+              />
             </div>
 
             {/* 編集時のGoogleマップピン指定セクション */}
@@ -13722,32 +13215,47 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="min-w-0">
-                      <label className="text-[11px] font-extrabold text-stone-600 block mb-1 pl-0.5">📅 出発日</label>
-                      <input
-                        type="date"
-                        value={startDate}
-                        onChange={e => setStartDate(e.target.value)}
-                        className="w-full min-w-0 px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <label className="text-[11px] font-extrabold text-stone-600 block mb-1 pl-0.5">🗓️ 旅行日数</label>
-                      <select
-                        value={days}
-                        onChange={e => setDays(Number(e.target.value))}
-                        className="w-full min-w-0 px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                      >
-                        <option value={1}>日帰り (1日)</option>
-                        <option value={2}>1泊2日</option>
-                        <option value={3}>2泊3日</option>
-                        <option value={4}>3泊4日</option>
-                        <option value={5}>4泊5日</option>
-                        <option value={7}>1週間 (7日間)</option>
-                      </select>
-                    </div>
-                  </div>
+                  {/* 出発日・最終日（ドラムロール式ホイール選択・日数とも自動連動） */}
+                  {(() => {
+                    const baseParts = (startDate || getTodayString()).split('-').map(Number);
+                    const startDt =
+                      baseParts.length === 3 && !isNaN(baseParts[0])
+                        ? new Date(baseParts[0], baseParts[1] - 1, baseParts[2])
+                        : new Date();
+                    const endDt = new Date(
+                      startDt.getFullYear(),
+                      startDt.getMonth(),
+                      startDt.getDate() + Math.max(0, days - 1)
+                    );
+                    const computedEndStr = `${endDt.getFullYear()}-${String(
+                      endDt.getMonth() + 1
+                    ).padStart(2, '0')}-${String(endDt.getDate()).padStart(2, '0')}`;
+
+                    return (
+                      <div className="space-y-1.5">
+                        <WheelDateRangePicker
+                          startDate={startDate}
+                          endDate={computedEndStr}
+                          onChangeStart={(nextStart) => setStartDate(nextStart)}
+                          onChangeEnd={(nextEnd) => {
+                            const sParts = (startDate || getTodayString()).split('-').map(Number);
+                            const eParts = (nextEnd || startDate).split('-').map(Number);
+                            const sDate = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+                            const eDate = new Date(eParts[0], eParts[1] - 1, eParts[2]);
+                            const diff = Math.round((eDate - sDate) / 86400000) + 1;
+                            setDays(Math.max(1, Math.min(14, diff)));
+                          }}
+                          compact
+                        />
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] font-bold text-stone-400">🗓️ 旅行日数</span>
+                          <span className="text-[11px] font-extrabold text-[#4A6B5D] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full">
+                            {days <= 1 ? '日帰り (1日)' : `${days - 1}泊${days}日`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* 3段目：移動手段・重視スタイル（プルダウン）＋ 1人あたり予算（5,000円スタートの可愛いスライダーカード） */}
@@ -14260,30 +13768,39 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               {/* 展開時の詳細メニュー（日付・日数・誰と行く？・1人予算目安） */}
               {isChatConfigOpen && (
                 <div className="px-2.5 pb-2.5 pt-1 border-t border-stone-200/60 space-y-1.5 animate-in fade-in duration-150">
-                  {/* 1. 出発日 ＆ 日数 */}
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-stone-200">
-                      <Calendar size={12} className="text-[#7A9D8C] shrink-0" />
-                      <input
-                        type="date"
-                        value={startDate}
-                        onChange={e => setStartDate(e.target.value)}
-                        className="w-full text-[11px] font-extrabold text-stone-800 focus:outline-none bg-transparent"
+                  {/* 1. 出発日 ＆ 最終日（ドラムロール式ホイール選択） */}
+                  {(() => {
+                    const baseParts = (startDate || getTodayString()).split('-').map(Number);
+                    const startDt =
+                      baseParts.length === 3 && !isNaN(baseParts[0])
+                        ? new Date(baseParts[0], baseParts[1] - 1, baseParts[2])
+                        : new Date();
+                    const endDt = new Date(
+                      startDt.getFullYear(),
+                      startDt.getMonth(),
+                      startDt.getDate() + Math.max(0, days - 1)
+                    );
+                    const computedEndStr = `${endDt.getFullYear()}-${String(
+                      endDt.getMonth() + 1
+                    ).padStart(2, '0')}-${String(endDt.getDate()).padStart(2, '0')}`;
+
+                    return (
+                      <WheelDateRangePicker
+                        startDate={startDate}
+                        endDate={computedEndStr}
+                        onChangeStart={(nextStart) => setStartDate(nextStart)}
+                        onChangeEnd={(nextEnd) => {
+                          const sParts = (startDate || getTodayString()).split('-').map(Number);
+                          const eParts = (nextEnd || startDate).split('-').map(Number);
+                          const sDate = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+                          const eDate = new Date(eParts[0], eParts[1] - 1, eParts[2]);
+                          const diff = Math.round((eDate - sDate) / 86400000) + 1;
+                          setDays(Math.max(1, Math.min(14, diff)));
+                        }}
+                        compact
                       />
-                    </div>
-                    <select
-                      value={days}
-                      onChange={e => setDays(Number(e.target.value))}
-                      className="px-2 py-1 bg-white border border-stone-200 rounded-lg text-[11px] font-extrabold text-stone-800 focus:outline-none"
-                    >
-                      <option value={1}>🗓️ 日帰り (1日)</option>
-                      <option value={2}>🗓️ 1泊2日</option>
-                      <option value={3}>🗓️ 2泊3日</option>
-                      <option value={4}>🗓️ 3泊4日</option>
-                      <option value={5}>🗓️ 4泊5日</option>
-                      <option value={7}>🗓️ 1週間 (7日間)</option>
-                    </select>
-                  </div>
+                    );
+                  })()}
 
                   {/* 2. 誰と行く？（ひとり旅 / カップル / 友達 / 家族 ＋ 人数調整） */}
                   <div className="bg-white p-1.5 rounded-xl border border-stone-200/80 space-y-1.5">
@@ -15078,12 +14595,11 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
   // 現在解放されている特別コンプリート＆シークレット称号バッジ一覧
   const earnedTitleBadges = useMemo(() => computeEarnedTitleBadges(badges), [badges]);
 
-  // 都道府県コンプリート一覧（全47都道府県・各県の全市区町村すべてを訪問した時のみコンプリート達成）
+  // 都道府県コンプリート一覧（全47都道府県のうち3都市以上訪問で解放）
   const prefectureTitleProgressList = useMemo(() => {
     return JAPAN_MAP_LAYOUT.map(tile => {
       const visitedList = badgesByPref[tile.pref] || [];
-      const totalMuniCount = OFFICIAL_MUNICIPALITY_COUNT_BY_PREF[tile.pref] || (FULL_MUNICIPALITIES_BY_PREF[tile.pref] || []).length || 30;
-      const isComplete = visitedList.length >= totalMuniCount;
+      const isComplete = visitedList.length >= 3;
       return {
         id: `title_pref_${tile.pref}`,
         pref: tile.pref,
@@ -15091,10 +14607,9 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
         icon: tile.icon,
         color: tile.color,
         visitedCount: visitedList.length,
-        totalMuniCount,
         visitedCities: visitedList.map(x => x.municipality),
         isUnlocked: isComplete,
-        rarity: 'UR',
+        rarity: visitedList.length >= 5 ? 'SSR' : 'SR',
         name: `${tile.pref}コンプリート`
       };
     });
@@ -15212,7 +14727,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
 
           {!selectedPref && (
             <p className="text-[10px] font-bold text-emerald-100/90 text-center">
-              👆 白地図上の都道府県をタップすると、その都道府県の形状と市町村一覧が表示されます
+              👆 白地図上の都道府県（または下の県ボタン）をタップすると、その都道府県の形状と市町村一覧が表示されます
             </p>
           )}
         </div>
@@ -15564,21 +15079,21 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
             </div>
           </div>
 
-          {/* セクションB：47都道府県コンプリートバッジ（各県の全市区町村すべてを訪問すると解放！） */}
+          {/* セクションB：47都道府県コンプリートバッジ（各県で3都市以上訪れると解放！） */}
           <div className="bg-white p-4 rounded-[28px] border border-stone-200/90 shadow-xs space-y-3">
             <div>
               <h3 className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center gap-1.5">
-                🗾 47都道府県コンプリートバッジ（県内すべての市区町村制覇で解放）
+                🗾 47都道府県コンプリートバッジ（各県3都市以上で解放）
               </h3>
               <p className="text-[10px] font-bold text-stone-400 mt-0.5">
-                その都道府県にある全市区町村をすべて回りきると、最高難度の「〇〇県コンプリート」バッジを獲得してプロフィールに飾れます！
+                1つの都道府県で3つ以上の市区町村を訪れると「〇〇県コンプリート」バッジを獲得してプロフィールに飾れます！
               </p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {prefectureTitleProgressList.map(item => {
                 const isPinned = featuredBadgeIds.includes(item.id);
-                const pct = Math.min(100, Math.round((item.visitedCount / Math.max(1, item.totalMuniCount)) * 100));
+                const pct = Math.min(100, Math.round((item.visitedCount / 3) * 100));
                 return (
                   <button
                     key={item.pref}
@@ -15603,11 +15118,11 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                       <span className="text-base">{item.icon}</span>
                       {item.isUnlocked ? (
                         <span className="text-[8px] font-black px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950">
-                          {isPinned ? '⭐表示中' : '全制覇！'}
+                          {isPinned ? '⭐表示中' : '制覇！'}
                         </span>
                       ) : (
                         <span className="text-[9px] font-extrabold text-stone-400">
-                          {item.visitedCount}/{item.totalMuniCount}市区町村
+                          {item.visitedCount}/3都市
                         </span>
                       )}
                     </div>
@@ -15635,7 +15150,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                 🗾 日本列島 47都道府県 制覇マップ
               </h3>
               <p className="text-[10px] font-bold text-stone-400 mt-0.5">
-                県をタップすると通過済みの市区町村と県コンプリート（全自治体訪問）までの進捗を確認できます
+                県をタップすると通過済みの市区町村と県コンプリートまでの残り都市数を確認できます
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-stone-500 shrink-0">
@@ -15646,7 +15161,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                 <span className="w-2.5 h-2.5 rounded-xs bg-[#7A9D8C] border border-[#5E8473] inline-block" /> 訪問済
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-xs bg-amber-400 border border-amber-500 inline-block" /> 全市町村制覇
+                <span className="w-2.5 h-2.5 rounded-xs bg-amber-400 border border-amber-500 inline-block" /> 県制覇(3+)
               </span>
             </div>
           </div>
