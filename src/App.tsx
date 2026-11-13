@@ -101,6 +101,65 @@ const QUICK_TAGS = [
   { id: 'hotel', label: '宿', icon: Bed, defaultTitle: 'ホテルチェックイン' },
 ];
 
+// ★ 目的地までの移動手段＆移動重視ポイント（コスパ・速さ・体験）の選択肢
+const TRANSPORT_METHODS = [
+  { id: 'shinkansen_train', label: '🚆 新幹線・電車', short: '新幹線・電車' },
+  { id: 'car', label: '🚗 車・レンタカー', short: '車・ドライブ' },
+  { id: 'flight', label: '✈️ 飛行機', short: '飛行機' },
+  { id: 'highway_bus', label: '🚌 高速バス・夜行バス', short: '高速バス' },
+  { id: 'ferry', label: '⛴️ フェリー・船', short: 'フェリー・船' }
+];
+
+const TRANSPORT_PRIORITIES = [
+  { id: 'cost', label: '💰 コスパ重視', desc: '早割・バス・在来線や乗り放題パスを活用して交通費を抑える' },
+  { id: 'speed', label: '⚡ 速さ・快適さ重視', desc: '新幹線・特急・飛行機・タクシーで移動時間を最短にする' },
+  { id: 'experience', label: '🌟 体験・景色重視', desc: '観光列車・絶景ドライブ・フェリーなど移動自体を旅の思い出にする' }
+];
+
+const BUDGET_TIER_OPTIONS = [
+  { id: '節約・コスパ (〜2万円)', label: '💰 〜2万円', amount: 20000 },
+  { id: '標準 (3〜5万円)', label: '💴 3〜5万円', amount: 40000 },
+  { id: 'ちょっと贅沢 (5〜8万円)', label: '✨ 5〜8万円', amount: 65000 },
+  { id: 'ラグジュアリー (10万円〜)', label: '💎 10万円〜', amount: 120000 }
+];
+
+// ★ よく使う出発地点（自宅駅以外のお気に入り出発地）を保存・取得するヘルパー
+const getSavedDeparturePoints = (user) => {
+  const saved = safeParse('tabitabi_saved_departures', []);
+  const homePoint = user?.station
+    ? `${user.station}（自宅・最寄り駅）`
+    : user?.residence && user.residence !== '未設定'
+    ? `${user.residence}${user.city || ''}（自宅）`
+    : '松本駅（自宅・最寄り駅）';
+  const defaults = [homePoint, '東京駅', '新宿駅', '羽田空港', '名古屋駅', '京都駅', '新大阪駅', '博多駅'];
+  return Array.from(new Set([homePoint, ...saved, ...defaults]));
+};
+
+const addSavedDeparturePoint = (pointStr) => {
+  const clean = (pointStr || '').trim();
+  if (!clean) return;
+  try {
+    const saved = safeParse('tabitabi_saved_departures', []);
+    const next = Array.from(new Set([clean, ...saved])).slice(0, 15);
+    localStorage.setItem('tabitabi_saved_departures', JSON.stringify(next));
+  } catch (e) {}
+};
+
+// ★ モーダル・ポップアップ表示中に背景のスクロールや揺れを完全にロックするカスタムフック
+function useLockBodyScroll(isLocked = true) {
+  useEffect(() => {
+    if (!isLocked || typeof document === 'undefined') return;
+    const originalOverflow = document.body.style.overflow;
+    const originalOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.overscrollBehavior = originalOverscroll;
+    };
+  }, [isLocked]);
+}
+
 const EXTRA_PUBLIC_TRIP_TEMPLATES = [
   {
     title: '金沢・ひがし茶屋街と海鮮づくしの旅',
@@ -427,6 +486,181 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 const generateTripCode = () => 'TABI-' + Math.random().toString(36).substr(2, 8).toUpperCase();
 const getTodayString = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const safeParse = (key, fallback) => { try { const item = localStorage.getItem(key); return item ? JSON.parse(item) : fallback; } catch (e) { return fallback; } };
+
+// ==========================================
+// ★ Google AI (Gemini API) コスト削減＆悪用防止エンジン
+// ==========================================
+// 1. 無料ユーザーの1日あたりの基本AI生成回数上限（いたずら連打・高額請求を100%防止）
+const DAILY_AI_BASE_LIMIT = 5;
+// 2. 動画広告を1本視聴したときに追加されるボーナス回数
+const REWARD_AD_BONUS_COUNT = 3;
+// 3. 定番エリア判定リスト（初回はAPIを叩かず高品質データ/キャッシュから0秒・0円で返却）
+const POPULAR_CACHED_AREAS = ['京都', '沖縄', '宮古', '石垣', '那覇', '箱根', '神奈川', '北海道', '札幌', '小樽', '函館', '石川', '金沢', '福岡', '博多', '糸島', '広島', '宮島', '尾道', '三重', '伊勢', '志摩', '長野', '軽井沢', '松本', '大分', '別府', '由布院', '湯布院', '鎌倉', '江ノ島', '日光', '鬼怒川', '高山', '白川郷', '香川', '高松', '小豆島', '宮城', '仙台', '松島', '東京', '大阪', '熱海', '伊豆', '草津'];
+
+// ★ 「⚡ 定番エリアは枠消費0」の i ボタンで表示する地方別ガイド一覧
+const POPULAR_AREAS_GUIDE = [
+  { region: '北海道・東北', areas: ['北海道（札幌・小樽・函館）', '宮城県（仙台・松島）'] },
+  { region: '関東', areas: ['東京都', '神奈川県（箱根・鎌倉・江ノ島）', '栃木県（日光・鬼怒川）', '群馬県（草津温泉）'] },
+  { region: '中部・北陸', areas: ['石川県（金沢）', '長野県（軽井沢・松本）', '静岡県（熱海・伊豆）', '岐阜県（飛騨高山・白川郷）'] },
+  { region: '関西', areas: ['京都府', '大阪府', '三重県（伊勢・志摩）'] },
+  { region: '中国・四国', areas: ['広島県（宮島・尾道）', '香川県（高松・小豆島）'] },
+  { region: '九州・沖縄', areas: ['福岡県（博多・糸島）', '大分県（別府・由布院）', '沖縄県（那覇・宮古島・石垣島）'] }
+];
+
+const getAiQuotaStatus = () => {
+  const today = getTodayString();
+  const saved = safeParse('tabitabi_ai_quota', { date: today, used: 0, bonus: 0 });
+  if (!saved || saved.date !== today) {
+    const reset = { date: today, used: 0, bonus: 0 };
+    try { localStorage.setItem('tabitabi_ai_quota', JSON.stringify(reset)); } catch (e) {}
+    return { ...reset, limit: DAILY_AI_BASE_LIMIT, remaining: DAILY_AI_BASE_LIMIT };
+  }
+  const limit = DAILY_AI_BASE_LIMIT + (Number(saved.bonus) || 0);
+  const used = Number(saved.used) || 0;
+  return {
+    date: today,
+    used,
+    bonus: Number(saved.bonus) || 0,
+    limit,
+    remaining: Math.max(0, limit - used)
+  };
+};
+
+const consumeAiQuota = () => {
+  const current = getAiQuotaStatus();
+  if (current.remaining <= 0) return { ok: false, status: current };
+  const next = { date: current.date, used: current.used + 1, bonus: current.bonus };
+  try { localStorage.setItem('tabitabi_ai_quota', JSON.stringify(next)); } catch (e) {}
+  return { ok: true, status: getAiQuotaStatus() };
+};
+
+const addRewardAdBonusQuota = () => {
+  const current = getAiQuotaStatus();
+  const next = { date: current.date, used: current.used, bonus: current.bonus + REWARD_AD_BONUS_COUNT };
+  try { localStorage.setItem('tabitabi_ai_quota', JSON.stringify(next)); } catch (e) {}
+  return getAiQuotaStatus();
+};
+
+// AI生成結果のローカルキャッシュ取得・保存（同じ条件なら2回目以降はAPI代0円）
+const getCachedAiResponse = (cacheKey) => {
+  const cacheMap = safeParse('tabitabi_ai_plan_cache_v1', {});
+  return cacheMap[cacheKey] || null;
+};
+
+const setCachedAiResponse = (cacheKey, data) => {
+  try {
+    const cacheMap = safeParse('tabitabi_ai_plan_cache_v1', {});
+    const keys = Object.keys(cacheMap);
+    if (keys.length > 40) delete cacheMap[keys[0]];
+    cacheMap[cacheKey] = data;
+    localStorage.setItem('tabitabi_ai_plan_cache_v1', JSON.stringify(cacheMap));
+  } catch (e) {}
+};
+
+// Google Gemini API 構造化出力呼び出し（指数バックオフ付き）
+const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
+  const apiKey = "";
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+  const payload = {
+    contents: [{ parts: [{ text: userPrompt }] }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema
+    }
+  };
+
+  const delays = [1000, 2000];
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return JSON.parse(text);
+      throw new Error('Empty AI response');
+    } catch (err) {
+      if (attempt === delays.length) throw err;
+      await new Promise(r => setTimeout(r, delays[attempt]));
+    }
+  }
+};
+
+// 🎬 動画広告視聴でAI利用回数を＋3回増やすリワード広告モーダル
+function RewardVideoAdModal({ onClose, onCompleteReward }) {
+  useLockBodyScroll(true);
+  const [secondsLeft, setSecondsLeft] = useState(3);
+  const [completed, setCompleted] = useState(false);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      setCompleted(true);
+      return;
+    }
+    const timer = setTimeout(() => setSecondsLeft(prev => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[320] flex justify-center items-center p-4 animate-in fade-in" onClick={completed ? onClose : undefined}>
+      <div className="bg-stone-900 text-white w-full max-w-sm rounded-[32px] p-6 shadow-2xl border border-stone-700 text-center space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center text-[11px] font-bold text-stone-400">
+          <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">
+            🎬 リワード動画広告
+          </span>
+          {completed ? (
+            <span className="text-emerald-400 font-extrabold">視聴完了！</span>
+          ) : (
+            <span>残り {secondsLeft} 秒</span>
+          )}
+        </div>
+
+        <div className="py-8 px-4 rounded-2xl bg-gradient-to-br from-[#7A9D8C]/30 via-sky-900/40 to-stone-800 border border-white/10 flex flex-col items-center justify-center space-y-2">
+          <Sparkles size={36} className="text-amber-400 animate-pulse" />
+          <p className="text-sm font-extrabold text-white">たびたび トラベルサポート</p>
+          <p className="text-[11px] text-stone-300 leading-relaxed">
+            動画を見ると本日のGoogle AIプラン生成枠が<br />
+            <span className="text-amber-300 font-extrabold">＋{REWARD_AD_BONUS_COUNT}回</span> すぐに回復します！
+          </p>
+        </div>
+
+        <div className="w-full h-2 bg-stone-800 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-700"
+            style={{ width: `${((3 - secondsLeft) / 3) * 100}%` }}
+          />
+        </div>
+
+        {completed ? (
+          <button
+            type="button"
+            onClick={() => {
+              const nextStatus = addRewardAdBonusQuota();
+              if (onCompleteReward) onCompleteReward(nextStatus);
+              customAlert(`🎉 AI利用枠が＋${REWARD_AD_BONUS_COUNT}回増えました！（残り${nextStatus.remaining}回）`);
+              onClose();
+            }}
+            className="w-full py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-105 text-stone-950 font-extrabold rounded-2xl text-xs shadow-lg transition-all active:scale-95"
+          >
+            🎁 ＋{REWARD_AD_BONUS_COUNT}回のAI利用枠を受け取る
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="w-full py-3.5 bg-stone-800 text-stone-500 font-bold rounded-2xl text-xs cursor-not-allowed"
+          >
+            動画を再生中...（あと{secondsLeft}秒）
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ★ 写真を同じしおりのメンバー間で高速・低容量で共有するためのクライアント側自動画像圧縮関数
 // スマホの数MBある写真を長辺最大1200px・JPEG品質0.82（約100〜150KB）に自動軽量化します
@@ -1589,18 +1823,51 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
   // X（旧Twitter）風のスクロール連動：下にスクロールで上下バーを隠し、上にスクロールで即座に表示
   const [hideChrome, setHideChrome] = useState(false);
   const lastScrollYRef = useRef(0);
+  const lastToggleTimeRef = useRef(0);
   const scrollContainerRef = useRef(null);
 
-  const handleFeedScroll = (e) => {
-    const currentY = e.currentTarget.scrollTop;
-    const delta = currentY - lastScrollYRef.current;
+  const isAnyDashboardModalOpen = Boolean(
+    showCreateModal || showJoinModal || showProfileModal || showNotifications || viewingUserProfile || dashboardCopyTarget
+  );
 
-    if (currentY <= 28) {
-      if (hideChrome) setHideChrome(false);
-    } else if (delta > 7 && currentY > 44 && !isFilterOpen) {
-      if (!hideChrome) setHideChrome(true);
-    } else if (delta < -5) {
-      if (hideChrome) setHideChrome(false);
+  const handleFeedScroll = (e) => {
+    if (isAnyDashboardModalOpen) return;
+    const el = e.currentTarget;
+    const currentY = el.scrollTop;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    const delta = currentY - lastScrollYRef.current;
+    const now = Date.now();
+
+    // スクロールバーの上下端バウンスやレイアウト変化によるガタつき・無限ループを防止（クールダウン260ms）
+    if (currentY <= 24) {
+      if (hideChrome) {
+        setHideChrome(false);
+        lastToggleTimeRef.current = now;
+      }
+      lastScrollYRef.current = currentY;
+      return;
+    }
+
+    if (maxScroll - currentY <= 36) {
+      lastScrollYRef.current = currentY;
+      return;
+    }
+
+    if (now - lastToggleTimeRef.current < 260) {
+      lastScrollYRef.current = currentY;
+      return;
+    }
+
+    if (delta > 16 && currentY > 72 && !isFilterOpen) {
+      if (!hideChrome) {
+        setHideChrome(true);
+        lastToggleTimeRef.current = now;
+      }
+    } else if (delta < -14) {
+      if (hideChrome) {
+        setHideChrome(false);
+        lastToggleTimeRef.current = now;
+      }
     }
     lastScrollYRef.current = currentY;
   };
@@ -1892,6 +2159,7 @@ function TripCard({ trip, onOpenTrip, isPast = false }) {
 }
 
 function CreateTripWizard({ currentUser, onClose, onComplete }) {
+  useLockBodyScroll(true);
   const [step, setStep] = useState(1);
   const [showAiModal, setShowAiModal] = useState(false);
   const [selectedAiEvents, setSelectedAiEvents] = useState([]);
@@ -1900,15 +2168,25 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
   const tripCodeRef = useRef(generateTripCode());
   const myColor = PRESET_COLORS[0];
 
+  const savedDepartures = useMemo(() => getSavedDeparturePoints(currentUser), [currentUser]);
+  const defaultOrigin = savedDepartures[0] || '松本駅（自宅・最寄り駅）';
+
   const [tripData, setTripData] = useState({
     title: '',
+    departurePoint: defaultOrigin,
     destination: '',
+    transportMethod: 'shinkansen_train',
+    transportPriority: 'cost',
     startDate: getTodayString(),
     endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     budget: 50000
   });
+  const [saveOriginForNext, setSaveOriginForNext] = useState(false);
 
   const handleCreate = (isSolo = false) => {
+    if (saveOriginForNext && tripData.departurePoint.trim()) {
+      addSavedDeparturePoint(tripData.departurePoint.trim());
+    }
     const initialEvents = (selectedAiEvents || []).map(ev => ({
       ...ev,
       id: generateId(),
@@ -1919,7 +2197,10 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
     onComplete({
       id: tripCodeRef.current,
       title: tripData.title || '新しい旅行',
+      departurePoint: tripData.departurePoint.trim() || defaultOrigin,
       destination: tripData.destination || '行き先未定',
+      transportMethod: tripData.transportMethod,
+      transportPriority: tripData.transportPriority,
       startDate: tripData.startDate,
       endDate: tripData.endDate,
       budget: Number(tripData.budget) || 50000,
@@ -1981,6 +2262,50 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
               />
             </div>
 
+            {/* ★ 出発地点（自宅の最寄り駅＋よく使う出発地の選択＆次回用に保存チェック） */}
+            <div className="p-3 bg-stone-50/90 border border-stone-200/80 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-extrabold text-stone-700 flex items-center gap-1">
+                  <Navigation size={12} className="text-[#7A9D8C]" /> 出発地点（ 기본: 自宅・登録駅）
+                </label>
+                <span className="text-[10px] font-bold text-[#557465] bg-[#7A9D8C]/15 px-2 py-0.5 rounded-full">
+                  プロフィール連動
+                </span>
+              </div>
+              <input
+                type="text"
+                value={tripData.departurePoint}
+                onChange={e => setTripData({ ...tripData, departurePoint: e.target.value })}
+                placeholder="例: 松本駅 / 東京駅 / 羽田空港 / 自宅"
+                className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+              />
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {savedDepartures.map(pt => (
+                  <button
+                    key={pt}
+                    type="button"
+                    onClick={() => setTripData({ ...tripData, departurePoint: pt })}
+                    className={`whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all shrink-0 ${
+                      tripData.departurePoint === pt
+                        ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                        : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    📍 {pt}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-1.5 text-[10px] font-bold text-stone-500 cursor-pointer pt-0.5">
+                <input
+                  type="checkbox"
+                  checked={saveOriginForNext}
+                  onChange={e => setSaveOriginForNext(e.target.checked)}
+                  className="rounded accent-[#7A9D8C]"
+                />
+                <span>この出発地点を次の旅行でも使えるように保存しておく</span>
+              </label>
+            </div>
+
             <div>
               <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">行き先（都道府県・エリア）</label>
               <input
@@ -1990,6 +2315,43 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 placeholder="例: 京都府"
                 className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
               />
+            </div>
+
+            {/* ★ 目的地までの主な移動方法＆重視ポイント */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-stone-500 block pl-1">目的地までの移動方法</label>
+              <div className="flex flex-wrap gap-1.5">
+                {TRANSPORT_METHODS.map(m => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setTripData({ ...tripData, transportMethod: m.id })}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
+                      tripData.transportMethod === m.id
+                        ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                        : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 pt-1">
+                {TRANSPORT_PRIORITIES.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setTripData({ ...tripData, transportPriority: p.id })}
+                    className={`p-2 rounded-xl border text-center transition-all ${
+                      tripData.transportPriority === p.id
+                        ? 'bg-[#5E8473] text-white border-[#5E8473] shadow-2xs'
+                        : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    <span className="text-[10px] font-extrabold block">{p.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -2136,7 +2498,10 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
               onComplete({
                 id: tripCodeRef.current,
                 title: plan.title || '新しい旅行',
+                departurePoint: plan.departurePoint || tripData.departurePoint || defaultOrigin,
                 destination: plan.destination || '行き先未定',
+                transportMethod: plan.transportMethod || tripData.transportMethod,
+                transportPriority: plan.transportPriority || tripData.transportPriority,
                 startDate: plan.startDate,
                 endDate: plan.endDate,
                 budget: Number(plan.budget) || 50000,
@@ -2159,6 +2524,7 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
 }
 
 function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
+  useLockBodyScroll(true);
   const [step, setStep] = useState(1); const [joinCode, setJoinCode] = useState(''); const [foundTrip, setFoundTrip] = useState(null); const [myColor, setMyColor] = useState(PRESET_COLORS[1]);
   const handleCheckCode = () => {
     const code = joinCode.trim().toUpperCase(); if (!code) return;
@@ -2186,6 +2552,7 @@ function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
 }
 
 function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onToggleFollow, onOpenUserProfile, onUpgradeUser, onClose, onLogout }) {
+  useLockBodyScroll(true);
   const user = currentUser || userProp || {};
   const [currentView, setCurrentView] = useState('menu');
   const [followListTab, setFollowListTab] = useState('following');
@@ -2986,6 +3353,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
 
 // 他ユーザーのプロフィール画面モーダル
 function PublicUserProfileModal({ userProfile, publicTrips, currentUser, onToggleFollow, onOpenTrip, onClose }) {
+  useLockBodyScroll(true);
   const userPosts = publicTrips.filter(t => (t.authorId || t.members?.[0]?.id) === userProfile.id);
   const isMe = userProfile.id === currentUser.id;
   const isFollowing = Array.isArray(currentUser.following) && currentUser.following.includes(userProfile.id);
@@ -3653,107 +4021,22 @@ function DiscoverTab({ publicTrips, setPublicTrips, currentUser, dashboardState,
   );
 }
 
-// みんなの旅カード用のInstagram風・高感度横スワイプカルーセル（下部スクロールバー完全非表示）
+// みんなの旅カード用の正方形1.5枚見え（ピーキング）横スワイプカルーセル
 function CoverPhotoCarousel({ covers, onEnlargeImage, onOpenTrip }) {
-  const containerRef = useRef(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
+  if (!Array.isArray(covers) || covers.length === 0) return null;
 
-  const gestureRef = useRef({
-    active: false,
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    isHorizontal: null,
-    moved: false
-  });
-
-  const clampIndex = (idx) => Math.max(0, Math.min(covers.length - 1, idx));
-
-  const goToSlide = (idx) => {
-    setActiveIndex(clampIndex(idx));
-    setDragOffset(0);
-    setIsDragging(false);
-  };
-
-  const handleDragStart = (clientX, clientY) => {
-    gestureRef.current = {
-      active: true,
-      startX: clientX,
-      startY: clientY,
-      currentX: clientX,
-      isHorizontal: null,
-      moved: false
-    };
-    setIsDragging(true);
-  };
-
-  const handleDragMove = (clientX, clientY, e) => {
-    const g = gestureRef.current;
-    if (!g.active) return;
-
-    const dx = clientX - g.startX;
-    const dy = clientY - g.startY;
-
-    if (g.isHorizontal === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-      g.isHorizontal = Math.abs(dx) >= Math.abs(dy) * 0.85;
-    }
-
-    if (g.isHorizontal === false) {
-      g.active = false;
-      setIsDragging(false);
-      setDragOffset(0);
-      return;
-    }
-
-    if (g.isHorizontal) {
-      if (e && e.cancelable) e.preventDefault();
-      g.moved = true;
-      g.currentX = clientX;
-      // 端（最初・最後）ではゴムのような抵抗感を出す
-      const isAtEdge =
-        (activeIndex === 0 && dx > 0) ||
-        (activeIndex === covers.length - 1 && dx < 0);
-      setDragOffset(isAtEdge ? dx * 0.28 : dx);
-    }
-  };
-
-  const handleDragEnd = () => {
-    const g = gestureRef.current;
-    if (!g.active) {
-      setIsDragging(false);
-      setDragOffset(0);
-      return;
-    }
-    g.active = false;
-    setIsDragging(false);
-
-    const dx = g.currentX - g.startX;
-    const width = containerRef.current?.clientWidth || 320;
-    const threshold = Math.min(42, width * 0.14);
-
-    if (g.isHorizontal && Math.abs(dx) >= threshold) {
-      if (dx < 0 && activeIndex < covers.length - 1) {
-        setActiveIndex(prev => prev + 1);
-      } else if (dx > 0 && activeIndex > 0) {
-        setActiveIndex(prev => prev - 1);
-      }
-    }
-    setDragOffset(0);
-  };
-
+  // 1枚だけのときも正方形（aspect-square）で見やすく表示
   if (covers.length === 1) {
     return (
       <div
-        className="px-4 pb-2 cursor-pointer"
+        className="px-4 pb-2.5 cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
           if (onOpenTrip) onOpenTrip();
         }}
       >
         <div
-          className="w-full aspect-[4/3] rounded-2xl bg-stone-100 cursor-pointer relative group overflow-hidden shadow-xs border border-stone-200/60"
+          className="w-[74%] aspect-square rounded-2xl bg-stone-100 cursor-pointer relative group overflow-hidden shadow-xs border border-stone-200/60"
           onClick={(e) => {
             e.stopPropagation();
             onEnlargeImage(covers[0]);
@@ -3764,132 +4047,45 @@ function CoverPhotoCarousel({ covers, onEnlargeImage, onOpenTrip }) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             alt="cover 1"
           />
+          <span className="absolute bottom-2.5 right-2.5 bg-black/55 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-2xs">
+            1/1
+          </span>
         </div>
       </div>
     );
   }
 
+  // 2枚以上のときは1枚目が約68%幅の正方形、右側に2枚目が半分（合計約1.5枚分）チラ見えして横にスワイプできるカルーセル
   return (
     <div
       data-carousel-area="true"
-      className="px-4 pb-2 select-none"
+      data-no-swipe="true"
+      className="pb-2.5 select-none"
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        ref={containerRef}
-        onTouchStart={(e) => {
-          e.stopPropagation();
-          handleDragStart(e.touches[0].clientX, e.touches[0].clientY);
-        }}
-        onTouchMove={(e) => {
-          e.stopPropagation();
-          handleDragMove(e.touches[0].clientX, e.touches[0].clientY, e);
-        }}
-        onTouchEnd={(e) => {
-          e.stopPropagation();
-          handleDragEnd();
-        }}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          handleDragStart(e.clientX, e.clientY);
-        }}
-        onMouseMove={(e) => {
-          if (!gestureRef.current.active) return;
-          e.stopPropagation();
-          handleDragMove(e.clientX, e.clientY, e);
-        }}
-        onMouseUp={(e) => {
-          e.stopPropagation();
-          handleDragEnd();
-        }}
-        onMouseLeave={() => {
-          if (gestureRef.current.active) handleDragEnd();
-        }}
-        style={{ touchAction: 'pan-y' }}
-        className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-stone-100 shadow-xs border border-stone-200/60 cursor-grab active:cursor-grabbing"
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 snap-x snap-mandatory"
       >
-        {/* Instagram方式の1:1追従スライドトラック（スクロールバー完全ゼロ） */}
-        <div
-          className="flex w-full h-full"
-          style={{
-            transform: `translate3d(calc(${-activeIndex * 100}% + ${dragOffset}px), 0, 0)`,
-            transition: isDragging ? 'none' : 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
-            willChange: 'transform'
-          }}
-        >
-          {covers.map((cover, cIdx) => (
-            <div
-              key={cIdx}
-              className="w-full h-full shrink-0 relative overflow-hidden"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (gestureRef.current.moved) {
-                  gestureRef.current.moved = false;
-                  return;
-                }
-                onEnlargeImage(cover);
-              }}
-            >
-              <img
-                src={cover}
-                draggable={false}
-                className="w-full h-full object-cover pointer-events-none select-none"
-                alt={`cover ${cIdx + 1}`}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* 右上のInstagram風枚数バッジ */}
-        <div className="absolute top-3 right-3 bg-black/60 text-white text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 backdrop-blur-xs pointer-events-none z-10">
-          <span>{activeIndex + 1}/{covers.length}</span>
-        </div>
-
-        {/* 左右の切り替えボタン */}
-        {activeIndex > 0 && (
-          <button
-            type="button"
+        {covers.map((cover, cIdx) => (
+          <div
+            key={cIdx}
             onClick={(e) => {
               e.stopPropagation();
-              goToSlide(activeIndex - 1);
+              onEnlargeImage(cover);
             }}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/85 hover:bg-white text-stone-800 flex items-center justify-center shadow-md transition-all active:scale-95 z-10"
-            title="前の写真"
+            className="w-[66%] shrink-0 aspect-square rounded-2xl overflow-hidden bg-stone-100 border border-stone-200/70 shadow-xs relative snap-start cursor-pointer group"
           >
-            <ChevronLeft size={16} strokeWidth={2.5} />
-          </button>
-        )}
-        {activeIndex < covers.length - 1 && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goToSlide(activeIndex + 1);
-            }}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/85 hover:bg-white text-stone-800 flex items-center justify-center shadow-md transition-all active:scale-95 z-10"
-            title="次の写真"
-          >
-            <ChevronRight size={16} strokeWidth={2.5} />
-          </button>
-        )}
-      </div>
-
-      {/* Instagram風のドットインジケーター */}
-      <div className="flex justify-center items-center gap-1.5 mt-2">
-        {covers.map((_, idx) => (
-          <button
-            key={idx}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goToSlide(idx);
-            }}
-            className={`rounded-full transition-all duration-200 ${
-              activeIndex === idx
-                ? 'w-2 h-2 bg-[#7A9D8C] scale-110'
-                : 'w-1.5 h-1.5 bg-stone-300 hover:bg-stone-400'
-            }`}
-          />
+            <img
+              src={cover}
+              draggable={false}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 select-none"
+              alt={`cover ${cIdx + 1}`}
+            />
+            <span className="absolute top-2.5 right-2.5 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-2xs pointer-events-none">
+              {cIdx + 1}/{covers.length}
+            </span>
+          </div>
         ))}
       </div>
     </div>
@@ -3898,6 +4094,7 @@ function CoverPhotoCarousel({ covers, onEnlargeImage, onOpenTrip }) {
 
 // 投稿の報告モーダル
 function ReportModal({ trip, onClose, onSubmit }) {
+  useLockBodyScroll(true);
   const REPORT_REASONS = [
     'スパム・宣伝目的の投稿',
     '不適切なコンテンツ・公序良俗に反する内容',
@@ -4009,14 +4206,40 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
   // スクロール時やタップで上下のバーを隠してタイムラインを広く見せるステート
   const [hideBars, setHideBars] = useState(false);
   const lastScrollTopRef = useRef(0);
+  const lastBarToggleRef = useRef(0);
+
+  const isAnyTripModalOpen = Boolean(
+    isSettingsOpen || showPublishModal || showDeleteConfirmModal || copyTarget || showAiChatModal
+  );
 
   const handleMainScroll = (e) => {
-    const st = e.currentTarget.scrollTop;
+    if (isAnyTripModalOpen) return;
+    const el = e.currentTarget;
+    const st = el.scrollTop;
+    const maxScroll = el.scrollHeight - el.clientHeight;
     const diff = st - lastScrollTopRef.current;
-    if (st > 45 && diff > 8 && !hideBars) {
+    const now = Date.now();
+
+    if (st <= 24) {
+      if (hideBars) {
+        setHideBars(false);
+        lastBarToggleRef.current = now;
+      }
+      lastScrollTopRef.current = st;
+      return;
+    }
+
+    if (maxScroll - st <= 40 || now - lastBarToggleRef.current < 260) {
+      lastScrollTopRef.current = st;
+      return;
+    }
+
+    if (st > 68 && diff > 16 && !hideBars) {
       setHideBars(true);
-    } else if ((diff < -10 || st <= 20) && hideBars) {
+      lastBarToggleRef.current = now;
+    } else if (diff < -14 && hideBars) {
       setHideBars(false);
+      lastBarToggleRef.current = now;
     }
     lastScrollTopRef.current = st;
   };
@@ -5726,6 +5949,7 @@ function BudgetView({ trip, updateTrip, currentUser, isReadOnly }) {
 }
 
 function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegister, onComplete }) {
+  useLockBodyScroll(true);
   const [step, setStep] = useState(1);
   const [createdGroupTrip, setCreatedGroupTrip] = useState(null);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -6833,6 +7057,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, onC
 }
 
 function PublishModal({ trip, currentUser, onClose, onPublish }) {
+  useLockBodyScroll(true);
   const [step, setStep] = useState(1);
   const [selectedImages, setSelectedImages] = useState(() => {
     // 初期状態で各予定の公開OKな写真があれば最大4枚までカバー候補にもセット可能にする
@@ -7227,9 +7452,15 @@ function PublishModal({ trip, currentUser, onClose, onPublish }) {
 
 // タイムライン内で予定を直接追加・差し込むフォーム
 function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialData, routeContext, onOpenAiSuggest, onOpenAiChat }) {
+  const savedDepartures = useMemo(() => getSavedDeparturePoints(currentUser), [currentUser]);
   const [time, setTime] = useState(initialData?.time || routeContext?.time || '12:00');
   const [title, setTitle] = useState(initialData?.title || '');
   const [type, setType] = useState(initialData?.type || 'sightseeing');
+  const [departureOrigin, setDepartureOrigin] = useState(
+    initialData?.departureOrigin || routeContext?.prevLocation || trip.departurePoint || savedDepartures[0] || ''
+  );
+  const [saveOriginForNext, setSaveOriginForNext] = useState(false);
+  const [transportMethod, setTransportMethod] = useState(initialData?.transportMethod || trip.transportMethod || 'shinkansen_train');
   const [location, setLocation] = useState(initialData?.location || '');
   const [mapPinQuery, setMapPinQuery] = useState(initialData?.mapPinQuery || '');
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -7242,6 +7473,8 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
       if (initialData.time) setTime(initialData.time);
       if (initialData.title !== undefined) setTitle(initialData.title);
       if (initialData.type) setType(initialData.type);
+      if (initialData.departureOrigin !== undefined) setDepartureOrigin(initialData.departureOrigin);
+      if (initialData.transportMethod !== undefined) setTransportMethod(initialData.transportMethod);
       if (initialData.location !== undefined) setLocation(initialData.location);
       if (initialData.mapPinQuery !== undefined) setMapPinQuery(initialData.mapPinQuery);
       if (initialData.cost !== undefined) setCost(String(initialData.cost));
@@ -7281,6 +7514,10 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (saveOriginForNext && departureOrigin.trim()) {
+      addSavedDeparturePoint(departureOrigin.trim());
+      customAlert(`📍「${departureOrigin.trim()}」を次の旅行でも使える出発地点に登録しました！`);
+    }
     const selectedTag = QUICK_TAGS.find(t => t.id === type) || QUICK_TAGS[2];
     const finalTitle = title.trim() || selectedTag.defaultTitle;
     const finalLocation = location.trim() || mapPinQuery.trim();
@@ -7291,6 +7528,8 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
       time: time || '12:00',
       title: finalTitle,
       type,
+      departureOrigin: departureOrigin.trim(),
+      transportMethod,
       location: finalLocation,
       mapPinQuery: finalPinQuery,
       cost: Number(cost) || 0,
@@ -7410,7 +7649,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[10px] font-bold text-stone-400 block mb-0.5">場所・スポット名</label>
+          <label className="text-[10px] font-bold text-stone-400 block mb-0.5">場所・スポット名（目的地）</label>
           <input
             type="text"
             value={location}
@@ -7428,6 +7667,66 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
             placeholder="例: 1500"
             className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
           />
+        </div>
+      </div>
+
+      {/* ★ 個別の予定ごとの出発地点＆移動手段（次回用に保存チェック付き） */}
+      <div className="p-2.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-[10px] font-extrabold text-stone-600 flex items-center gap-1">
+            <Navigation size={11} className="text-[#7A9D8C]" /> この予定の出発地点・移動方法（任意）
+          </label>
+          <label className="flex items-center gap-1 text-[9px] font-bold text-[#557465] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={saveOriginForNext}
+              onChange={e => setSaveOriginForNext(e.target.checked)}
+              className="rounded accent-[#7A9D8C]"
+            />
+            <span>次の旅行でも使えるよう保存</span>
+          </label>
+        </div>
+
+        <input
+          type="text"
+          value={departureOrigin}
+          onChange={e => setDepartureOrigin(e.target.value)}
+          placeholder="出発地点（例: 松本駅 / 宿泊ホテル / 前の予定地）"
+          className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+        />
+
+        <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+          {savedDepartures.map(pt => (
+            <button
+              key={pt}
+              type="button"
+              onClick={() => setDepartureOrigin(pt)}
+              className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all shrink-0 ${
+                departureOrigin === pt
+                  ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                  : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+              }`}
+            >
+              📍 {pt}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-1 overflow-x-auto no-scrollbar pt-0.5">
+          {TRANSPORT_METHODS.map(m => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setTransportMethod(m.id)}
+              className={`whitespace-nowrap px-2 py-1 rounded-lg text-[10px] font-bold border transition-all shrink-0 ${
+                transportMethod === m.id
+                  ? 'bg-[#5E8473] text-white border-[#5E8473]'
+                  : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -7569,6 +7868,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
 
 // タイムライン内の単体スポットAI提案モーダル（前後の時間・場所反映＆Googleマップ確認リンク付き）
 function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
+  useLockBodyScroll(true);
   const dest = trip.destination || '京都府';
   const targetTime = routeContext?.time || '13:30';
   const targetHour = Number((targetTime || '13:30').split(':')[0]) || 13;
@@ -7580,6 +7880,10 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
       : '絶景・写真スポット';
 
   const [category, setCategory] = useState(defaultCat);
+  const [customAiSpots, setCustomAiSpots] = useState(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [quotaStatus, setQuotaStatus] = useState(() => getAiQuotaStatus());
+  const [showRewardAd, setShowRewardAd] = useState(false);
   const CATEGORIES = ['カフェ・甘味処', '絶景・写真スポット', 'ご当地ランチ', 'お土産・雑貨屋', '癒やし・足湯'];
 
   const routeAreaHint = routeContext?.prevLocation || routeContext?.nextLocation || dest;
@@ -7588,7 +7892,65 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
       ? `【📍${routeContext.prevLocation || '出発地'}${routeContext.nextLocation ? ` → ${routeContext.nextLocation}` : ''} の移動ルート周辺・${targetTime}頃】`
       : '';
 
+  // ジャンル切り替え時はまずキャッシュ（コスト0円）を表示
+  useEffect(() => {
+    const cacheKey = `spot_${dest}_${routeAreaHint}_${category}_${targetTime}`;
+    const cached = getCachedAiResponse(cacheKey);
+    setCustomAiSpots(cached || null);
+  }, [dest, routeAreaHint, category, targetTime]);
+
+  const handleGenerateByGemini = async () => {
+    const cacheKey = `spot_${dest}_${routeAreaHint}_${category}_${targetTime}`;
+    const cached = getCachedAiResponse(cacheKey);
+    if (cached) {
+      setCustomAiSpots(cached);
+      customAlert('⚡ 保存済みキャッシュから高速表示しました（AI枠消費なし）');
+      return;
+    }
+
+    const quotaCheck = consumeAiQuota();
+    setQuotaStatus(quotaCheck.status);
+    if (!quotaCheck.ok) {
+      setShowRewardAd(true);
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const schema = {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            title: { type: "STRING" },
+            location: { type: "STRING" },
+            type: { type: "STRING" },
+            time: { type: "STRING" },
+            cost: { type: "INTEGER" },
+            memo: { type: "STRING" }
+          },
+          propertyOrdering: ["title", "location", "type", "time", "cost", "memo"]
+        }
+      };
+      const aiSpots = await callGoogleGeminiStructured({
+        systemPrompt: "あなたは日本の旅行ガイドAIです。実在する評価の高い店舗・観光スポットを3件、JSON配列で返してください。typeは meal, sightseeing, active のいずれかにしてください。",
+        userPrompt: `エリア:${dest}（${routeAreaHint}周辺）、時間帯:${targetTime}頃、ジャンル:${category}。${routeNotePrefix}で立ち寄りやすい実在スポット3選を提案してください。`,
+        responseSchema: schema
+      });
+      if (Array.isArray(aiSpots) && aiSpots.length > 0) {
+        setCustomAiSpots(aiSpots);
+        setCachedAiResponse(cacheKey, aiSpots);
+        customAlert('✨ Google AIで最新スポット候補を生成しました！');
+      }
+    } catch (e) {
+      customAlert('通信状況により定番キャッシュデータを表示しています');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   const spotSuggestions = useMemo(() => {
+    if (Array.isArray(customAiSpots) && customAiSpots.length > 0) return customAiSpots;
     const SPOT_BY_AREA = {
       '京都': {
         'カフェ・甘味処': [
@@ -7652,16 +8014,33 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
         memo: `${routeNotePrefix}【★4.5 / 初めてならここ】写真映えする看板メニューや景色が揃う定番スポット。`
       }
     ];
-  }, [dest, category, targetTime, routeAreaHint, routeNotePrefix]);
+  }, [dest, category, targetTime, routeAreaHint, routeNotePrefix, customAiSpots]);
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[250] flex justify-center items-center p-4 animate-in fade-in" onClick={onClose}>
       <div className="bg-white w-full max-w-md rounded-[32px] p-6 shadow-2xl max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex justify-between items-center mb-2">
           <h3 className="font-bold text-base text-stone-800 flex items-center gap-1.5">
             <Sparkles size={18} className="text-sky-500" /> AIおすすめスポット提案 ({dest})
           </h3>
           <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
+        </div>
+
+        {/* API節約＆残り回数バー */}
+        <div className="mb-3 px-3 py-2 rounded-2xl bg-stone-50 border border-stone-200/80 flex items-center justify-between gap-2 text-[10px] font-bold">
+          <span className="text-emerald-700 flex items-center gap-1">
+            ⚡ 初回表示は定番キャッシュ（AI枠消費0）
+          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-stone-600">本日残り <strong className="text-sky-700">{quotaStatus.remaining}/{quotaStatus.limit}回</strong></span>
+            <button
+              type="button"
+              onClick={() => setShowRewardAd(true)}
+              className="px-2 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-extrabold"
+            >
+              🎬＋{REWARD_AD_BONUS_COUNT}
+            </button>
+          </div>
         </div>
 
         {routeContext && (routeContext.prevLocation || routeContext.nextLocation) && (
@@ -7674,7 +8053,18 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
           </div>
         )}
 
-        <p className="text-xs text-stone-500 mb-3">気になるジャンルを選ぶと、前後の時間・場所に合わせて予定へ反映できます。</p>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <p className="text-xs text-stone-500">気になるジャンルを選ぶと予定へ反映できます。</p>
+          <button
+            type="button"
+            disabled={isAiLoading}
+            onClick={handleGenerateByGemini}
+            className="shrink-0 px-2.5 py-1.5 rounded-xl bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-[10px] font-extrabold flex items-center gap-1 disabled:opacity-50"
+          >
+            <Sparkles size={11} className="text-sky-600" />
+            {isAiLoading ? 'Google AI生成中...' : 'Google AIで深掘り生成'}
+          </button>
+        </div>
 
         <div className="flex flex-wrap gap-1.5 mb-4">
           {CATEGORIES.map(c => (
@@ -7723,6 +8113,13 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
             </div>
           ))}
         </div>
+
+        {showRewardAd && (
+          <RewardVideoAdModal
+            onClose={() => setShowRewardAd(false)}
+            onCompleteReward={(next) => setQuotaStatus(next)}
+          />
+        )}
       </div>
     </div>
   );
@@ -7820,7 +8217,18 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
 
   const handleOpenNavigation = () => {
     const dest = encodeURIComponent(resolvedMapDestination);
-    const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
+    const originParam = event.departureOrigin
+      ? `&origin=${encodeURIComponent(event.departureOrigin)}`
+      : trip.departurePoint
+      ? `&origin=${encodeURIComponent(trip.departurePoint.replace(/（.*?）/g, ''))}`
+      : '';
+    const travelMode =
+      event.transportMethod === 'car'
+        ? '&travelmode=driving'
+        : event.transportMethod === 'shinkansen_train' || event.transportMethod === 'highway_bus'
+        ? '&travelmode=transit'
+        : '';
+    const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest}${originParam}${travelMode}`;
     window.open(navUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -8138,19 +8546,26 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                         >
                           <Trash2 size={14} />
                         </button>
-                        {!trip.isSoloTrip && (
-                          <div title={`追加者: ${author?.name || ''}`}>
-                            <UserAvatar user={author} size="w-5 h-5" />
-                          </div>
-                        )}
                       </>
                     )}
+                    <UserAvatar user={author} size="w-5 h-5" />
                   </div>
                 </div>
 
-                {/* サブメタ情報（場所・ピン・予算チップ：1人あたり金額 × 参加人数） */}
-                {(event.location || event.mapPinQuery || Number(event.cost) > 0) && (
+                {/* サブメタ情報（出発地点・場所・ピン・予算チップ：1人あたり金額 × 参加人数） */}
+                {(event.departureOrigin || event.location || event.mapPinQuery || Number(event.cost) > 0) && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    {event.departureOrigin && (
+                      <span className="text-[10px] font-bold text-[#557465] bg-[#7A9D8C]/12 px-2 py-0.5 rounded-full flex items-center gap-1 max-w-full truncate">
+                        <Navigation size={10} className="text-[#7A9D8C] shrink-0" />
+                        <span>{event.departureOrigin} 発</span>
+                        {event.transportMethod && (
+                          <span className="text-[9px] text-stone-500">
+                            ({TRANSPORT_METHODS.find(m => m.id === event.transportMethod)?.short || '移動'})
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {(event.location || event.mapPinQuery) && (
                       <span className="text-[11px] font-bold text-stone-500 flex items-center gap-0.5 truncate max-w-full">
                         <MapPin size={11} className={event.mapPinQuery ? 'text-rose-500 fill-rose-500 shrink-0' : 'text-stone-400 shrink-0'} />
@@ -8580,8 +8995,15 @@ function AlbumView({ trip, currentUser, updateTrip, isReadOnly, onEnlargeImage }
 // AIおまかせプラン作成モーダル (AiPlanSuggestModal)
 // ------------------------------------------
 function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
+  useLockBodyScroll(true);
+  const savedDepartures = useMemo(() => getSavedDeparturePoints(currentUser), [currentUser]);
   const [mode, setMode] = useState('condition'); // 'condition' | 'chat'
+  const [departurePoint, setDeparturePoint] = useState(savedDepartures[0] || '松本駅（自宅・最寄り駅）');
+  const [saveOriginForNext, setSaveOriginForNext] = useState(false);
   const [destination, setDestination] = useState('京都府');
+  const [transportMethod, setTransportMethod] = useState('shinkansen_train');
+  const [transportPriority, setTransportPriority] = useState('cost'); // 'cost' | 'speed' | 'experience'
+  const [budgetTier, setBudgetTier] = useState(BUDGET_TIER_OPTIONS[1].id);
   const [days, setDays] = useState(2);
   const [companion, setCompanion] = useState('カップル・夫婦（2名）');
   const [adultCount, setAdultCount] = useState(2);
@@ -8591,6 +9013,11 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   const [isSoloPlan, setIsSoloPlan] = useState(Boolean(currentUser?.isGuest));
 
   const [generatedPlans, setGeneratedPlans] = useState(null);
+  const [planSourceType, setPlanSourceType] = useState('cache'); // 'cache' | 'gemini'
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [quotaStatus, setQuotaStatus] = useState(() => getAiQuotaStatus());
+  const [showRewardAdModal, setShowRewardAdModal] = useState(false);
+  const [showPopularAreasInfo, setShowPopularAreasInfo] = useState(false);
   const [expandedPlanIdx, setExpandedPlanIdx] = useState(null);
   const [editingTitleIdx, setEditingTitleIdx] = useState(null);
 
@@ -8599,12 +9026,16 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'ai',
-      text: 'こんにちは！AI旅コンシェルジュです✈️\n「東京から新幹線で2時間以内で温泉と海鮮が美味しい1泊2日」「子ども2人連れの家族旅行」など、ご希望を自由に教えてください！'
+      text: 'こんにちは！AI旅コンシェルジュです✈️\n上の設定バーで「出発地・移動手段（コスパ/速さ/体験）・1人あたり予算」を選んで、下の候補ボタンまたは入力欄からご希望を教えてください！'
     }
   ]);
 
-  const buildPlansForDestination = (destInput, numDays, compLabel, themeLabel, baseStartDate, adults = 2, children = 0) => {
+  const buildPlansForDestination = (destInput, numDays, compLabel, themeLabel, baseStartDate, adults = 2, children = 0, originInput = departurePoint, transMethod = transportMethod, transPrio = transportPriority, selectedBudgetTier = budgetTier) => {
     const cleanDest = (destInput || '京都府').trim();
+    const cleanOrigin = (originInput || '自宅最寄り駅').replace(/（.*?）/g, '').trim() || '自宅最寄り駅';
+    const methodObj = TRANSPORT_METHODS.find(m => m.id === transMethod) || TRANSPORT_METHODS[0];
+    const prioObj = TRANSPORT_PRIORITIES.find(p => p.id === transPrio) || TRANSPORT_PRIORITIES[0];
+    const budgetObj = BUDGET_TIER_OPTIONS.find(b => b.id === selectedBudgetTier) || BUDGET_TIER_OPTIONS[1];
     const isOkinawa = /沖縄|宮古|石垣|那覇/.test(cleanDest);
     const isHokkaido = /北海道|札幌|小樽|函館|富良野/.test(cleanDest);
     const isOnsen = /箱根|温泉|由布院|別府|草津|熱海|伊豆|城崎|道後/.test(cleanDest);
@@ -8634,6 +9065,11 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
     const endObj = new Date(d1);
     endObj.setDate(endObj.getDate() + Math.max(0, numDays - 1));
     const endDateStr = endObj.toISOString().split('T')[0];
+
+    // 出発地＆移動手段＆重視スタイル（コスパ・速さ・体験）を反映した出発イベントを作成
+    const transportCostEstimate =
+      transPrio === 'cost' ? 4500 : transPrio === 'speed' ? 12000 : 8500;
+    const departureMemo = `【📍出発: ${cleanOrigin} → ${cleanDest}｜${methodObj.label}（${prioObj.label}）】${prioObj.desc}。`;
 
     // 構成（子ども連れ / 大人数グループ / 少人数大人）に応じた補足メモ・宿提案の出し分け
     const groupSizeTip = isLargeGroup
@@ -8765,61 +9201,223 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
       return result;
     };
 
-    const baseSet1 = expandEventsForDays(spotSets[0], 0);
-    const rawSet2 = spotSets[1] || spotSets[0].map((ev, i) => ({
-      ...ev,
-      time: i === 1 ? '12:00' : ev.time,
-      title: i === 1 ? `${cleanDest}の隠れ家名店でこだわりランチ` : ev.title
-    }));
+    const rawSet1WithOrigin = spotSets[0].map((ev, idx) =>
+      idx === 0
+        ? {
+            ...ev,
+            time: '09:00',
+            title: `${cleanOrigin}から${methodObj.short}で${cleanDest}へ出発（${prioObj.label}）`,
+            type: 'transport',
+            departureOrigin: cleanOrigin,
+            transportMethod: transMethod,
+            cost: transportCostEstimate,
+            memo: `${departureMemo} ${ev.memo || ''}`
+          }
+        : ev
+    );
+    const baseSet1 = expandEventsForDays(rawSet1WithOrigin, 0);
+    const rawSet2 = (spotSets[1] || spotSets[0]).map((ev, i) => {
+      if (i === 0) {
+        return {
+          ...ev,
+          time: '09:00',
+          title: `${cleanOrigin}発・${methodObj.short}で行く${cleanDest}（${prioObj.label}ルート）`,
+          type: 'transport',
+          departureOrigin: cleanOrigin,
+          transportMethod: transMethod,
+          cost: transportCostEstimate,
+          memo: `${departureMemo} ${ev.memo || ''}`
+        };
+      }
+      return {
+        ...ev,
+        time: i === 1 ? '12:00' : ev.time,
+        title: i === 1 ? `${cleanDest}の隠れ家名店でこだわりランチ` : ev.title
+      };
+    });
     const baseSet2 = expandEventsForDays(rawSet2, 1);
 
     // 子どもがいる場合は1人あたりの平均予算目安（子ども料金考慮）を少し抑えて算出
     const childDiscountFactor = totalPeople > 0 ? (adults + children * 0.6) / totalPeople : 1;
     const calcPerPersonBudget = (evList, extra) =>
-      Math.round((evList.reduce((s, e) => s + (Number(e.cost) || 0), 0) + extra) * childDiscountFactor);
+      Math.min(
+        budgetObj.amount,
+        Math.round((evList.reduce((s, e) => s + (Number(e.cost) || 0), 0) + extra) * childDiscountFactor)
+      );
 
     return [
       {
-        badge: `王道・${seasonWord.slice(0, 8)}コース`,
-        title: `【${seasonWord}】${compDetailLabel}で行く${cleanDest}${numDays}日間の旅`,
-        description: `${compDetailLabel}の構成に合わせて最適化！実在する高評価（★4.3以上）の名店・観光地と、「夜ご飯は宿で食べるべきか・外食すべきか」の最適解まで組み込んだ満足度No.1プランです。`,
+        badge: `${methodObj.short}×${prioObj.label}`,
+        title: `【${seasonWord}】${cleanOrigin}発・${methodObj.short}で行く${cleanDest}${numDays}日間の旅`,
+        description: `📍${cleanOrigin}から${methodObj.label}（${prioObj.label}・予算目安:${budgetObj.label}）で向かう${compDetailLabel}向け最適プラン！実在する高評価の名店と夕食スタイル提案まで収録しています。`,
+        departurePoint: cleanOrigin,
         destination: cleanDest,
+        transportMethod: transMethod,
+        transportPriority: transPrio,
         startDate: d1,
         endDate: endDateStr,
-        budget: calcPerPersonBudget(baseSet1, 5000),
+        budget: calcPerPersonBudget(baseSet1, 3000),
         isSoloPlan,
         events: baseSet1
       },
       {
-        badge: hasChildren ? 'ファミリー向けゆったり' : `穴場・${compLabel}向け`,
-        title: `【${hasChildren ? 'ゆったり' : '穴場'}】${compDetailLabel}で楽しむ${cleanDest}の厳選スポット＆絶景巡り`,
-        description: `人混みや無理な移動を避けて${compDetailLabel}のペースでゆったり過ごせる実在の名店・ミュージアムを中心に組んだプラン。`,
+        badge: hasChildren ? 'ファミリー向けゆったり' : `穴場・${prioObj.label}`,
+        title: `【${hasChildren ? 'ゆったり' : '穴場'}】${cleanOrigin}発・${compDetailLabel}で楽しむ${cleanDest}厳選コース`,
+        description: `${cleanOrigin}からの移動負担を抑え、${compDetailLabel}のペースでゆったり過ごせる実在の名店・ミュージアムを中心に組んだプラン。`,
+        departurePoint: cleanOrigin,
         destination: cleanDest,
+        transportMethod: transMethod,
+        transportPriority: transPrio,
         startDate: d1,
         endDate: endDateStr,
-        budget: calcPerPersonBudget(baseSet2, 5000),
+        budget: calcPerPersonBudget(baseSet2, 3000),
         isSoloPlan,
         events: baseSet2
       },
       {
         badge: `体験・${themeLabel.slice(0, 8)}満喫`,
-        title: `【体験】${compDetailLabel}で盛り上がる${cleanDest}アクティビティ＆食べ歩き`,
-        description: `現地の気候を活かした体験アクティビティと、${compDetailLabel}にぴったりの写真映えスポット・ご当地ディナーを詰め込んだ充実コース！`,
+        title: `【体験】${cleanOrigin}発・${compDetailLabel}で盛り上がる${cleanDest}アクティビティ＆食べ歩き`,
+        description: `移動も旅の思い出になる${prioObj.label}ルートと、${compDetailLabel}にぴったりの写真映えスポット・ご当地ディナーを詰め込んだ充実コース！`,
+        departurePoint: cleanOrigin,
         destination: cleanDest,
+        transportMethod: transMethod,
+        transportPriority: transPrio,
         startDate: d1,
         endDate: endDateStr,
-        budget: calcPerPersonBudget(baseSet1, 6000),
+        budget: calcPerPersonBudget(baseSet1, 4500),
         isSoloPlan,
         events: baseSet1.map((ev, i) => i === 2 ? { ...ev, type: 'active', title: `${cleanDest} ご当地体験・クルーズ＆絶景散策` } : ev)
       }
     ];
   };
 
-  const handleGenerate = () => {
-    const plans = buildPlansForDestination(destination, days, companion, theme, startDate, adultCount, childCount);
-    setGeneratedPlans(plans);
-    setExpandedPlanIdx(null);
-    setEditingTitleIdx(null);
+  // ★ 鉄則①＆②：定番エリアの初回プランや過去キャッシュがある場合はAPIを叩かず0秒・0円で返し、カスタム条件や「AIで別プラン再生成」のときだけGemini APIを呼ぶ
+  const handleGenerate = async (forceGeminiApi = false) => {
+    if (saveOriginForNext && departurePoint.trim()) {
+      addSavedDeparturePoint(departurePoint.trim());
+    }
+    const cleanDest = (destination || '京都府').trim();
+    const cleanOrigin = (departurePoint || '自宅最寄り駅').trim();
+    const methodObj = TRANSPORT_METHODS.find(m => m.id === transportMethod) || TRANSPORT_METHODS[0];
+    const prioObj = TRANSPORT_PRIORITIES.find(p => p.id === transportPriority) || TRANSPORT_PRIORITIES[0];
+    const cacheKey = `plan_${cleanOrigin}_${cleanDest}_${transportMethod}_${transportPriority}_${budgetTier}_${days}_${companion}_${adultCount}_${childCount}_${theme}`;
+    const isPopularPresetArea = POPULAR_CACHED_AREAS.some(area => cleanDest.includes(area)) && days <= 4;
+
+    if (!forceGeminiApi) {
+      const savedCache = getCachedAiResponse(cacheKey);
+      if (savedCache && Array.isArray(savedCache) && savedCache.length > 0) {
+        setGeneratedPlans(savedCache);
+        setPlanSourceType('cache');
+        setExpandedPlanIdx(null);
+        setEditingTitleIdx(null);
+        return;
+      }
+      if (isPopularPresetArea) {
+        const presetPlans = buildPlansForDestination(cleanDest, days, companion, theme, startDate, adultCount, childCount, cleanOrigin, transportMethod, transportPriority, budgetTier);
+        setCachedAiResponse(cacheKey, presetPlans);
+        setGeneratedPlans(presetPlans);
+        setPlanSourceType('cache');
+        setExpandedPlanIdx(null);
+        setEditingTitleIdx(null);
+        return;
+      }
+    }
+
+    // ここから先は Google Gemini API を実際に呼び出すため、1日5回（＋広告ボーナス）のレート制限をチェック
+    const quotaCheck = consumeAiQuota();
+    setQuotaStatus(quotaCheck.status);
+    if (!quotaCheck.ok) {
+      setShowRewardAdModal(true);
+      return;
+    }
+
+    setIsAiGenerating(true);
+    try {
+      const d1 = startDate || getTodayString();
+      const endObj = new Date(d1);
+      endObj.setDate(endObj.getDate() + Math.max(0, days - 1));
+      const endDateStr = endObj.toISOString().split('T')[0];
+
+      const schema = {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            badge: { type: "STRING" },
+            title: { type: "STRING" },
+            description: { type: "STRING" },
+            budget: { type: "INTEGER" },
+            events: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  dayIndex: { type: "INTEGER" },
+                  time: { type: "STRING" },
+                  title: { type: "STRING" },
+                  type: { type: "STRING" },
+                  location: { type: "STRING" },
+                  cost: { type: "INTEGER" },
+                  memo: { type: "STRING" }
+                },
+                propertyOrdering: ["dayIndex", "time", "title", "type", "location", "cost", "memo"]
+              }
+            }
+          },
+          propertyOrdering: ["badge", "title", "description", "budget", "events"]
+        }
+      };
+
+      const aiResult = await callGoogleGeminiStructured({
+        systemPrompt: "あなたは日本の旅行プランナーAIです。出発地点から目的地までの指定された移動手段と重視ポイント（コスパ重視・速さ重視・体験重視）を1日目の最初の移動予定に具体的に組み込み、実在する高評価の観光地・飲食店・宿を使った旅行プランを2パターン、JSON配列で返してください。eventsのtypeは transport, meal, sightseeing, active, hotel のいずれか、dayIndexは1始まりの何日目かを指定してください。",
+        userPrompt: `出発地点:${cleanOrigin}、目的地:${cleanDest}、移動手段:${methodObj.label}、移動の重視ポイント:${prioObj.label}（${prioObj.desc}）、1人あたり予算目安:${budgetTier}、日数:${days}日間、同行者:${companion}（大人${adultCount}名・子ども${childCount}名）、テーマ:${theme}。具体的な実在店名とおすすめ理由をmemoに入れて提案してください。`,
+        responseSchema: schema
+      });
+
+      if (Array.isArray(aiResult) && aiResult.length > 0) {
+        const formattedPlans = aiResult.map(p => ({
+          badge: p.badge || `✨ ${methodObj.short}×${prioObj.label}`,
+          title: p.title || `${cleanOrigin}発・${cleanDest} ${days}日間の旅`,
+          description: p.description || '',
+          departurePoint: cleanOrigin,
+          destination: cleanDest,
+          transportMethod,
+          transportPriority,
+          startDate: d1,
+          endDate: endDateStr,
+          budget: Number(p.budget) || 35000,
+          isSoloPlan,
+          events: (p.events || []).map((ev, idx) => {
+            const evDateObj = new Date(d1);
+            evDateObj.setDate(evDateObj.getDate() + Math.max(0, (Number(ev.dayIndex) || 1) - 1));
+            return {
+              date: evDateObj.toISOString().split('T')[0],
+              time: ev.time || '12:00',
+              title: ev.title || '観光スポット',
+              type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type) ? ev.type : 'sightseeing',
+              departureOrigin: idx === 0 ? cleanOrigin : '',
+              transportMethod: idx === 0 ? transportMethod : '',
+              location: ev.location || cleanDest,
+              cost: Number(ev.cost) || 1500,
+              memo: ev.memo || ''
+            };
+          })
+        }));
+        setCachedAiResponse(cacheKey, formattedPlans);
+        setGeneratedPlans(formattedPlans);
+        setPlanSourceType('gemini');
+        setExpandedPlanIdx(null);
+        setEditingTitleIdx(null);
+        return;
+      }
+      throw new Error('Fallback to preset');
+    } catch (err) {
+      const fallbackPlans = buildPlansForDestination(cleanDest, days, companion, theme, startDate, adultCount, childCount, cleanOrigin, transportMethod, transportPriority, budgetTier);
+      setGeneratedPlans(fallbackPlans);
+      setPlanSourceType('cache');
+    } finally {
+      setIsAiGenerating(false);
+    }
   };
 
   const CHAT_QUICK_SUGGESTIONS = [
@@ -8830,14 +9428,44 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
     '🌴 南国リゾートでゆったり休日'
   ];
 
-  const handleSendChat = (e, presetText) => {
+  const handleSendChat = async (e, presetText) => {
     if (e) e.preventDefault();
     const q = (presetText || chatInput).trim();
-    if (!q) return;
+    if (!q || isAiGenerating) return;
     setChatMessages(prev => [...prev, { role: 'user', text: q }]);
     if (!presetText) setChatInput('');
 
-    // 入力文から目的地・日数・大人/子ども人数を簡易抽出してプランを生成
+    // まず同じ質問のキャッシュがあるか確認（キャッシュヒットならAPI消費0）
+    const chatCacheKey = `chat_${q}_${days}_${startDate}_${adultCount}_${childCount}`;
+    const cachedChat = getCachedAiResponse(chatCacheKey);
+    if (cachedChat) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `${cachedChat.text}\n（※保存済みキャッシュから高速表示・本日のAI無料枠は消費していません⚡）`,
+          plan: { ...cachedChat.plan, isSoloPlan }
+        }
+      ]);
+      return;
+    }
+
+    // 自由入力チャットのときは1日5回のレートリミットを消費してGoogle Gemini APIを呼ぶ
+    const quotaCheck = consumeAiQuota();
+    setQuotaStatus(quotaCheck.status);
+    if (!quotaCheck.ok) {
+      setShowRewardAdModal(true);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `本日のAI無料生成枠（${quotaCheck.status.limit}回）を使い切りました🙏\n上の「🎬 動画広告を見て＋${REWARD_AD_BONUS_COUNT}回増やす」ボタンを押すと、すぐに続きをご相談いただけます！`
+        }
+      ]);
+      return;
+    }
+
+    setIsAiGenerating(true);
     const matchedPref = PREFECTURES.find(p => q.includes(p.replace(/[都道府県]$/, ''))) ||
       (q.includes('箱根') || q.includes('温泉') ? '神奈川県・箱根' : q.includes('沖縄') || q.includes('南国') ? '沖縄県' : q.includes('札幌') || q.includes('小樽') ? '北海道' : q.includes('金沢') ? '石川県' : q.includes('カフェ') ? '長野県・軽井沢' : destination);
     const dayMatch = q.match(/(\d+)\s*泊\s*(\d+)\s*日/) || q.match(/(\d+)\s*日間?/);
@@ -8852,19 +9480,91 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
     const parsedChildren = childMatch ? Number(childMatch[1] || childMatch[2] || 1) : childCount;
     const parsedCompanion = parsedChildren > 0 ? '家族・子連れ' : companion;
 
-    const suggestedList = buildPlansForDestination(matchedPref, parsedDays, parsedCompanion, theme, startDate, adultCount, parsedChildren);
-    const topPlan = suggestedList[0];
+    const d1 = startDate || getTodayString();
+    const endObj = new Date(d1);
+    endObj.setDate(endObj.getDate() + Math.max(0, parsedDays - 1));
+    const endDateStr = endObj.toISOString().split('T')[0];
 
-    setTimeout(() => {
+    try {
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          replyMessage: { type: "STRING" },
+          destination: { type: "STRING" },
+          title: { type: "STRING" },
+          budget: { type: "INTEGER" },
+          events: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                dayIndex: { type: "INTEGER" },
+                time: { type: "STRING" },
+                title: { type: "STRING" },
+                type: { type: "STRING" },
+                location: { type: "STRING" },
+                cost: { type: "INTEGER" },
+                memo: { type: "STRING" }
+              },
+              propertyOrdering: ["dayIndex", "time", "title", "type", "location", "cost", "memo"]
+            }
+          }
+        },
+        propertyOrdering: ["replyMessage", "destination", "title", "budget", "events"]
+      };
+
+      const aiData = await callGoogleGeminiStructured({
+        systemPrompt: "あなたは親しみやすい日本の旅行コンシェルジュAIです。出発地点・移動手段・重視ポイント（コスパ/速さ/体験）・1人あたり予算を踏まえ、実在する名店・観光地を使った旅行プラン1件と丁寧な返答メッセージ(replyMessage)をJSONで返してください。",
+        userPrompt: `ユーザーの要望:「${q}」 / 出発地点:${departurePoint} / 移動手段:${TRANSPORT_METHODS.find(m => m.id === transportMethod)?.label}（${TRANSPORT_PRIORITIES.find(p => p.id === transportPriority)?.label}） / 1人予算目安:${budgetTier} / 出発日:${d1} / 日数目安:${parsedDays}日間 / 同行者:大人${adultCount}名・子ども${parsedChildren}名`,
+        responseSchema: schema
+      });
+
+      if (aiData && Array.isArray(aiData.events) && aiData.events.length > 0) {
+        const builtPlan = {
+          badge: '✨ Google AI チャット提案',
+          title: aiData.title || `【AI提案】${aiData.destination || matchedPref}の旅`,
+          description: aiData.replyMessage || '',
+          destination: aiData.destination || matchedPref,
+          startDate: d1,
+          endDate: endDateStr,
+          budget: Number(aiData.budget) || 32000,
+          isSoloPlan,
+          events: aiData.events.map(ev => {
+            const evDateObj = new Date(d1);
+            evDateObj.setDate(evDateObj.getDate() + Math.max(0, (Number(ev.dayIndex) || 1) - 1));
+            return {
+              date: evDateObj.toISOString().split('T')[0],
+              time: ev.time || '12:00',
+              title: ev.title,
+              type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type) ? ev.type : 'sightseeing',
+              location: ev.location || aiData.destination || matchedPref,
+              cost: Number(ev.cost) || 1500,
+              memo: ev.memo || ''
+            };
+          })
+        };
+        const replyText = aiData.replyMessage || `ご希望に合わせて「${builtPlan.destination}」のプランを作成しました！`;
+        setCachedAiResponse(chatCacheKey, { text: replyText, plan: builtPlan });
+        setChatMessages(prev => [...prev, { role: 'ai', text: replyText, plan: builtPlan }]);
+        setIsAiGenerating(false);
+        return;
+      }
+      throw new Error('Empty events');
+    } catch (err) {
+      const suggestedList = buildPlansForDestination(matchedPref, parsedDays, parsedCompanion, theme, startDate, adultCount, parsedChildren, departurePoint, transportMethod, transportPriority, budgetTier);
+      const topPlan = suggestedList[0];
+      const fallbackText = `ご希望に合わせて「${matchedPref}」の具体的な実在スポット＆夕食スタイル提案入りのプランを作成しました！下のボタンからそのまましおりに反映できます✨`;
+      setCachedAiResponse(chatCacheKey, { text: fallbackText, plan: topPlan });
       setChatMessages(prev => [
         ...prev,
         {
           role: 'ai',
-          text: `ご希望に合わせて「${matchedPref}」の具体的な実在スポット＆夕食スタイル提案入りのプランを作成しました！下のボタンからそのまましおりに反映できます✨`,
+          text: fallbackText,
           plan: topPlan
         }
       ]);
-    }, 350);
+      setIsAiGenerating(false);
+    }
   };
 
   const handleUpdatePlanTitle = (pIdx, nextTitle) => {
@@ -8889,7 +9589,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         className="bg-white w-full max-w-md rounded-[32px] p-6 shadow-2xl h-[84vh] max-h-[88vh] flex flex-col animate-in zoom-in-95"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-3 shrink-0">
+        <div className="flex justify-between items-center mb-2 shrink-0">
           <h3 className="font-extrabold text-base text-stone-800 flex items-center gap-1.5">
             <Sparkles size={18} className="text-[#5E8473]" /> AIおまかせプラン作成
           </h3>
@@ -8897,6 +9597,93 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
             <X size={20} />
           </button>
         </div>
+
+        {/* ★ 1日のAI利用回数制限（レートリミット）＆動画広告で＋3回回復バー */}
+        <div className="mb-2.5 px-3 py-2 rounded-2xl bg-stone-50 border border-stone-200/80 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setShowPopularAreasInfo(prev => !prev)}
+              className="text-[10px] font-extrabold pl-2 pr-1.5 py-0.5 rounded-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300/70 shrink-0 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+              title="対象となる定番エリア一覧を見る"
+            >
+              <span>⚡ 定番エリアは枠消費0</span>
+              <span className="w-3.5 h-3.5 rounded-full bg-emerald-700 text-white flex items-center justify-center text-[9px] font-serif italic font-black leading-none shadow-2xs">
+                i
+              </span>
+            </button>
+            <span className="text-[11px] font-bold text-stone-600 truncate">
+              本日のAI生成枠: <strong className={quotaStatus.remaining === 0 ? 'text-red-500' : 'text-[#557465]'}>残り{quotaStatus.remaining}/{quotaStatus.limit}回</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowRewardAdModal(true)}
+            className="shrink-0 px-2.5 py-1 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300/80 text-[10px] font-extrabold flex items-center gap-1 transition-colors active:scale-95"
+          >
+            🎬 広告で＋{REWARD_AD_BONUS_COUNT}回
+          </button>
+        </div>
+
+        {/* ★ iボタンをタップしたときに開く「枠消費0の定番エリア一覧」ポップオーバー（タップでそのまま目的地に入力可能） */}
+        {showPopularAreasInfo && (
+          <div className="mb-3 p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-xs space-y-2.5 shrink-0 animate-in fade-in slide-in-from-top-1 max-h-56 overflow-y-auto no-scrollbar">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="font-extrabold text-emerald-900 flex items-center gap-1.5">
+                  <Info size={14} className="text-emerald-600 shrink-0" />
+                  AI無料枠を消費しない「定番エリア」一覧
+                </p>
+                <p className="text-[10px] font-bold text-emerald-700 mt-0.5 leading-relaxed">
+                  以下のエリア（4日間以内）の初回プラン提案は、厳選キャッシュから<strong>0秒・枠消費0回</strong>で作成できます！（タップで目的地にセットできます）
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPopularAreasInfo(false)}
+                className="p-1 text-emerald-600 hover:bg-emerald-100 rounded-full shrink-0"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              {POPULAR_AREAS_GUIDE.map(group => (
+                <div key={group.region} className="bg-white/90 p-2 rounded-xl border border-emerald-100">
+                  <span className="text-[10px] font-extrabold text-emerald-800 block mb-1">
+                    🗾 {group.region}
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {group.areas.map(areaName => {
+                      const cleanName = areaName.split('（')[0];
+                      const isCurrent = destination.includes(cleanName);
+                      return (
+                        <button
+                          key={areaName}
+                          type="button"
+                          onClick={() => {
+                            setDestination(areaName);
+                            setMode('condition');
+                            setGeneratedPlans(null);
+                            setShowPopularAreasInfo(false);
+                            customAlert(`目的地に「${areaName}」をセットしました！（枠消費0対象）`);
+                          }}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all active:scale-95 ${
+                            isCurrent
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-stone-50 hover:bg-emerald-100/70 text-stone-700 border-stone-200'
+                          }`}
+                        >
+                          {areaName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* タブ切り替え：条件を選んで作成 / AIコンシェルジュに相談 */}
         <div className="flex bg-stone-100 p-1 rounded-2xl mb-4 shrink-0">
@@ -8926,6 +9713,47 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
           !generatedPlans ? (
             <div className="flex-1 flex flex-col min-h-0">
               <div className="flex-1 overflow-y-auto no-scrollbar pr-0.5 space-y-4 pb-3">
+                {/* ★ 出発地点の選択（自宅の最寄り駅＋保存済み地点＋新規登録チェック） */}
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-extrabold text-stone-700 flex items-center gap-1">
+                      <Navigation size={12} className="text-[#7A9D8C]" /> 出発地点（基本: 自宅の最寄り駅）
+                    </label>
+                    <label className="flex items-center gap-1 text-[9px] font-bold text-[#557465] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveOriginForNext}
+                        onChange={e => setSaveOriginForNext(e.target.checked)}
+                        className="rounded accent-[#7A9D8C]"
+                      />
+                      <span>次の旅行でも使う</span>
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    value={departurePoint}
+                    onChange={e => setDeparturePoint(e.target.value)}
+                    placeholder="例: 松本駅 / 東京駅 / 羽田空港"
+                    className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  />
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    {savedDepartures.map(pt => (
+                      <button
+                        key={pt}
+                        type="button"
+                        onClick={() => setDeparturePoint(pt)}
+                        className={`whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all shrink-0 ${
+                          departurePoint === pt
+                            ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                            : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        📍 {pt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">行きたいエリア・都道府県</label>
                   <input
@@ -8935,6 +9763,70 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     placeholder="例: 京都府、沖縄県、箱根温泉、北海道"
                     className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                   />
+                </div>
+
+                {/* ★ 目的地までの移動手段＆重視スタイル（コスパ重視 / 速さ重視 / 体験重視） */}
+                <div className="p-3 bg-sky-50/60 border border-sky-200/80 rounded-2xl space-y-2.5">
+                  <label className="text-[11px] font-extrabold text-sky-900 block">
+                    🚆 目的地まで何で移動する？（移動手段＆重視ポイント）
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TRANSPORT_METHODS.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setTransportMethod(m.id)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
+                          transportMethod === m.id
+                            ? 'bg-[#7A9D8C] text-white border-[#7A9D8C] shadow-2xs'
+                            : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                    {TRANSPORT_PRIORITIES.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setTransportPriority(p.id)}
+                        className={`p-2 rounded-xl border text-center transition-all ${
+                          transportPriority === p.id
+                            ? 'bg-sky-700 text-white border-sky-700 shadow-2xs'
+                            : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                        }`}
+                      >
+                        <span className="text-[10px] font-extrabold block">{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] font-bold text-sky-800 leading-snug">
+                    💡 {TRANSPORT_PRIORITIES.find(p => p.id === transportPriority)?.desc}
+                  </p>
+                </div>
+
+                {/* ★ 1人あたりの予算タブ */}
+                <div>
+                  <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">1人あたりの予算目安</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {BUDGET_TIER_OPTIONS.map(b => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setBudgetTier(b.id)}
+                        className={`py-2 px-3 rounded-xl text-[11px] font-extrabold border transition-all ${
+                          budgetTier === b.id
+                            ? 'bg-[#5E8473] text-white border-[#5E8473] shadow-2xs'
+                            : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -9146,27 +10038,55 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               <div className="pt-3 border-t border-stone-100 shrink-0 bg-white relative z-10">
                 <button
                   type="button"
-                  onClick={handleGenerate}
-                  className="w-full py-4 px-5 bg-gradient-to-r from-sky-200 via-sky-300/80 to-cyan-200 hover:brightness-105 text-sky-900 border border-sky-300 font-extrabold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer select-none"
+                  disabled={isAiGenerating}
+                  onClick={() => handleGenerate(false)}
+                  className="w-full py-4 px-5 bg-gradient-to-r from-sky-200 via-sky-300/80 to-cyan-200 hover:brightness-105 text-sky-900 border border-sky-300 font-extrabold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer select-none disabled:opacity-50"
                 >
                   <Sparkles size={16} className="pointer-events-none shrink-0 text-sky-600" />
-                  <span className="pointer-events-none">この条件でプランを提案してもらう</span>
+                  <span className="pointer-events-none">
+                    {isAiGenerating ? 'Google AIがプランを作成中...' : 'この条件でプランを提案してもらう'}
+                  </span>
                 </button>
               </div>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto no-scrollbar pr-0.5 space-y-4 pb-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-extrabold text-stone-800 flex items-center gap-1">
                     <Sparkles size={14} className="text-sky-500" /> AI提案プラン ({generatedPlans.length}件)
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setGeneratedPlans(null)}
-                    className="text-[11px] font-bold text-stone-500 underline hover:text-stone-700"
-                  >
-                    条件を変える
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isAiGenerating}
+                      onClick={() => handleGenerate(true)}
+                      className="px-2.5 py-1 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-[10px] font-extrabold flex items-center gap-1 disabled:opacity-50"
+                      title="AI無料枠を1回使ってGoogle Gemini APIで別プランを新規生成"
+                    >
+                      <Sparkles size={11} className="text-sky-600" />
+                      {isAiGenerating ? '生成中...' : '✨ AIで別プラン再生成(1回消費)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGeneratedPlans(null)}
+                      className="text-[11px] font-bold text-stone-500 underline hover:text-stone-700"
+                    >
+                      条件変更
+                    </button>
+                  </div>
+                </div>
+
+                {/* キャッシュヒット時の節約通知バナー */}
+                <div className={`px-3 py-2 rounded-2xl border text-[11px] font-bold flex items-center justify-between gap-2 ${
+                  planSourceType === 'cache'
+                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+                    : 'bg-sky-50 border-sky-200 text-sky-900'
+                }`}>
+                  <span>
+                    {planSourceType === 'cache'
+                      ? '⚡ 定番・保存キャッシュから高速表示しました（本日のAI無料枠は消費していません）'
+                      : '✨ Google Gemini AIでカスタム生成しました（本日のAI枠を1回使用）'}
+                  </span>
                 </div>
 
                 {generatedPlans.map((plan, pIdx) => {
@@ -9228,8 +10148,14 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                   className="flex-1 min-w-0 px-2 py-0.5 bg-white border border-stone-200 rounded text-[11px] font-bold text-stone-800"
                                 />
                               </div>
+                              <div className="flex items-center justify-between text-[10px] text-stone-500 font-bold px-1">
+                                <span className="truncate">📍 {ev.location}</span>
+                                <span className="shrink-0">¥{Number(ev.cost || 0).toLocaleString()}/人</span>
+                              </div>
                               {ev.memo && (
-                                <p className="text-[10px] text-stone-500 leading-snug pl-1">{ev.memo}</p>
+                                <p className="text-[10px] text-stone-500 bg-white p-1.5 rounded-lg border border-stone-100 leading-relaxed">
+                                  {ev.memo}
+                                </p>
                               )}
                             </div>
                           ))}
@@ -9239,10 +10165,10 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       <button
                         type="button"
                         onClick={() => onSelectPlan(plan)}
-                        className="w-full py-3 bg-gradient-to-r from-sky-100 via-sky-200/85 to-cyan-100 hover:brightness-95 text-sky-900 border border-sky-300 font-extrabold rounded-2xl text-xs shadow-2xs transition-all active:scale-[0.99] cursor-pointer flex items-center justify-center gap-1.5"
+                        className="w-full py-3 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.99]"
                       >
-                        <Sparkles size={14} className="text-sky-600" />
-                        <span>このプランをしおりに反映する</span>
+                        <Check size={15} />
+                        <span>このプランでしおりを作成する（¥{Number(plan.budget || 0).toLocaleString()}/人）</span>
                       </button>
                     </div>
                   );
@@ -9250,10 +10176,61 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
             </div>
           )
         ) : (
-          /* チャット相談モード（出発日・日数・操作スタイル指定付き＆広々とした高さ） */
+          /* チャット相談モード（上部タブで予算・移動手段・重視ポイント・出発日をいつでも切り替え可能） */
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* 出発日・日数・操作スタイルのコンパクト設定バー */}
-            <div className="mb-3 p-3 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2 shrink-0">
+            {/* ★ 上部設定タブ：出発日・日数・予算タブ・移動重視タブ */}
+            <div className="mb-2.5 p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2 shrink-0">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-stone-400 block mb-0.5 pl-0.5">出発地 → 移動手段</label>
+                  <select
+                    value={transportMethod}
+                    onChange={e => setTransportMethod(e.target.value)}
+                    className="w-full px-2 py-1.5 bg-white border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  >
+                    {TRANSPORT_METHODS.map(m => (
+                      <option key={m.id} value={m.id}>{departurePoint.slice(0, 5)}発・{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-stone-400 block mb-0.5 pl-0.5">移動の重視ポイント</label>
+                  <select
+                    value={transportPriority}
+                    onChange={e => setTransportPriority(e.target.value)}
+                    className="w-full px-2 py-1.5 bg-white border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  >
+                    {TRANSPORT_PRIORITIES.map(p => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 上部でワンタップ選択できる「予算」タブ */}
+              <div>
+                <div className="flex items-center justify-between mb-1 pl-0.5">
+                  <span className="text-[10px] font-bold text-stone-400">💰 1人あたりの予算タブ</span>
+                  <span className="text-[10px] font-extrabold text-[#557465]">{budgetTier}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {BUDGET_TIER_OPTIONS.map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setBudgetTier(b.id)}
+                      className={`py-1 px-1.5 rounded-lg text-[10px] font-extrabold border transition-all truncate ${
+                        budgetTier === b.id
+                          ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                          : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                      }`}
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] font-bold text-stone-400 block mb-0.5 pl-0.5">出発日</label>
@@ -9261,7 +10238,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     type="date"
                     value={startDate}
                     onChange={e => setStartDate(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                    className="w-full px-2.5 py-1 bg-white border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                   />
                 </div>
                 <div>
@@ -9269,7 +10246,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   <select
                     value={days}
                     onChange={e => setDays(Number(e.target.value))}
-                    className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                    className="w-full px-2.5 py-1 bg-white border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                   >
                     <option value={1}>日帰り（1日）</option>
                     <option value={2}>1泊2日（2日間）</option>
@@ -9278,38 +10255,9 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     <option value={5}>4泊5日（5日間）</option>
                     <option value={6}>5泊6日（6日間）</option>
                     <option value={7}>6泊7日（1週間）</option>
-                    <option value={8}>7泊8日（8日間）</option>
-                    <option value={9}>8泊9日（9日間）</option>
-                    <option value={10}>9泊10日（10日間）</option>
                   </select>
                 </div>
               </div>
-
-              {!currentUser?.isGuest && (
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200/60">
-                  <span className="text-[10px] font-bold text-stone-500">しおりの操作スタイル</span>
-                  <div className="flex bg-stone-200/70 p-0.5 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setIsSoloPlan(true)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                        isSoloPlan ? 'bg-white text-stone-800 shadow-2xs' : 'text-stone-500 hover:text-stone-700'
-                      }`}
-                    >
-                      👤 1人旅・代表者のみ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsSoloPlan(false)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                        !isSoloPlan ? 'bg-white text-stone-800 shadow-2xs' : 'text-stone-500 hover:text-stone-700'
-                      }`}
-                    >
-                      👥 みんなで共有
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pb-3 pr-0.5">
@@ -9352,16 +10300,20 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               ))}
             </div>
 
-            {/* 入力欄のすぐ上に配置したワンタップ相談候補チップ */}
+            {/* ★ 入力欄のすぐ上に配置した提案ボタン：押すといきなり送信せず入力欄にセットして自由に書き足せる */}
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2 pt-1 shrink-0">
               {CHAT_QUICK_SUGGESTIONS.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => handleSendChat(null, suggestion)}
+                  onClick={() => {
+                    const cleanText = suggestion.replace(/^[^\s]+\s/, '');
+                    setChatInput(prev => prev ? `${prev} ${cleanText}` : cleanText);
+                  }}
                   className="whitespace-nowrap px-3 py-1.5 bg-[#7A9D8C]/10 hover:bg-[#7A9D8C]/20 text-[#4A6B5D] border border-[#7A9D8C]/25 rounded-full text-[11px] font-bold transition-colors shrink-0 active:scale-95 cursor-pointer"
+                  title="タップして入力欄に挿入"
                 >
-                  {suggestion}
+                  ＋ {suggestion}
                 </button>
               ))}
             </div>
@@ -9376,13 +10328,20 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               />
               <button
                 type="submit"
-                disabled={!chatInput.trim()}
+                disabled={!chatInput.trim() || isAiGenerating}
                 className="px-4 py-3 bg-[#5E8473] hover:bg-[#4A6B5D] text-white font-bold rounded-xl text-xs disabled:opacity-40 shrink-0 transition-colors"
               >
-                送信
+                {isAiGenerating ? '生成中' : '送信'}
               </button>
             </form>
           </div>
+        )}
+
+        {showRewardAdModal && (
+          <RewardVideoAdModal
+            onClose={() => setShowRewardAdModal(false)}
+            onCompleteReward={(next) => setQuotaStatus(next)}
+          />
         )}
       </div>
     </div>
@@ -9393,14 +10352,22 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 // しおり内のAIコンシェルジュ相談モーダル (AiConciergeChatModal)
 // ------------------------------------------
 function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onClose, onAddSuggestedEvent }) {
+  useLockBodyScroll(true);
   const dest = trip.destination || '京都府';
   const [input, setInput] = useState('');
+  const [spotBudgetCap, setSpotBudgetCap] = useState('指定なし');
+  const [transportFilter, setTransportFilter] = useState(trip.transportMethod || 'shinkansen_train');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [quotaStatus, setQuotaStatus] = useState(() => getAiQuotaStatus());
+  const [showRewardAd, setShowRewardAd] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'ai',
-      text: `「${trip.title}（${dest}）」のAIコンシェルジュです✨\n空き時間のカフェや周辺ランチ、雨の日の代替スポットなど、何でも相談してください！`
+      text: `「${trip.title}（${dest}）」のAIコンシェルジュです✨\n上のタブで「予算上限」や「移動手段」を選び、下の候補ボタン（タップで入力欄に入ります）から何でも相談してください！`
     }
   ]);
+
+  const SPOT_BUDGET_TABS = ['指定なし', '〜¥1,500', '〜¥3,000', '〜¥5,000', '贅沢ディナー'];
 
   const QUICK_PROMPTS = [
     '☕ 近くで評判のカフェを教えて',
@@ -9409,64 +10376,141 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
     '🎁 おすすめのお土産スポット'
   ];
 
-  const handleSend = (e, presetText) => {
+  const handleSend = async (e, presetText) => {
     if (e) e.preventDefault();
-    const query = (presetText || input).trim();
-    if (!query) return;
+    const rawQuery = (presetText || input).trim();
+    if (!rawQuery || isAiLoading) return;
+    const budgetHint = spotBudgetCap !== '指定なし' ? `（予算目安:${spotBudgetCap}）` : '';
+    const query = `${rawQuery}${budgetHint}`;
 
     setMessages(prev => [...prev, { role: 'user', text: query }]);
     if (!presetText) setInput('');
 
-    const isCafe = /カフェ|コーヒー|スイーツ|甘味|休憩/.test(query);
-    const isMeal = /ランチ|ご飯|ごはん|ディナー|夕飯|名物|グルメ/.test(query);
-    const isRain = /雨|屋内|美術館|水族館/.test(query);
-
-    const suggestedSpot = isCafe
-      ? {
-          time: '15:00',
-          title: `${dest}の人気古民家カフェ＆ご当地スイーツ`,
-          type: 'meal',
-          location: `${dest} カフェ`,
-          cost: 1500,
-          memo: '【AIおすすめ】観光の合間にほっと一息つける口コミ高評価のカフェです。'
-        }
-      : isMeal
-      ? {
-          time: '12:30',
-          title: `${dest}の名物ご当地ランチ（老舗人気店）`,
-          type: 'meal',
-          location: `${dest} ランチ`,
-          cost: 2400,
-          memo: '【AIおすすめ】地元の旬の食材を堪能できる定番ランチスポット。'
-        }
-      : isRain
-      ? {
-          time: '13:30',
-          title: `${dest}の美術館・ミュージアム＆屋内体験`,
-          type: 'sightseeing',
-          location: `${dest} 美術館`,
-          cost: 1200,
-          memo: '【AIおすすめ】天候を問わず快適に楽しめる屋内スポットです。'
-        }
-      : {
-          time: '16:00',
-          title: `${dest}の定番お土産＆セレクトショップ巡り`,
-          type: 'sightseeing',
-          location: `${dest} 駅 お土産`,
-          cost: 2500,
-          memo: '【AIおすすめ】限定スイーツや雑貨が揃う人気のお土産スポット。'
-        };
-
-    setTimeout(() => {
+    // 1. 定番クイック質問または過去キャッシュがある場合はAPI消費ゼロで即答
+    const cacheKey = `concierge_${dest}_${query}`;
+    const cached = getCachedAiResponse(cacheKey);
+    if (cached) {
       setMessages(prev => [
         ...prev,
         {
           role: 'ai',
-          text: `「${query}」に合わせて、${dest}でおすすめのスポットをピックアップしました！ワンタップでしおりに追加できます。`,
-          spot: suggestedSpot
+          text: `${cached.text}\n（※キャッシュから高速表示・AI枠消費0⚡）`,
+          spot: cached.spot
         }
       ]);
-    }, 300);
+      return;
+    }
+
+    // 2. 自由入力の質問はレートリミット（1日5回＋動画広告ボーナス）をチェックしてGemini APIを呼び出す
+    const quotaCheck = consumeAiQuota();
+    setQuotaStatus(quotaCheck.status);
+    if (!quotaCheck.ok) {
+      setShowRewardAd(true);
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `本日のAI無料相談枠（${quotaCheck.status.limit}回）を使い切りました🙏\n上の「🎬 広告で＋${REWARD_AD_BONUS_COUNT}回」から動画を見ると、すぐに相談枠を回復できます！`
+        }
+      ]);
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          replyText: { type: "STRING" },
+          spot: {
+            type: "OBJECT",
+            properties: {
+              time: { type: "STRING" },
+              title: { type: "STRING" },
+              type: { type: "STRING" },
+              location: { type: "STRING" },
+              cost: { type: "INTEGER" },
+              memo: { type: "STRING" }
+            },
+            propertyOrdering: ["time", "title", "type", "location", "cost", "memo"]
+          }
+        },
+        propertyOrdering: ["replyText", "spot"]
+      };
+
+      const aiRes = await callGoogleGeminiStructured({
+        systemPrompt: "あなたは旅行中のサポートを行うAIコンシェルジュです。質問に対する簡潔な回答(replyText)と、しおりにそのまま追加できる実在のおすすめスポット1件(spot)をJSONで返してください。spot.typeは meal, sightseeing, active, transport, hotel のいずれかにしてください。",
+        userPrompt: `旅行先:${dest}（しおり名:${trip.title}） / 相談内容:「${query}」`,
+        responseSchema: schema
+      });
+
+      if (aiRes && aiRes.spot) {
+        const resPayload = {
+          text: aiRes.replyText || `「${query}」に合わせて、${dest}でおすすめのスポットをピックアップしました！`,
+          spot: {
+            time: aiRes.spot.time || '14:00',
+            title: aiRes.spot.title || `${dest}のおすすめスポット`,
+            type: ['meal', 'sightseeing', 'active', 'transport', 'hotel'].includes(aiRes.spot.type) ? aiRes.spot.type : 'sightseeing',
+            location: aiRes.spot.location || dest,
+            cost: Number(aiRes.spot.cost) || 1500,
+            memo: aiRes.spot.memo || ''
+          }
+        };
+        setCachedAiResponse(cacheKey, resPayload);
+        setMessages(prev => [...prev, { role: 'ai', text: resPayload.text, spot: resPayload.spot }]);
+        setIsAiLoading(false);
+        return;
+      }
+      throw new Error('Fallback');
+    } catch (err) {
+      const isCafe = /カフェ|コーヒー|スイーツ|甘味|休憩/.test(query);
+      const isMeal = /ランチ|ご飯|ごはん|ディナー|夕飯|名物|グルメ/.test(query);
+      const isRain = /雨|屋内|美術館|水族館/.test(query);
+
+      const suggestedSpot = isCafe
+        ? {
+            time: '15:00',
+            title: `${dest}の人気古民家カフェ＆ご当地スイーツ`,
+            type: 'meal',
+            location: `${dest} カフェ`,
+            cost: 1500,
+            memo: '【AIおすすめ】観光の合間にほっと一息つける口コミ高評価のカフェです。'
+          }
+        : isMeal
+        ? {
+            time: '12:30',
+            title: `${dest}の名物ご当地ランチ（老舗人気店）`,
+            type: 'meal',
+            location: `${dest} ランチ`,
+            cost: 2400,
+            memo: '【AIおすすめ】地元の旬の食材を堪能できる定番ランチスポット。'
+          }
+        : isRain
+        ? {
+            time: '13:30',
+            title: `${dest}の美術館・ミュージアム＆屋内体験`,
+            type: 'sightseeing',
+            location: `${dest} 美術館`,
+            cost: 1200,
+            memo: '【AIおすすめ】天候を問わず快適に楽しめる屋内スポットです。'
+          }
+        : {
+            time: '16:00',
+            title: `${dest}の定番お土産＆セレクトショップ巡り`,
+            type: 'sightseeing',
+            location: `${dest} 駅 お土産`,
+            cost: 2500,
+            memo: '【AIおすすめ】限定スイーツや雑貨が揃う人気のお土産スポット。'
+          };
+
+      const fallbackPayload = {
+        text: `「${query}」に合わせて、${dest}でおすすめのスポットをピックアップしました！ワンタップでしおりに追加できます。`,
+        spot: suggestedSpot
+      };
+      setCachedAiResponse(cacheKey, fallbackPayload);
+      setMessages(prev => [...prev, { role: 'ai', text: fallbackPayload.text, spot: fallbackPayload.spot }]);
+      setIsAiLoading(false);
+    }
   };
 
   return (
@@ -9475,13 +10519,67 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
         className="bg-white w-full max-w-md rounded-[32px] p-6 shadow-2xl h-[78vh] flex flex-col animate-in zoom-in-95"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-3 shrink-0">
+        <div className="flex justify-between items-center mb-2 shrink-0">
           <h3 className="font-extrabold text-base text-stone-800 flex items-center gap-1.5">
             <Sparkles size={18} className="text-[#5E8473]" /> AI旅コンシェルジュに相談
           </h3>
           <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full">
             <X size={20} />
           </button>
+        </div>
+
+        {/* レートリミット残数＆リワード広告バー */}
+        <div className="mb-2 px-3 py-1.5 rounded-2xl bg-stone-50 border border-stone-200/80 flex items-center justify-between text-[10px] font-bold shrink-0">
+          <span className="text-stone-600">
+            本日のAI相談枠: <strong className={quotaStatus.remaining === 0 ? 'text-red-500' : 'text-[#557465]'}>残り{quotaStatus.remaining}/{quotaStatus.limit}回</strong>（同じ質問はキャッシュ0円）
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowRewardAd(true)}
+            className="px-2.5 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300/80 font-extrabold"
+          >
+            🎬 広告で＋{REWARD_AD_BONUS_COUNT}回
+          </button>
+        </div>
+
+        {/* ★ AIコンシェルジュ上部の「予算タブ」＆「移動手段タブ」 */}
+        <div className="mb-2.5 p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2 shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-extrabold text-stone-500">💰 1人あたり予算上限タブ</span>
+            <span className="text-[10px] font-extrabold text-[#557465]">{spotBudgetCap}</span>
+          </div>
+          <div className="flex gap-1 overflow-x-auto no-scrollbar">
+            {SPOT_BUDGET_TABS.map(tab => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setSpotBudgetCap(tab)}
+                className={`whitespace-nowrap px-2.5 py-1 rounded-lg text-[10px] font-extrabold border transition-all shrink-0 ${
+                  spotBudgetCap === tab
+                    ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                    : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1 overflow-x-auto no-scrollbar pt-0.5">
+            {TRANSPORT_METHODS.map(m => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setTransportFilter(m.id)}
+                className={`whitespace-nowrap px-2 py-0.5 rounded-md text-[9px] font-bold border transition-all shrink-0 ${
+                  transportFilter === m.id
+                    ? 'bg-sky-700 text-white border-sky-700'
+                    : 'bg-white text-stone-500 border-stone-200'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pb-3 pr-0.5">
@@ -9522,15 +10620,20 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
           ))}
         </div>
 
+        {/* ★ 押したらいきなりチャット送信せず、入力欄にテキストが入る提案チップ */}
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2 pt-1 shrink-0">
           {QUICK_PROMPTS.map(prompt => (
             <button
               key={prompt}
               type="button"
-              onClick={() => handleSend(null, prompt)}
+              onClick={() => {
+                const cleanPrompt = prompt.replace(/^[^\s]+\s/, '');
+                setInput(prev => prev ? `${prev} ${cleanPrompt}` : cleanPrompt);
+              }}
               className="whitespace-nowrap px-3 py-1.5 bg-[#7A9D8C]/10 hover:bg-[#7A9D8C]/20 text-[#4A6B5D] border border-[#7A9D8C]/25 rounded-full text-[11px] font-bold transition-colors shrink-0 active:scale-95"
+              title="タップして入力欄に挿入"
             >
-              {prompt}
+              ＋ {prompt}
             </button>
           ))}
         </div>
@@ -9545,12 +10648,19 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
           />
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isAiLoading}
             className="px-4 py-3 bg-[#5E8473] hover:bg-[#4A6B5D] text-white font-bold rounded-xl text-xs disabled:opacity-40 shrink-0 transition-colors"
           >
-            送信
+            {isAiLoading ? '生成中' : '送信'}
           </button>
         </form>
+
+        {showRewardAd && (
+          <RewardVideoAdModal
+            onClose={() => setShowRewardAd(false)}
+            onCompleteReward={(next) => setQuotaStatus(next)}
+          />
+        )}
       </div>
     </div>
   );
