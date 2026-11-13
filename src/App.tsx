@@ -2952,6 +2952,7 @@ const setCachedAiResponse = (cacheKey, data) => {
 };
 
 // Google Gemini API 構造化出力呼び出し（APIキーは環境変数で管理し、コード内に秘密情報は置かない）
+
 const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
   let envKey = "";
   try {
@@ -2961,7 +2962,7 @@ const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSc
   } catch (e) {}
   const apiKey = envKey.trim();
   if (!apiKey) {
-    throw new Error('VITE_GEMINI_API_KEY is not configured. Add it to your .env file.');
+    throw new Error('VITE_GEMINI_API_KEY is not configured. Add it to your .env.local file.');
   }
 
   const payload = {
