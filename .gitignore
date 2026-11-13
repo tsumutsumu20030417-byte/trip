@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# 環境変数ファイル（GitHubに絶対に上げない）
+.env
+.env.local
+.env.*.local
