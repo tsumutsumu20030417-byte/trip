@@ -7,18 +7,6 @@ Currently, two official plugins are available:
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
 - [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Environment variables
-
-Before running the app, create a `.env` file from `.env.example` and set your Google Gemini API key:
-
-```bash
-cp .env.example .env
-```
-
-```env
-VITE_GEMINI_API_KEY=your_gemini_api_key_here
-```
-
 ## React Compiler
 
 The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).

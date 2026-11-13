@@ -194,80 +194,85 @@ const KNOWN_MUNICIPALITY_COORDS = [
 const getPrefMeta = (prefName) =>
   JAPAN_MAP_LAYOUT.find(p => p.pref === prefName) || { pref: prefName || '東京都', short: (prefName || '東京').replace(/[都道府県]$/, ''), region: '関東', icon: '🗾', color: '#7A9D8C' };
 
-// ★ 添付画像のシルエット・配置に完全準拠した「全47都道府県・境界線入り日本地図データ」
-// （国土地理院・行政区域データの座標系をベースに全47都道府県を個別のポリゴンとして定義）
+// ★ リアルな海岸線・半島・島嶼を持つ全47都道府県ポリゴンデータ（オフライン時フォールバック＋オンライン時は国土地理院ベースの高精細GeoJSONで描画）
 const GSI_PREFECTURE_PATHS = [
-  // 北海道（渡島半島・積丹・宗谷・知床・根室・北方四島）
-  { code: 1, pref: '北海道', short: '北海道', region: '北海道・東北', cx: 368, cy: 86, d: 'M338,16 L350,42 L386,62 L408,54 L398,74 L414,82 L396,96 L372,96 L354,122 L338,98 L314,98 L302,114 L290,134 L276,128 L278,108 L292,98 L286,80 L306,72 L322,48 L326,20 Z M418,52 L428,42 L434,46 L422,56 Z M438,36 L458,14 L466,18 L444,42 Z' },
-  // 東北6県
-  { code: 2, pref: '青森県', short: '青森', region: '北海道・東北', cx: 294, cy: 162, d: 'M272,150 L282,142 L286,154 L298,152 L302,138 L314,142 L314,168 L296,174 L270,170 Z' },
-  { code: 5, pref: '秋田県', short: '秋田', region: '北海道・東北', cx: 278, cy: 192, d: 'M270,170 L294,174 L292,214 L268,212 L266,192 L258,188 L266,180 Z' },
-  { code: 3, pref: '岩手県', short: '岩手', region: '北海道・東北', cx: 306, cy: 194, d: 'M294,174 L314,168 L324,192 L318,220 L292,214 Z' },
-  { code: 6, pref: '山形県', short: '山形', region: '北海道・東北', cx: 274, cy: 228, d: 'M268,212 L292,214 L290,244 L266,242 L262,226 Z' },
-  { code: 4, pref: '宮城県', short: '宮城', region: '北海道・東北', cx: 302, cy: 230, d: 'M292,214 L318,220 L314,236 L306,248 L290,244 Z' },
-  { code: 7, pref: '福島県', short: '福島', region: '北海道・東北', cx: 286, cy: 260, d: 'M266,242 L290,244 L306,248 L304,276 L272,276 L260,260 Z' },
-  // 関東7都県
-  { code: 8, pref: '茨城県', short: '茨城', region: '関東', cx: 298, cy: 292, d: 'M286,276 L304,276 L308,308 L290,308 L284,292 Z' },
-  { code: 9, pref: '栃木県', short: '栃木', region: '関東', cx: 278, cy: 286, d: 'M268,276 L286,276 L286,298 L268,296 Z' },
-  { code: 10, pref: '群馬県', short: '群馬', region: '関東', cx: 258, cy: 288, d: 'M246,276 L268,276 L268,296 L250,300 Z' },
-  { code: 11, pref: '埼玉県', short: '埼玉', region: '関東', cx: 270, cy: 306, d: 'M250,300 L286,298 L288,312 L254,312 Z' },
-  { code: 12, pref: '千葉県', short: '千葉', region: '関東', cx: 298, cy: 324, d: 'M288,308 L308,308 L314,320 L300,344 L290,336 L292,320 L286,314 Z' },
-  { code: 13, pref: '東京都', short: '東京', region: '関東', cx: 272, cy: 318, d: 'M256,312 L286,312 L286,322 L260,322 Z' },
-  { code: 14, pref: '神奈川県', short: '神奈川', region: '関東', cx: 268, cy: 330, d: 'M256,322 L284,322 L282,336 L258,336 Z' },
-  // 中部9県
-  { code: 15, pref: '新潟県', short: '新潟', region: '中部', cx: 250, cy: 256, d: 'M262,226 L266,242 L260,260 L246,276 L224,276 L242,250 Z M232,232 L240,224 L242,236 L234,240 Z' },
-  { code: 16, pref: '富山県', short: '富山', region: '中部', cx: 214, cy: 278, d: 'M204,268 L224,270 L224,288 L202,288 Z' },
-  { code: 17, pref: '石川県', short: '石川', region: '中部', cx: 196, cy: 266, d: 'M198,244 L210,242 L208,266 L202,288 L186,292 L192,266 Z' },
-  { code: 18, pref: '福井県', short: '福井', region: '中部', cx: 184, cy: 302, d: 'M186,292 L202,288 L200,306 L172,314 L168,304 Z' },
+  // 北海道（渡島半島・積丹半島・宗谷岬・知床半島・根室半島・襟裳岬）
+  { code: 1, pref: '北海道', short: '北海道', region: '北海道・東北', cx: 362, cy: 78, d: 'M334,14 L344,28 L356,42 L374,52 L392,58 L412,48 L404,64 L420,74 L404,84 L388,88 L374,90 L360,104 L352,120 L340,104 L326,96 L312,98 L302,108 L296,120 L288,132 L276,128 L278,116 L286,108 L280,96 L272,92 L276,82 L290,82 L302,72 L314,56 L322,36 L326,18 Z M424,48 L434,38 L438,42 L428,52 Z M442,32 L460,14 L466,18 L448,38 Z' },
+  // 東北6県（津軽半島・下北半島・男鹿半島・牡鹿半島）
+  { code: 2, pref: '青森県', short: '青森', region: '北海道・東北', cx: 294, cy: 158, d: 'M272,146 L278,136 L284,140 L284,150 L296,150 L298,134 L310,136 L306,146 L314,150 L314,168 L296,172 L270,168 L266,156 Z' },
+  { code: 5, pref: '秋田県', short: '秋田', region: '北海道・東北', cx: 278, cy: 190, d: 'M270,168 L294,172 L292,212 L268,210 L266,192 L256,188 L256,182 L266,180 Z' },
+  { code: 3, pref: '岩手県', short: '岩手', region: '北海道・東北', cx: 306, cy: 192, d: 'M294,172 L314,168 L322,182 L326,196 L320,218 L292,212 Z' },
+  { code: 6, pref: '山形県', short: '山形', region: '北海道・東北', cx: 274, cy: 228, d: 'M268,210 L292,212 L290,244 L268,244 L260,232 L264,218 Z' },
+  { code: 4, pref: '宮城県', short: '宮城', region: '北海道・東北', cx: 304, cy: 230, d: 'M292,212 L320,218 L316,228 L322,234 L314,238 L306,248 L290,244 Z' },
+  { code: 7, pref: '福島県', short: '福島', region: '北海道・東北', cx: 286, cy: 260, d: 'M268,244 L290,244 L306,248 L308,264 L304,276 L274,276 L258,266 L260,252 Z' },
+  // 関東7都県（房総半島・三浦半島・伊豆大島）
+  { code: 8, pref: '茨城県', short: '茨城', region: '関東', cx: 298, cy: 292, d: 'M286,276 L304,276 L308,292 L312,308 L294,308 L286,298 Z' },
+  { code: 9, pref: '栃木県', short: '栃木', region: '関東', cx: 278, cy: 286, d: 'M268,276 L286,276 L286,298 L268,296 L264,286 Z' },
+  { code: 10, pref: '群馬県', short: '群馬', region: '関東', cx: 258, cy: 288, d: 'M246,276 L268,276 L268,296 L252,300 L244,290 Z' },
+  { code: 11, pref: '埼玉県', short: '埼玉', region: '関東', cx: 270, cy: 305, d: 'M252,300 L286,298 L288,312 L256,312 Z' },
+  { code: 12, pref: '千葉県', short: '千葉', region: '関東', cx: 298, cy: 324, d: 'M288,308 L312,308 L316,316 L306,334 L298,344 L290,340 L294,326 L288,320 L286,312 Z' },
+  { code: 13, pref: '東京都', short: '東京', region: '関東', cx: 272, cy: 317, d: 'M256,312 L286,312 L286,322 L260,322 Z' },
+  { code: 14, pref: '神奈川県', short: '神奈川', region: '関東', cx: 268, cy: 330, d: 'M258,322 L284,322 L280,328 L284,336 L276,338 L272,332 L258,336 Z' },
+  // 中部9県（佐渡島・能登半島・伊豆半島・渥美半島・知多半島）
+  { code: 15, pref: '新潟県', short: '新潟', region: '中部', cx: 250, cy: 256, d: 'M260,232 L268,244 L258,266 L246,276 L224,274 L236,258 L248,244 Z M230,234 L238,224 L242,232 L234,240 Z' },
+  { code: 16, pref: '富山県', short: '富山', region: '中部', cx: 214, cy: 278, d: 'M206,268 L214,274 L224,270 L224,288 L202,288 Z' },
+  { code: 17, pref: '石川県', short: '石川', region: '中部', cx: 196, cy: 266, d: 'M198,244 L210,240 L212,248 L204,254 L206,268 L202,288 L186,292 L192,268 Z' },
+  { code: 18, pref: '福井県', short: '福井', region: '中部', cx: 184, cy: 302, d: 'M186,292 L202,288 L200,306 L184,310 L176,314 L168,306 L178,302 Z' },
   { code: 19, pref: '山梨県', short: '山梨', region: '中部', cx: 250, cy: 320, d: 'M240,310 L256,312 L258,328 L238,326 Z' },
-  { code: 20, pref: '長野県', short: '長野', region: '中部', cx: 234, cy: 298, d: 'M224,272 L246,276 L250,300 L240,310 L238,324 L222,320 L224,288 Z' },
+  { code: 20, pref: '長野県', short: '長野', region: '中部', cx: 234, cy: 298, d: 'M224,272 L246,276 L252,300 L240,310 L238,324 L222,320 L224,288 Z' },
   { code: 21, pref: '岐阜県', short: '岐阜', region: '中部', cx: 210, cy: 304, d: 'M202,288 L224,288 L222,320 L200,320 L200,306 Z' },
-  { code: 22, pref: '静岡県', short: '静岡', region: '中部', cx: 244, cy: 338, d: 'M238,326 L258,328 L262,338 L254,352 L246,338 L224,344 L222,328 Z' },
-  { code: 23, pref: '愛知県', short: '愛知', region: '中部', cx: 212, cy: 334, d: 'M200,320 L222,320 L224,344 L206,346 L200,334 Z' },
-  // 関西2府5県
-  { code: 24, pref: '三重県', short: '三重', region: '関西', cx: 194, cy: 344, d: 'M192,320 L200,320 L202,344 L188,368 L182,356 L188,334 Z' },
+  { code: 22, pref: '静岡県', short: '静岡', region: '中部', cx: 244, cy: 338, d: 'M238,326 L258,328 L262,336 L256,352 L250,348 L250,338 L238,342 L224,344 L222,328 Z' },
+  { code: 23, pref: '愛知県', short: '愛知', region: '中部', cx: 212, cy: 334, d: 'M200,320 L222,320 L224,344 L212,346 L214,340 L206,346 L202,338 L200,332 Z' },
+  // 関西2府5県（紀伊半島・志摩半島・淡路島・琵琶湖）
+  { code: 24, pref: '三重県', short: '三重', region: '関西', cx: 194, cy: 344, d: 'M192,320 L200,320 L202,338 L206,348 L196,356 L186,370 L182,358 L188,334 Z' },
   { code: 25, pref: '滋賀県', short: '滋賀', region: '関西', cx: 184, cy: 320, d: 'M176,308 L200,306 L194,332 L176,330 Z' },
-  { code: 26, pref: '京都府', short: '京都', region: '関西', cx: 166, cy: 316, d: 'M152,300 L168,304 L176,308 L176,332 L162,330 L154,314 Z' },
-  { code: 27, pref: '大阪府', short: '大阪', region: '関西', cx: 168, cy: 340, d: 'M162,330 L176,332 L172,348 L160,346 Z' },
-  { code: 28, pref: '兵庫県', short: '兵庫', region: '関西', cx: 148, cy: 324, d: 'M134,302 L152,300 L162,330 L160,342 L138,338 Z M148,346 L154,344 L152,356 L146,354 Z' },
-  { code: 29, pref: '奈良県', short: '奈良', region: '関西', cx: 178, cy: 348, d: 'M172,332 L188,334 L184,362 L170,356 Z' },
-  { code: 30, pref: '和歌山県', short: '和歌山', region: '関西', cx: 168, cy: 364, d: 'M160,346 L172,348 L184,362 L188,368 L170,378 L156,362 Z' },
-  // 中国5県
+  { code: 26, pref: '京都府', short: '京都', region: '関西', cx: 166, cy: 316, d: 'M152,298 L164,300 L168,306 L176,308 L176,332 L162,330 L154,314 Z' },
+  { code: 27, pref: '大阪府', short: '大阪', region: '関西', cx: 166, cy: 340, d: 'M162,330 L174,332 L172,348 L158,348 L162,338 Z' },
+  { code: 28, pref: '兵庫県', short: '兵庫', region: '関西', cx: 148, cy: 324, d: 'M134,302 L152,298 L162,330 L158,340 L138,338 Z M148,344 L154,342 L150,354 L144,352 Z' },
+  { code: 29, pref: '奈良県', short: '奈良', region: '関西', cx: 178, cy: 348, d: 'M172,332 L188,334 L184,362 L170,358 Z' },
+  { code: 30, pref: '和歌山県', short: '和歌山', region: '関西', cx: 168, cy: 364, d: 'M158,348 L172,348 L184,362 L186,370 L172,380 L158,368 L154,356 Z' },
+  // 中国5県（島根半島・隠岐諸島）
   { code: 31, pref: '鳥取県', short: '鳥取', region: '中国・四国', cx: 122, cy: 310, d: 'M106,306 L134,302 L136,316 L108,318 Z' },
-  { code: 32, pref: '島根県', short: '島根', region: '中国・四国', cx: 88, cy: 318, d: 'M68,326 L94,306 L106,306 L108,318 L76,338 Z M98,288 L104,286 L104,292 L98,292 Z' },
+  { code: 32, pref: '島根県', short: '島根', region: '中国・四国', cx: 88, cy: 318, d: 'M68,326 L92,304 L106,304 L108,318 L76,338 Z M96,288 L104,284 L104,292 L96,292 Z' },
   { code: 33, pref: '岡山県', short: '岡山', region: '中国・四国', cx: 124, cy: 330, d: 'M110,318 L136,316 L138,338 L112,340 Z' },
   { code: 34, pref: '広島県', short: '広島', region: '中国・四国', cx: 96, cy: 334, d: 'M78,330 L110,318 L112,340 L84,346 Z' },
-  { code: 35, pref: '山口県', short: '山口', region: '中国・四国', cx: 64, cy: 342, d: 'M48,344 L68,326 L84,346 L62,354 L46,352 Z' },
-  // 四国4県
-  { code: 37, pref: '香川県', short: '香川', region: '中国・四国', cx: 132, cy: 352, d: 'M120,348 L142,346 L142,356 L120,356 Z' },
+  { code: 35, pref: '山口県', short: '山口', region: '中国・四国', cx: 64, cy: 342, d: 'M46,344 L68,326 L84,346 L62,354 L46,352 Z' },
+  // 四国4県（佐田岬・足摺岬・室戸岬・小豆島）
+  { code: 37, pref: '香川県', short: '香川', region: '中国・四国', cx: 132, cy: 352, d: 'M120,348 L142,346 L142,356 L120,356 Z M134,341 L140,340 L140,344 L134,344 Z' },
   { code: 36, pref: '徳島県', short: '徳島', region: '中国・四国', cx: 136, cy: 364, d: 'M122,356 L142,356 L146,370 L124,372 Z' },
-  { code: 38, pref: '愛媛県', short: '愛媛', region: '中国・四国', cx: 102, cy: 362, d: 'M84,368 L104,348 L120,348 L120,360 L92,374 Z' },
-  { code: 39, pref: '高知県', short: '高知', region: '中国・四国', cx: 112, cy: 376, d: 'M92,374 L120,360 L124,372 L136,382 L126,386 L112,378 L96,390 L88,382 Z' },
-  // 九州7県＋沖縄県
+  { code: 38, pref: '愛媛県', short: '愛媛', region: '中国・四国', cx: 102, cy: 362, d: 'M78,370 L96,352 L106,346 L120,348 L120,360 L92,374 Z' },
+  { code: 39, pref: '高知県', short: '高知', region: '中国・四国', cx: 112, cy: 376, d: 'M92,374 L120,360 L124,372 L138,382 L130,386 L114,376 L96,390 L88,382 Z' },
+  // 九州7県＋沖縄県（島原半島・天草・薩摩半島・大隅半島・屋久島・種子島・沖縄本島・宮古・八重山）
   { code: 40, pref: '福岡県', short: '福岡', region: '九州・沖縄', cx: 48, cy: 364, d: 'M34,362 L56,354 L62,366 L46,378 L36,374 Z' },
   { code: 41, pref: '佐賀県', short: '佐賀', region: '九州・沖縄', cx: 30, cy: 372, d: 'M20,366 L34,362 L36,378 L22,378 Z' },
-  { code: 42, pref: '長崎県', short: '長崎', region: '九州・沖縄', cx: 18, cy: 382, d: 'M12,372 L22,368 L26,390 L14,394 Z M18,334 L22,326 L24,336 Z' },
+  { code: 42, pref: '長崎県', short: '長崎', region: '九州・沖縄', cx: 18, cy: 382, d: 'M10,372 L22,368 L28,388 L16,392 Z M18,334 L22,324 L24,336 Z M6,384 L10,382 L10,390 Z' },
   { code: 44, pref: '大分県', short: '大分', region: '九州・沖縄', cx: 64, cy: 376, d: 'M52,366 L74,368 L74,388 L54,386 Z' },
-  { code: 43, pref: '熊本県', short: '熊本', region: '九州・沖縄', cx: 44, cy: 392, d: 'M32,378 L54,378 L56,404 L34,404 Z' },
+  { code: 43, pref: '熊本県', short: '熊本', region: '九州・沖縄', cx: 44, cy: 392, d: 'M32,378 L54,378 L56,404 L34,404 Z M24,394 L30,392 L28,400 Z' },
   { code: 45, pref: '宮崎県', short: '宮崎', region: '九州・沖縄', cx: 62, cy: 406, d: 'M54,386 L74,388 L66,426 L52,414 Z' },
-  { code: 46, pref: '鹿児島県', short: '鹿児島', region: '九州・沖縄', cx: 44, cy: 424, d: 'M34,404 L54,408 L62,428 L52,442 L46,428 L38,440 L30,424 Z M48,456 L52,454 L50,464 Z' },
-  { code: 47, pref: '沖縄県', short: '沖縄', region: '九州・沖縄', cx: 356, cy: 412, d: 'M342,424 L356,400 L364,404 L348,428 Z M314,432 L322,428 L324,434 L316,436 Z M296,438 L304,434 L306,440 L298,442 Z' }
+  { code: 46, pref: '鹿児島県', short: '鹿児島', region: '九州・沖縄', cx: 44, cy: 424, d: 'M34,404 L54,408 L62,428 L52,442 L48,426 L42,426 L38,440 L30,424 Z M48,452 L54,450 L52,462 Z M38,458 L44,456 L42,464 Z' },
+  { code: 47, pref: '沖縄県', short: '沖縄', region: '九州・沖縄', cx: 356, cy: 412, d: 'M340,426 L350,410 L360,398 L366,402 L354,418 L346,430 Z M314,432 L322,428 L324,434 L316,436 Z M294,438 L304,434 L306,440 L296,442 Z' }
 ];
 
-// 各都道府県の全主要市町村（市・区・町・村）マスターリスト（47都道府県すべて網羅）
+// ★ 国土地理院・Natural Earthベースの日本全国47都道府県GeoJSONキャッシュ（一度読み込めば即座に高精細な本物の日本地図を描画）
+let cachedRealJapanPrefGeoJson = null;
+// ★ 都道府県別の正確な市区町村ポリゴンキャッシュ＆実在座標キャッシュ
+const cachedPrefMuniGeoJsonMap = {};
+const cachedPrefRealMuniCoordsMap = {};
+
+// ★ 総務省・国土地理院公式の47都道府県別・市区町村数マスター（政令指定都市の行政区を含む実在自治体数）
+const OFFICIAL_MUNICIPALITY_COUNT_BY_PREF = {
+  '北海道': 189, '青森県': 40, '岩手県': 33, '宮城県': 39, '秋田県': 25, '山形県': 35, '福島県': 59,
+  '茨城県': 44, '栃木県': 25, '群馬県': 35, '埼玉県': 72, '千葉県': 59, '東京都': 62, '神奈川県': 58,
+  '新潟県': 37, '富山県': 15, '石川県': 19, '福井県': 17, '山梨県': 27, '長野県': 77, '岐阜県': 42,
+  '静岡県': 42, '愛知県': 69, '三重県': 29, '滋賀県': 19, '京都府': 36, '大阪府': 72, '兵庫県': 49,
+  '奈良県': 39, '和歌山県': 30, '鳥取県': 19, '島根県': 19, '岡山県': 30, '広島県': 30, '山口県': 19,
+  '徳島県': 24, '香川県': 17, '愛媛県': 20, '高知県': 34, '福岡県': 72, '佐賀県': 20, '長崎県': 21,
+  '熊本県': 49, '大分県': 18, '宮崎県': 26, '鹿児島県': 43, '沖縄県': 41
+};
+
+// 各都道府県の全主要市町村（市・区・町・村）マスターリスト（47都道府県すべて網羅・長野県は全77市町村すべて収録）
 const FULL_MUNICIPALITIES_BY_PREF = {
-  '北海道': ['札幌市中央区', '札幌市北区', '札幌市東区', '札幌市白石区', '札幌市豊平区', '札幌市南区', '札幌市西区', '札幌市厚別区', '札幌市手稲区', '札幌市清田区', '函館市', '小樽市', '旭川市', '室蘭市', '釧路市', '帯広市', '北見市', '夕張市', '岩見沢市', '網走市', '留萌市', '苫小牧市', '稚内市', '美唄市', '芦別市', '江別市', '赤平市', '紋別市', '士別市', '名寄市', '三笠市', '根室市', '千歳市', '滝川市', '砂川市', '歌志内市', '深川市', '富良野市', '登別市', '恵庭市', '伊達市', '北広島市', '石狩市', '北斗市', '美瑛町', '富良野町', 'ニセコ町', '倶知安町', '洞爺湖町', '白老町', '斜里町（知床）', '礼文町', '利尻町'],
-  '青森県': ['青森市', '弘前市', '八戸市', '黒石市', '五所川原市', '十和田市', '三沢市', 'むつ市', 'つがる市', '平川市', '平内町', '今別町', '外ヶ浜町', '鰺ヶ沢町', '深浦町', '藤崎町', '大鰐町', '田舎館村', '板柳町', '鶴田町', '中泊町', '野辺地町', '七戸町', '六戸町', '横浜町', '東北町', '六ヶ所村', 'おいらせ町', '大間町', '東通村', '風間浦村', '佐井村', '三戸町', '五戸町', '田子町', '南部町', '階上町', '新郷村'],
-  '岩手県': ['盛岡市', '宮古市', '大船渡市', '花巻市', '北上市', '久慈市', '遠野市', '一関市', '陸前高田市', '釜石市', '二戸市', '八幡平市', '奥州市', '滝沢市', '雫石町', '葛巻町', '岩手町', '紫波町', '矢巾町', '西和賀町', '金ケ崎町', '平泉町', '住田町', '大槌町', '山田町', '岩泉町', '田野畑村', '普代村', '軽米町', '野田村', '九戸村', '洋野町', '一戸町'],
-  '宮城県': ['仙台市青葉区', '仙台市宮城野区', '仙台市若林区', '仙台市太白区', '仙台市泉区', '石巻市', '塩竈市', '気仙沼市', '白石市', '名取市', '角田市', '多賀城市', '岩沼市', '登米市', '栗原市', '東松島市', '大崎市', '富谷市', '蔵王町', '七ヶ宿町', '大河原町', '村田町', '柴田町', '川崎町', '丸森町', '亘理町', '山元町', '松島町', '七ヶ浜町', '利府町', '大和町', '大郷町', '大衡村', '色麻町', '加美町', '涌谷町', '美里町', '女川町', '南三陸町'],
-  '秋田県': ['秋田市', '能代市', '横手市', '大館市', '男鹿市', '湯沢市', '鹿角市', '由利本荘市', '潟上市', '大仙市', '北秋田市', 'にかほ市', '仙北市（角館・田沢湖）', '小坂町', '上小阿仁村', '藤里町', '三種町', '八峰町', '五城目町', '八郎潟町', '井川町', '大潟村', '美郷町', '羽後町', '東成瀬村'],
-  '山形県': ['山形市', '米沢市', '鶴岡市', '酒田市', '新庄市', '寒河江市', '上山市', '村山市', '長井市', '天童市', '東根市', '尾花沢市（銀山温泉）', '南陽市', '山辺町', '中山町', '河北町', '西川町', '朝日町', '大江町', '大石田町', '金山町', '最上町', '舟形町', '真室川町', '大蔵村', '鮭川村', '戸沢村', '高畠町', '川西町', '小国町', '白鷹町', '飯豊町', '三川町', '庄内町', '遊佐町'],
-  '福島県': ['福島市', '会津若松市', '郡山市', 'いわき市', '白河市', '須賀川市', '喜多方市', '相馬市', '二本松市', '田村市', '南相馬市', '伊達市', '本宮市', '桑折町', '国見町', '川俣町', '大玉村', '鏡石町', '天栄村', '下郷町（大内宿）', '檜枝岐村', '只見町', '南会津町', '北塩原村（裏磐梯）', '西会津町', '磐梯町', '猪苗代町', '会津坂下町', '湯川村', '柳津町', '三島町', '金山町', '昭和村', '会津美里町', '西郷村', '矢吹町', '棚倉町', '三春町', '小野町'],
-  '茨城県': ['水戸市', '日立市', '土浦市', '古河市', '石岡市', '結城市', '龍ケ崎市', '下妻市', '常総市', '常陸太田市', '高萩市', '北茨城市', '笠間市', '取手市', '牛久市', 'つくば市', 'ひたちなか市', '鹿嶋市', '潮来市', '守谷市', '常陸大宮市', '那珂市', '筑西市', '坂東市', '稲敷市', 'かすみがうら市', '桜川市', '神栖市', '行方市', '鉾田市', 'つくばみらい市', '小美玉市', '茨城町', '大洗町', '城里町', '東海村', '大子町', '阿見町', '河内町', '八千代町', '五霞町', '境町', '利根町'],
-  '栃木県': ['宇都宮市', '足利市', '栃木市', '佐野市', '鹿沼市', '日光市', '小山市', '真岡市', '大田原市', '矢板市', '那須塩原市', 'さくら市', '那須烏山市', '下野市', '上三川町', '益子町', '茂木町', '市貝町', '芳賀町', '壬生町', '野木町', '塩谷町', '高根沢町', '那須町', '那珂川町'],
-  '群馬県': ['前橋市', '高崎市', '桐生市', '伊勢崎市', '太田市', '沼田市', '館林市', '渋川市（伊香保温泉）', '藤岡市', '富岡市', '安中市', 'みどり市', '榛東村', '吉岡町', '上野村', '神流町', '下仁田町', '南牧村', '甘楽町', '中之条町（四万温泉）', '長野原町', '嬬恋村', '草津町（草津温泉）', '高山村', '東吾妻町', '片品村', '川場村', '昭和村', 'みなかみ町', '玉村町', '板倉町', '明和町', '千代田町', '大泉町', '邑楽町'],
-  '埼玉県': ['さいたま市大宮区', 'さいたま市浦和区', 'さいたま市中央区', '川越市', '熊谷市', '川口市', '行田市', '秩父市', '所沢市', '飯能市', '加須市', '本庄市', '東松山市', '春日部市', '狭山市', '羽生市', '鴻巣市', '深谷市', '上尾市', '草加市', '越谷市', '蕨市', '戸田市', '入間市', '朝霞市', '志木市', '和光市', '新座市', '桶川市', '久喜市', '北本市', '八潮市', '富士見市', '三郷市', '蓮田市', '坂戸市', '幸手市', '鶴ヶ島市', '日高市', '吉川市', 'ふじみ野市', '白岡市', '長瀞町', '小鹿野町', '横瀬町', '皆野町'],
-  '千葉県': ['千葉市中央区', '千葉市美浜区', '銚子市', '市川市', '船橋市', '館山市', '木更津市', '松戸市', '野田市', '茂原市', '成田市', '佐倉市', '東金市', '旭市', '習志野市', '柏市', '勝浦市', '市原市', '流山市', '八千代市', '我孫子市', '鴨川市', '鎌ケ谷市', '君津市', '富津市', '浦安市', '四街道市', '袖ケ浦市', '八街市', '印西市', '白井市', '富里市', '南房総市', '匝瑳市', '香取市', '山武市', 'いすみ市', '大網白里市', '酒々井町', '栄町', '神崎町', '多古町', '東庄町', '九十九里町', '芝山町', '横芝光町', '一宮町', '睦沢町', '長生村', '白子町', '長柄町', '長南町', '大多喜町', '御宿町', '鋸南町'],
+  '北海道': ['札幌市中央区', '札幌市北区', '札幌市東区', '札幌市白石区', '札幌市豊平区', '札幌市南区', '札幌市西区', '札幌市厚別区', '札幌市手稲区', '札幌市清田区', '函館市', '小樽市', '旭川市', '室蘭市', '釧路市', '帯広市', '北見市', '夕張市', '岩見沢市', '網走市', '留萌市', '苫小牧市', '稚内市', '美唄市', '芦別市', '江別市', '赤平市', '紋別市', '士別市', '名寄市', '三笠市', '根室市', '千歳市', '滝川市', '砂川市', '歌志内市', '深川市', '富良野市', '登別市', '恵庭市', '伊達市', '北広島市', '石狩市', '北斗市', '美瑛町', '上富良野町', '中富良野町', '南富良野町', '占冠村', 'ニセコ町', '倶知安町', '洞爺湖町', '白老町', '斜里町（知床）', '礼文町', '利尻町'],
   '東京都': ['千代田区', '中央区', '港区', '新宿区', '文京区', '台東区（浅草・上野）', '墨田区', '江東区', '品川区', '目黒区', '大田区', '世田谷区', '渋谷区', '中野区', '杉並区', '豊島区', '北区', '荒川区', '板橋区', '練馬区', '足立区', '葛飾区', '江戸川区', '八王子市', '立川市', '武蔵野市（吉祥寺）', '三鷹市', '青梅市', '府中市', '昭島市', '調布市', '町田市', '小金井市', '小平市', '日野市', '東村山市', '国分寺市', '国立市', '福生市', '狛江市', '東大和市', '清瀬市', '東久留米市', '武蔵村山市', '多摩市', '稲城市', '羽村市', 'あきる野市', '西東京市', '奥多摩町', '檜原村', '大島町', '八丈町', '小笠原村'],
   '神奈川県': ['横浜市西区', '横浜市中区', '横浜市神奈川区', '横浜市港北区', '横浜市戸塚区', '川崎市川崎区', '川崎市中原区', '相模原市', '横須賀市', '平塚市', '鎌倉市', '藤沢市（江ノ島）', '小田原市', '茅ヶ崎市', '逗子市', '三浦市', '秦野市', '厚木市', '大和市', '伊勢原市', '海老名市', '座間市', '南足柄市', '綾瀬市', '葉山町', '寒川町', '大磯町', '二宮町', '中井町', '大井町', '松田町', '山北町', '開成町', '箱根町', '真鶴町', '湯河原町', '愛川町', '清川村'],
   '新潟県': ['新潟市中央区', '長岡市', '三条市', '柏崎市', '新発田市', '小千谷市', '加茂市', '十日町市', '見附市', '村上市', '燕市', '糸魚川市', '妙高市', '五泉市', '上越市', '阿賀野市', '佐渡市', '魚沼市', '南魚沼市', '胎内市', '聖籠町', '弥彦村', '田上町', '阿賀町', '出雲崎町', '湯沢町（越後湯沢）', '津南町', '刈羽村', '関川村', '粟島浦村'],
@@ -275,7 +280,7 @@ const FULL_MUNICIPALITIES_BY_PREF = {
   '石川県': ['金沢市', '七尾市（和倉温泉）', '小松市', '輪島市', '珠洲市', '加賀市（山代・山中・片山津温泉）', '羽咋市', 'かほく市', '白山市', '能美市', '野々市市', '川北町', '津幡町', '内灘町', '志賀町', '宝達志水町', '中能登町', '穴水町', '能登町'],
   '福井県': ['福井市', '敦賀市', '小浜市', '大野市', '勝山市', '鯖江市', 'あわら市（芦原温泉）', '越前市', '坂井市（東尋坊・丸岡城）', '永平寺町', '池田町', '南越前町', '越前町', '美浜町', '高浜町', 'おおい町', '若狭町'],
   '山梨県': ['甲府市', '富士吉田市', '都留市', '山梨市', '大月市', '韮崎市', '南アルプス市', '北杜市（清里・小淵沢）', '甲斐市', '笛吹市（石和温泉）', '上野原市', '甲州市（勝沼）', '中央市', '市川三郷町', '早川町', '身延町', '南部町', '富士川町', '昭和町', '道志村', '西桂町', '忍野村', '山中湖村', '鳴沢村', '富士河口湖町', '小菅村', '丹波山村'],
-  '長野県': ['長野市', '松本市', '上田市', '岡谷市', '飯田市', '諏訪市', '須坂市', '小諸市', '伊那市', '駒ヶ根市', '中野市', '大町市', '飯山市', '茅野市', '塩尻市', '佐久市', '千曲市', '東御市', '安曇野市', '小海町', '軽井沢町', '御代田町', '立科町', '下諏訪町', '富士見町', '原村', '辰野町', '箕輪町', '飯島町', '南箕輪村', '中川村', '宮田村', '松川町', '高森町', '阿南町', '阿智村（昼神温泉）', '上松町', '南木曽町', '木曽町', '池田町', '松川村', '白馬村', '小谷村', '坂城町', '小布施町', '山ノ内町（渋温泉・志賀高原）', '木島平村', '野沢温泉村', '信濃町', '飯綱町', '栄村'],
+  '長野県': ['長野市', '松本市', '上田市', '岡谷市', '飯田市', '諏訪市', '須坂市', '小諸市', '伊那市', '駒ヶ根市', '中野市', '大町市', '飯山市', '茅野市', '塩尻市', '佐久市', '千曲市', '東御市', '安曇野市', '小海町', '川上村', '南牧村', '南相木村', '北相木村', '佐久穂町', '軽井沢町', '御代田町', '立科町', '青木村', '長和町', '下諏訪町', '富士見町', '原村', '辰野町', '箕輪町', '飯島町', '南箕輪村', '中川村', '宮田村', '松川町', '高森町', '阿南町', '阿智村（昼神温泉）', '平谷村', '根羽村', '下條村', '売木村', '天龍村', '泰阜村', '喬木村', '豊丘村', '大鹿村', '上松町', '南木曽町', '木祖村', '王滝村', '大桑村', '木曽町', '麻績村', '生坂村', '山形村', '朝日村', '筑北村', '池田町', '松川村', '白馬村', '小谷村', '坂城町', '小布施町', '高山村', '山ノ内町（渋温泉・志賀高原）', '木島平村', '野沢温泉村', '信濃町', '小川村', '飯綱町', '栄村'],
   '岐阜県': ['岐阜市', '大垣市', '高山市（飛騨高山）', '多治見市', '関市', '中津川市（馬籠宿）', '美濃市', '瑞浪市', '羽島市', '恵那市', '美濃加茂市', '土岐市', '各務原市', '可児市', '山県市', '瑞穂市', '飛騨市（飛騨古川）', '本巣市', '郡上市（郡上八幡）', '下呂市（下呂温泉）', '海津市', '岐南町', '笠松町', '養老町', '垂井町', '関ケ原町', '神戸町', '輪之内町', '安八町', '揖斐川町', '大野町', '池田町', '北方町', '坂祝町', '富加町', '川辺町', '七宗町', '八百津町', '白川町', '東白川村', '御嵩町', '白川村（白川郷）'],
   '静岡県': ['静岡市葵区', '静岡市駿河区', '静岡市清水区', '浜松市中央区', '浜松市浜名区', '沼津市', '熱海市', '三島市', '富士宮市', '伊東市', '島田市', '富士市', '磐田市', '焼津市', '掛川市', '藤枝市', '御殿場市', '袋井市', '下田市', '裾野市', '湖西市', '伊豆市（修善寺）', '御前崎市', '菊川市', '伊豆の国市', '牧之原市', '東伊豆町', '河津町', '南伊豆町', '松崎町', '西伊豆町', '函南町', '清水町', '長泉町', '小山町', '吉田町', '川根本町', '森町'],
   '愛知県': ['名古屋市中村区', '名古屋市中区', '名古屋市熱田区', '名古屋市千種区', '豊橋市', '岡崎市', '一宮市', '瀬戸市', '半田市', '春日井市', '豊川市', '津島市', '碧南市', '刈谷市', '豊田市', '安城市', '西尾市', '蒲郡市', '犬山市', '常滑市', '江南市', '小牧市', '稲沢市', '新城市', '東海市', '大府市', '知多市', '知立市', '尾張旭市', '高浜市', '岩倉市', '豊明市', '日進市', '田原市', '愛西市', '清須市', '北名古屋市', '弥富市', 'みよし市', 'あま市', '長久手市', '南知多町', '美浜町', '武豊町'],
@@ -307,21 +312,190 @@ const FULL_MUNICIPALITIES_BY_PREF = {
 
 // ★ 添付画像の47都道府県・白地図デザイン＋都道府県タップで国土地理院ベースの県シルエット＆市町村区画マップを表示するコンポーネント
 function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} }) {
+  // 1回目のタップで都道府県名を表示するプレビューステート（2回目タップまたはボタンで詳細展開）
+  const [focusedPref, setFocusedPref] = useState(selectedPref || null);
   const [muniSearch, setMuniSearch] = useState('');
   const [selectedMuni, setSelectedMuni] = useState(null);
-  // オンライン時は国土地理院（地球地図日本・国土数値情報）ベースのGeoJSONからより緻密な市町村ポリゴンも取得可能
+  // 全国47都道府県の本物の海岸線・県境GeoJSONデータ（dataofjapan / Natural Earth）
+  const [japanPrefGeoJson, setJapanPrefGeoJson] = useState(() => cachedRealJapanPrefGeoJson);
+  // オンライン時は国土地理院（国土数値情報 N03）ベースのGeoJSONまたはHeartRails実在座標から正確な市町村区画を取得
   const [gsiMuniGeoJson, setGsiMuniGeoJson] = useState(null);
+  const [realMuniCoordList, setRealMuniCoordList] = useState(null);
   const [isLoadingGsi, setIsLoadingGsi] = useState(false);
 
-  const selectedPrefObj = useMemo(
-    () => GSI_PREFECTURE_PATHS.find(p => p.pref === selectedPref) || null,
-    [selectedPref]
+  useEffect(() => {
+    if (selectedPref) setFocusedPref(selectedPref);
+  }, [selectedPref]);
+
+  // 初回マウント時に全国47都道府県の高精細GeoJSONデータを取得し、本物の日本地図を描画
+  useEffect(() => {
+    if (cachedRealJapanPrefGeoJson) return;
+    let cancelled = false;
+    fetch('https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!cancelled && data && Array.isArray(data.features) && data.features.length > 0) {
+          cachedRealJapanPrefGeoJson = data;
+          setJapanPrefGeoJson(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // GeoJSONの各都道府県ポリゴンをSVG座標系（480×468、沖縄県は右下のインセット枠に配置）へ投影変換
+  const realJapanPrefShapes = useMemo(() => {
+    if (!japanPrefGeoJson || !Array.isArray(japanPrefGeoJson.features)) return null;
+
+    // 緯度・経度からSVG座標 (x, y) へのメルカトル風補正投影
+    const projectPoint = (lng, lat, isOkinawa) => {
+      if (isOkinawa) {
+        // 沖縄県（那覇・本島・宮古・石垣）は見やすいよう右下のインセット枠に拡大配置
+        const x = 285 + (lng - 123.5) * 24;
+        const y = 448 - (lat - 24.0) * 22;
+        return [x, y];
+      }
+      // 本州・北海道・四国・九州（経度128.5〜145.9、緯度30.0〜45.6）
+      const x = 18 + (lng - 128.6) * 24.5;
+      const y = 452 - (lat - 30.2) * 28.2;
+      return [x, y];
+    };
+
+    const ringToSvgPath = (ring, isOkinawa) => {
+      if (!Array.isArray(ring) || ring.length < 3) return '';
+      return (
+        ring
+          .map((pt, idx) => {
+            const [x, y] = projectPoint(pt[0], pt[1], isOkinawa);
+            return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+          })
+          .join(' ') + ' Z'
+      );
+    };
+
+    return japanPrefGeoJson.features
+      .map((feature, idx) => {
+        const props = feature.properties || {};
+        const rawName = props.nam_ja || props.name_ja || props.name || props.N03_001 || '';
+        const code = Number(props.id || props.code || idx + 1);
+        const fallbackMeta =
+          GSI_PREFECTURE_PATHS.find(
+            p => p.pref === rawName || p.code === code || p.short === rawName.replace(/[都道府県]$/, '')
+          ) || GSI_PREFECTURE_PATHS[idx % GSI_PREFECTURE_PATHS.length];
+
+        const prefName = fallbackMeta ? fallbackMeta.pref : rawName;
+        const isOkinawa = prefName === '沖縄県' || code === 47;
+        const geom = feature.geometry || {};
+
+        let d = '';
+        let sumX = 0,
+          sumY = 0,
+          ptCount = 0;
+
+        const processRing = (ring) => {
+          ring.forEach(pt => {
+            // 沖縄の尖閣・大東島など極端に離れた小島は中心計算から除外し、本島付近にピンを置く
+            if (isOkinawa && (pt[0] < 126.5 || pt[0] > 129.0 || pt[1] > 27.2)) return;
+            if (!isOkinawa && prefName === '東京都' && pt[1] < 35.0) return; // 伊豆・小笠原諸島は中心計算から除外
+            const [px, py] = projectPoint(pt[0], pt[1], isOkinawa);
+            sumX += px;
+            sumY += py;
+            ptCount++;
+          });
+          return ringToSvgPath(ring, isOkinawa);
+        };
+
+        if (geom.type === 'Polygon') {
+          d = geom.coordinates
+            .filter(ring => {
+              // 東京都の遠方離島（南鳥島・小笠原など）で地図外にはみ出すものをクリップ
+              if (prefName === '東京都' && ring[0] && ring[0][1] < 34.0) return false;
+              return true;
+            })
+            .map(processRing)
+            .join(' ');
+        } else if (geom.type === 'MultiPolygon') {
+          d = geom.coordinates
+            .map(poly =>
+              poly
+                .filter(ring => {
+                  if (prefName === '東京都' && ring[0] && ring[0][1] < 34.0) return false;
+                  if (prefName === '鹿児島県' && ring[0] && ring[0][1] < 29.5) return false;
+                  return true;
+                })
+                .map(processRing)
+                .join(' ')
+            )
+            .join(' ');
+        }
+
+        const cx = ptCount > 0 ? sumX / ptCount : fallbackMeta.cx;
+        const cy = ptCount > 0 ? sumY / ptCount : fallbackMeta.cy;
+
+        return {
+          code: fallbackMeta.code,
+          pref: prefName,
+          short: fallbackMeta.short,
+          region: fallbackMeta.region,
+          cx,
+          cy,
+          d: d || fallbackMeta.d,
+          rawGeometry: geom
+        };
+      })
+      .filter(Boolean);
+  }, [japanPrefGeoJson]);
+
+  const activePrefPaths = realJapanPrefShapes || GSI_PREFECTURE_PATHS;
+
+  const focusedPrefObj = useMemo(
+    () => activePrefPaths.find(p => p.pref === focusedPref) || GSI_PREFECTURE_PATHS.find(p => p.pref === focusedPref) || null,
+    [focusedPref, activePrefPaths]
   );
 
+  const selectedPrefObj = useMemo(
+    () => activePrefPaths.find(p => p.pref === selectedPref) || GSI_PREFECTURE_PATHS.find(p => p.pref === selectedPref) || null,
+    [selectedPref, activePrefPaths]
+  );
+
+  // 都道府県内の全実在市区町村リスト（HeartRails Geo APIの実データ または 国土地理院N03データ または 77市町村完備マスターから全件取得）
   const fullMuniList = useMemo(() => {
     if (!selectedPref) return [];
-    return FULL_MUNICIPALITIES_BY_PREF[selectedPref] || SAMPLE_MUNICIPALITIES_BY_PREF[selectedPref] || [];
-  }, [selectedPref]);
+    const basePreset = FULL_MUNICIPALITIES_BY_PREF[selectedPref] || SAMPLE_MUNICIPALITIES_BY_PREF[selectedPref] || [];
+    if (Array.isArray(realMuniCoordList) && realMuniCoordList.length >= basePreset.length) {
+      return realMuniCoordList.map(m => m.name);
+    }
+    if (gsiMuniGeoJson && Array.isArray(gsiMuniGeoJson.features) && gsiMuniGeoJson.features.length >= basePreset.length) {
+      const names = [];
+      const seen = new Set();
+      gsiMuniGeoJson.features.forEach(f => {
+        const props = f.properties || {};
+        const gunOrCity = props.N03_003 || '';
+        const wardOrMuni = props.N03_004 || props.name || props.city || '';
+        const fullName =
+          gunOrCity && wardOrMuni && gunOrCity.endsWith('市') && !wardOrMuni.startsWith(gunOrCity)
+            ? `${gunOrCity}${wardOrMuni}`
+            : wardOrMuni || gunOrCity;
+        if (fullName && !seen.has(fullName)) {
+          seen.add(fullName);
+          names.push(fullName);
+        }
+      });
+      if (names.length >= basePreset.length) return names;
+    }
+    return basePreset;
+  }, [selectedPref, realMuniCoordList, gsiMuniGeoJson]);
+
+  // 正確な公式市区町村数（例：長野県＝77市町村）
+  const officialMuniTotalCount = useMemo(() => {
+    if (!selectedPref) return 0;
+    return Math.max(
+      OFFICIAL_MUNICIPALITY_COUNT_BY_PREF[selectedPref] || 0,
+      fullMuniList.length
+    );
+  }, [selectedPref, fullMuniList.length]);
 
   const filteredMuniList = useMemo(() => {
     const q = muniSearch.trim();
@@ -329,85 +503,464 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
     return fullMuniList.filter(m => m.includes(q));
   }, [fullMuniList, muniSearch]);
 
-  // 都道府県が選択された際、国土地理院ベースの行政区域GeoJSON（dataofjapan / geolonia open data）の取得を試み、オフライン時も内蔵ポリゴンで即座に表示
+  // TopoJSONをGeoJSONのFeatures配列にデコードする軽量ヘルパー（外部ライブラリ不要）
+  const decodeTopoJsonToFeatures = (topoData) => {
+    if (!topoData || topoData.type !== 'Topology' || !topoData.objects || !topoData.arcs) return null;
+    const objKey = Object.keys(topoData.objects)[0];
+    const geomCollection = topoData.objects[objKey];
+    if (!geomCollection || !Array.isArray(geomCollection.geometries)) return null;
+
+    const scale = topoData.transform?.scale || [1, 1];
+    const translate = topoData.transform?.translate || [0, 0];
+
+    const decodedArcs = topoData.arcs.map(arc => {
+      let x = 0, y = 0;
+      return arc.map(pt => {
+        x += pt[0];
+        y += pt[1];
+        return [x * scale[0] + translate[0], y * scale[1] + translate[1]];
+      });
+    });
+
+    const stitchRing = (arcIndices) => {
+      const coords = [];
+      arcIndices.forEach(idx => {
+        const isRev = idx < 0;
+        const arc = decodedArcs[isRev ? ~idx : idx] || [];
+        const pts = isRev ? [...arc].reverse() : arc;
+        pts.forEach((pt, i) => {
+          if (i === 0 && coords.length > 0) return;
+          coords.push(pt);
+        });
+      });
+      return coords;
+    };
+
+    return geomCollection.geometries.map(g => {
+      let coordinates = [];
+      if (g.type === 'Polygon') {
+        coordinates = (g.arcs || []).map(stitchRing);
+      } else if (g.type === 'MultiPolygon') {
+        coordinates = (g.arcs || []).map(poly => poly.map(stitchRing));
+      }
+      return {
+        type: 'Feature',
+        properties: g.properties || {},
+        geometry: { type: g.type, coordinates }
+      };
+    });
+  };
+
+  // 都道府県が選択された際、①国土地理院（国土数値情報 N03）の市区町村ポリゴンGeoJSON/TopoJSONを取得し、
+  // 同時に ②HeartRails Geo API からその都道府県の全実在市区町村の正確な緯度・経度を取得して100%正確な位置マップを構築する
   useEffect(() => {
     setMuniSearch('');
     setSelectedMuni(null);
-    setGsiMuniGeoJson(null);
-    if (!selectedPrefObj) return;
+    if (!selectedPrefObj) {
+      setGsiMuniGeoJson(null);
+      setRealMuniCoordList(null);
+      return;
+    }
+
+    const prefName = selectedPrefObj.pref;
+    const prefCodeStr = String(selectedPrefObj.code).padStart(2, '0');
+
+    if (cachedPrefMuniGeoJsonMap[prefName]) {
+      setGsiMuniGeoJson(cachedPrefMuniGeoJsonMap[prefName]);
+    } else {
+      setGsiMuniGeoJson(null);
+    }
+
+    if (cachedPrefRealMuniCoordsMap[prefName]) {
+      setRealMuniCoordList(cachedPrefRealMuniCoordsMap[prefName]);
+    } else {
+      setRealMuniCoordList(null);
+    }
 
     let cancelled = false;
-    const prefCodeStr = String(selectedPrefObj.code).padStart(2, '0');
     setIsLoadingGsi(true);
 
-    fetch(`https://raw.githubusercontent.com/niiyz/JapanCityGeoJson/master/geojson/${prefCodeStr}.json`)
-      .then(res => (res.ok ? res.json() : null))
-      .then(data => {
-        if (!cancelled && data && Array.isArray(data.features) && data.features.length > 0) {
-          setGsiMuniGeoJson(data);
+    const loadAccurateMuniMapData = async () => {
+      // 1) 国土地理院 N03 行政区域ポリゴン（複数ミラー対応）の取得を試みる
+      if (!cachedPrefMuniGeoJsonMap[prefName]) {
+        const candidateUrls = [
+          `https://raw.githubusercontent.com/smartnews-smri/japan-topography/main/data/municipality/geojson/s0010/N03-21_${prefCodeStr}_210101.json`,
+          `https://raw.githubusercontent.com/smartnews-smri/japan-topography/main/data/municipality/topojson/s0010/N03-21_${prefCodeStr}_210101.json`,
+          `https://raw.githubusercontent.com/niiyz/JapanCityGeoJson/master/geojson/${prefCodeStr}.json`,
+          `https://geoshape.ex.nii.ac.jp/city/geojson/20200101/${prefCodeStr}/${prefCodeStr}_city.l.geojson`
+        ];
+
+        for (const url of candidateUrls) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const rawData = await res.json();
+            let features = null;
+            if (rawData?.type === 'FeatureCollection' && Array.isArray(rawData.features) && rawData.features.length > 0) {
+              features = rawData.features;
+            } else if (rawData?.type === 'Topology') {
+              features = decodeTopoJsonToFeatures(rawData);
+            }
+            if (features && features.length > 0) {
+              const normalized = { type: 'FeatureCollection', features };
+              cachedPrefMuniGeoJsonMap[prefName] = normalized;
+              if (!cancelled) setGsiMuniGeoJson(normalized);
+              break;
+            }
+          } catch (e) {
+            // 次のミラーを試行
+          }
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setIsLoadingGsi(false);
-      });
+      }
+
+      // 2) HeartRails Geo API から都道府県内の各市区町村の実在座標（経度x, 緯度y）を取得（ボロノイ行政区画＆ピン表示用）
+      if (!cachedPrefRealMuniCoordsMap[prefName]) {
+        try {
+          const cityRes = await fetch(
+            `https://geoapi.heartrails.com/api/json?method=getCities&prefecture=${encodeURIComponent(prefName)}`
+          );
+          const cityData = await cityRes.json();
+          const cities = cityData?.response?.location || [];
+
+          if (Array.isArray(cities) && cities.length > 0) {
+            // 各市区町村の代表座標を取得（並列リクエストで高速取得）
+            const coordsResults = await Promise.all(
+              cities.map(async (c) => {
+                try {
+                  const tRes = await fetch(
+                    `https://geoapi.heartrails.com/api/json?method=getTowns&prefecture=${encodeURIComponent(
+                      prefName
+                    )}&city=${encodeURIComponent(c.city)}`
+                  );
+                  const tData = await tRes.json();
+                  const locs = tData?.response?.location || [];
+                  if (locs.length > 0) {
+                    let sumLng = 0, sumLat = 0, cnt = 0;
+                    locs.forEach(l => {
+                      const lx = parseFloat(l.x);
+                      const ly = parseFloat(l.y);
+                      if (!isNaN(lx) && !isNaN(ly)) {
+                        sumLng += lx;
+                        sumLat += ly;
+                        cnt++;
+                      }
+                    });
+                    if (cnt > 0) {
+                      return {
+                        name: c.city,
+                        kana: c.city_kana || '',
+                        lng: sumLng / cnt,
+                        lat: sumLat / cnt
+                      };
+                    }
+                  }
+                } catch (e) {}
+                return null;
+              })
+            );
+            const validCoords = coordsResults.filter(Boolean);
+            if (validCoords.length > 0) {
+              cachedPrefRealMuniCoordsMap[prefName] = validCoords;
+              if (!cancelled) setRealMuniCoordList(validCoords);
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (!cancelled) setIsLoadingGsi(false);
+    };
+
+    loadAccurateMuniMapData();
 
     return () => {
       cancelled = true;
     };
   }, [selectedPrefObj]);
 
-  // 国土地理院ベースの市区町村GeoJSONが取得できた場合、SVGパスに変換して本物の市区町村境界線を描画する計算
+  // ★ 国土地理院ベースの市区町村GeoJSONが取得できた場合、緯度コサイン補正を入れて歪みのない正確な市区町村境界線を描画する計算
   const renderedGsiMuniPaths = useMemo(() => {
-    if (!gsiMuniGeoJson || !Array.isArray(gsiMuniGeoJson.features)) return null;
+    if (!gsiMuniGeoJson || !Array.isArray(gsiMuniGeoJson.features) || gsiMuniGeoJson.features.length === 0) return null;
+
+    const isOkinawa = selectedPref === '沖縄県';
+    const isTokyo = selectedPref === '東京都';
+    const isKagoshima = selectedPref === '鹿児島県';
+
     let minLng = 180, maxLng = -180, minLat = 90, maxLat = -90;
     const scanCoords = (coords) => {
       coords.forEach(c => {
         if (typeof c[0] === 'number' && typeof c[1] === 'number') {
-          if (c[0] < minLng) minLng = c[0];
-          if (c[0] > maxLng) maxLng = c[0];
-          if (c[1] < minLat) minLat = c[1];
-          if (c[1] > maxLat) maxLat = c[1];
+          const lng = c[0];
+          const lat = c[1];
+          // 東京都の小笠原諸島・伊豆諸島南部や鹿児島県の奄美群島など、本土側が大きく潰れてしまう遠方離島はバウンディングボックス計算から除外
+          if (isTokyo && lat < 35.45) return;
+          if (isKagoshima && lat < 30.9) return;
+          if (isOkinawa && (lng < 126.5 || lng > 128.6 || lat < 25.8 || lat > 27.0)) return;
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
         } else if (Array.isArray(c)) {
           scanCoords(c);
         }
       });
     };
+
     gsiMuniGeoJson.features.forEach(f => {
       if (f.geometry?.coordinates) scanCoords(f.geometry.coordinates);
     });
-    const lngSpan = Math.max(0.05, maxLng - minLng);
-    const latSpan = Math.max(0.05, maxLat - minLat);
-    const pad = 16;
-    const size = 200 - pad * 2;
+
+    if (minLng >= maxLng || minLat >= maxLat) return null;
+
+    // 緯度に応じた経度方向の縮尺補正（メルカトル図法のコサイン補正）
+    const midLatRad = ((minLat + maxLat) / 2) * (Math.PI / 180);
+    const cosLat = Math.cos(midLatRad);
+
+    const lngSpan = Math.max(0.02, (maxLng - minLng) * cosLat);
+    const latSpan = Math.max(0.02, maxLat - minLat);
+    const pad = 14;
+    const size = 220 - pad * 2;
     const scale = Math.min(size / lngSpan, size / latSpan);
-    const offsetX = (200 - lngSpan * scale) / 2;
-    const offsetY = (200 - latSpan * scale) / 2;
+    const offsetX = (220 - lngSpan * scale) / 2;
+    const offsetY = (220 - latSpan * scale) / 2;
 
-    const ringToPath = (ring) =>
-      ring
-        .map((pt, idx) => {
-          const x = (offsetX + (pt[0] - minLng) * scale).toFixed(1);
-          const y = (200 - (offsetY + (pt[1] - minLat) * scale)).toFixed(1);
-          return `${idx === 0 ? 'M' : 'L'}${x},${y}`;
-        })
-        .join(' ') + ' Z';
+    const projectLngLat = (lng, lat) => {
+      const x = offsetX + (lng - minLng) * cosLat * scale;
+      const y = 220 - (offsetY + (lat - minLat) * scale);
+      return [x, y];
+    };
 
-    return gsiMuniGeoJson.features.map((f, idx) => {
+    const ringToPath = (ring) => {
+      if (!Array.isArray(ring) || ring.length < 3) return '';
+      return (
+        ring
+          .map((pt, idx) => {
+            const [x, y] = projectLngLat(pt[0], pt[1]);
+            return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+          })
+          .join(' ') + ' Z'
+      );
+    };
+
+    // 同じ市区町村名（飛び地や複数島嶼に分かれているポリゴン）を1つの市区町村単位に統合し、中心座標も算出
+    const byMuniName = new Map();
+
+    gsiMuniGeoJson.features.forEach((f, idx) => {
       const props = f.properties || {};
-      const name = props.N03_004 || props.name || props.city || `自治体${idx + 1}`;
-      const geom = f.geometry || {};
-      let d = '';
-      if (geom.type === 'Polygon') {
-        d = geom.coordinates.map(ringToPath).join(' ');
-      } else if (geom.type === 'MultiPolygon') {
-        d = geom.coordinates.map(poly => poly.map(ringToPath).join(' ')).join(' ');
-      }
-      return { id: `${name}_${idx}`, name, d };
-    });
-  }, [gsiMuniGeoJson]);
+      // 国土数値情報 N03 では N03_003(郡・政令市名) + N03_004(市区町村名)
+      const gunOrCity = props.N03_003 || '';
+      const wardOrMuni = props.N03_004 || props.name || props.city || props.nam_ja || '';
+      const fullName =
+        gunOrCity && wardOrMuni && gunOrCity.endsWith('市') && !wardOrMuni.startsWith(gunOrCity)
+          ? `${gunOrCity}${wardOrMuni}`
+          : wardOrMuni || gunOrCity || `自治体${idx + 1}`;
 
-  // 内蔵ポリゴンから都道府県の拡大ビュー＆国土地理院風の市町村メッシュ境界を生成するフォールバック計算
+      const geom = f.geometry || {};
+      let dPart = '';
+      let sumX = 0, sumY = 0, ptCnt = 0;
+
+      const processRing = (ring) => {
+        if (!Array.isArray(ring) || ring.length === 0) return '';
+        const firstPt = ring[0];
+        if (isTokyo && firstPt[1] < 35.45) return '';
+        if (isKagoshima && firstPt[1] < 30.9) return '';
+        if (isOkinawa && (firstPt[0] < 126.5 || firstPt[0] > 128.6 || firstPt[1] < 25.8 || firstPt[1] > 27.0)) return '';
+
+        ring.forEach(pt => {
+          const [px, py] = projectLngLat(pt[0], pt[1]);
+          sumX += px;
+          sumY += py;
+          ptCnt++;
+        });
+        return ringToPath(ring);
+      };
+
+      if (geom.type === 'Polygon') {
+        dPart = geom.coordinates.map(processRing).filter(Boolean).join(' ');
+      } else if (geom.type === 'MultiPolygon') {
+        dPart = geom.coordinates
+          .map(poly => poly.map(processRing).filter(Boolean).join(' '))
+          .filter(Boolean)
+          .join(' ');
+      }
+
+      if (!dPart) return;
+
+      const prev = byMuniName.get(fullName);
+      if (prev) {
+        prev.d += ' ' + dPart;
+        prev.sumX += sumX;
+        prev.sumY += sumY;
+        prev.ptCnt += ptCnt;
+      } else {
+        byMuniName.set(fullName, {
+          id: `${fullName}_${idx}`,
+          name: fullName,
+          shortName: wardOrMuni || fullName,
+          d: dPart,
+          sumX,
+          sumY,
+          ptCnt
+        });
+      }
+    });
+
+    return Array.from(byMuniName.values()).map(item => ({
+      id: item.id,
+      name: item.name,
+      shortName: item.shortName,
+      d: item.d,
+      cx: item.ptCnt > 0 ? item.sumX / item.ptCnt : 110,
+      cy: item.ptCnt > 0 ? item.sumY / item.ptCnt : 110
+    }));
+  }, [gsiMuniGeoJson, selectedPref]);
+
+  // ★ GeoJSONミラーが万一取得できなかった場合でも、都道府県の本物の輪郭ポリゴン＋HeartRails実在市区町村座標のボロノイ分割で正確な位置関係の市区町村マップを生成
+  const voronoiRealMuniData = useMemo(() => {
+    if (renderedGsiMuniPaths || !selectedPrefObj) return null;
+
+    // 都道府県の高精細輪郭（japanPrefGeoJsonのrawGeometry）から220×220のSVGパスと投影関数を作成
+    const geom = selectedPrefObj.rawGeometry;
+    const isTokyo = selectedPref === '東京都';
+    const isKagoshima = selectedPref === '鹿児島県';
+    const isOkinawa = selectedPref === '沖縄県';
+
+    if (geom && Array.isArray(realMuniCoordList) && realMuniCoordList.length > 0) {
+      let minLng = 180, maxLng = -180, minLat = 90, maxLat = -90;
+      const scan = (coords) => {
+        coords.forEach(c => {
+          if (typeof c[0] === 'number' && typeof c[1] === 'number') {
+            if (isTokyo && c[1] < 35.45) return;
+            if (isKagoshima && c[1] < 30.9) return;
+            if (isOkinawa && (c[0] < 126.5 || c[0] > 128.6 || c[1] < 25.8 || c[1] > 27.0)) return;
+            if (c[0] < minLng) minLng = c[0];
+            if (c[0] > maxLng) maxLng = c[0];
+            if (c[1] < minLat) minLat = c[1];
+            if (c[1] > maxLat) maxLat = c[1];
+          } else if (Array.isArray(c)) {
+            scan(c);
+          }
+        });
+      };
+      scan(geom.coordinates);
+
+      if (minLng < maxLng && minLat < maxLat) {
+        const midLatRad = ((minLat + maxLat) / 2) * (Math.PI / 180);
+        const cosLat = Math.cos(midLatRad);
+        const lngSpan = Math.max(0.02, (maxLng - minLng) * cosLat);
+        const latSpan = Math.max(0.02, maxLat - minLat);
+        const pad = 14;
+        const size = 220 - pad * 2;
+        const scale = Math.min(size / lngSpan, size / latSpan);
+        const offsetX = (220 - lngSpan * scale) / 2;
+        const offsetY = (220 - latSpan * scale) / 2;
+
+        const project = (lng, lat) => [
+          offsetX + (lng - minLng) * cosLat * scale,
+          220 - (offsetY + (lat - minLat) * scale)
+        ];
+
+        const ringToPath = (ring) => {
+          if (!Array.isArray(ring) || ring.length < 3) return '';
+          if (isTokyo && ring[0][1] < 35.45) return '';
+          if (isKagoshima && ring[0][1] < 30.9) return '';
+          if (isOkinawa && (ring[0][0] < 126.5 || ring[0][0] > 128.6 || ring[0][1] < 25.8 || ring[0][1] > 27.0)) return '';
+          return (
+            ring
+              .map((pt, idx) => {
+                const [x, y] = project(pt[0], pt[1]);
+                return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+              })
+              .join(' ') + ' Z'
+          );
+        };
+
+        const outlineD =
+          geom.type === 'Polygon'
+            ? geom.coordinates.map(ringToPath).filter(Boolean).join(' ')
+            : geom.coordinates
+                .map(poly => poly.map(ringToPath).filter(Boolean).join(' '))
+                .filter(Boolean)
+                .join(' ');
+
+        // 各市区町村の実在座標を220×220空間に投影し、半平面の交差（ボロノイ領域）を計算して都道府県輪郭でクリップ
+        const projectedPoints = realMuniCoordList
+          .filter(m => {
+            if (isTokyo && m.lat < 35.45) return false;
+            if (isKagoshima && m.lat < 30.9) return false;
+            if (isOkinawa && (m.lng < 126.5 || m.lng > 128.6 || m.lat < 25.8 || m.lat > 27.0)) return false;
+            return true;
+          })
+          .map(m => {
+            const [x, y] = project(m.lng, m.lat);
+            return { ...m, x, y };
+          });
+
+        // ポリゴンを垂直二等分線でクリップするSutherland-Hodgmanアルゴリズム
+        const clipPolygonByBisector = (poly, pA, pB) => {
+          if (!poly || poly.length === 0) return [];
+          const mx = (pA.x + pB.x) / 2;
+          const my = (pA.y + pB.y) / 2;
+          const nx = pB.x - pA.x;
+          const ny = pB.y - pA.y;
+          const inside = (pt) => (pt[0] - mx) * nx + (pt[1] - my) * ny <= 0;
+          const intersect = (p1, p2) => {
+            const dx = p2[0] - p1[0];
+            const dy = p2[1] - p1[1];
+            const denom = dx * nx + dy * ny;
+            if (Math.abs(denom) < 1e-9) return p1;
+            const t = ((mx - p1[0]) * nx + (my - p1[1]) * ny) / denom;
+            return [p1[0] + t * dx, p1[1] + t * dy];
+          };
+
+          const out = [];
+          for (let i = 0; i < poly.length; i++) {
+            const cur = poly[i];
+            const prev = poly[(i + poly.length - 1) % poly.length];
+            const curIn = inside(cur);
+            const prevIn = inside(prev);
+            if (curIn) {
+              if (!prevIn) out.push(intersect(prev, cur));
+              out.push(cur);
+            } else if (prevIn) {
+              out.push(intersect(prev, cur));
+            }
+          }
+          return out;
+        };
+
+        const cells = projectedPoints.map((pt, idx) => {
+          let cellPoly = [
+            [-10, -10],
+            [230, -10],
+            [230, 230],
+            [-10, 230]
+          ];
+          for (let j = 0; j < projectedPoints.length; j++) {
+            if (idx === j) continue;
+            cellPoly = clipPolygonByBisector(cellPoly, pt, projectedPoints[j]);
+            if (cellPoly.length === 0) break;
+          }
+          const cellD =
+            cellPoly.length >= 3
+              ? cellPoly.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') + ' Z'
+              : '';
+          return {
+            id: `vor_${pt.name}_${idx}`,
+            name: pt.name,
+            cx: pt.x,
+            cy: pt.y,
+            d: cellD
+          };
+        });
+
+        return { outlineD, cells };
+      }
+    }
+
+    return null;
+  }, [renderedGsiMuniPaths, selectedPrefObj, realMuniCoordList, selectedPref]);
+
+  // 内蔵ポリゴンから都道府県の拡大ビューを生成する最小フォールバック計算（ロード中の0.3秒間のみ使用）
   const fallbackPrefZoomData = useMemo(() => {
     if (!selectedPrefObj) return null;
     const nums = (selectedPrefObj.d.match(/\d+(\.\d+)?/g) || []).map(Number);
@@ -448,109 +1001,156 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
             </span>
           </span>
           <span className="px-2 py-0.5 rounded-full bg-white/15 text-emerald-300 text-[9px] font-extrabold">
-            👆 都道府県をタップで市町村表示
+            👆 1回タップで県名・2回で詳細
           </span>
         </div>
 
         <svg
           viewBox="0 0 480 468"
-          className="w-full h-auto max-h-[320px] mx-auto select-none"
+          className="w-full h-auto max-h-[340px] mx-auto select-none"
         >
-          {/* 47都道府県の個別ポリゴン（未訪問＝白、行った場所・選択中＝緑色で統一） */}
-          {GSI_PREFECTURE_PATHS.map(item => {
+          {/* 沖縄インセット枠の仕切り線（地図らしいあしらい） */}
+          <path
+            d="M272,456 L272,392 L310,370 L466,370"
+            fill="none"
+            stroke="#334155"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+            pointerEvents="none"
+          />
+          <text
+            x="462"
+            y="382"
+            textAnchor="end"
+            fontSize="8"
+            fontWeight="800"
+            fill="#94A3B8"
+            pointerEvents="none"
+          >
+            沖縄県
+          </text>
+
+          {/* 47都道府県の個別ポリゴン（1回タップで都道府県名を表示、同じ県をもう1回タップすると市区町村詳細を展開） */}
+          {activePrefPaths.map(item => {
+            const isFocused = focusedPref === item.pref;
             const isSelected = selectedPref === item.pref;
             const visitedCount = (badgesByPref[item.pref] || []).length;
-            const fillColor = isSelected
+            const totalMuniInPref = OFFICIAL_MUNICIPALITY_COUNT_BY_PREF[item.pref] || 30;
+            const isPrefComplete = visitedCount >= totalMuniInPref;
+            const fillColor = isFocused || isSelected
               ? '#4ADE80'
+              : isPrefComplete
+              ? '#FBBF24'
               : visitedCount >= 1
               ? '#22C55E'
               : '#FFFFFF';
 
             return (
               <g
-                key={item.code}
-                onClick={() => onSelectPref && onSelectPref(isSelected ? null : item.pref)}
+                key={item.code || item.pref}
+                onClick={() => {
+                  if (focusedPref !== item.pref) {
+                    // 1回目のタップ：都道府県名を表示（開いていた詳細パネルは閉じる）
+                    setFocusedPref(item.pref);
+                    if (selectedPref && onSelectPref) onSelectPref(null);
+                  } else {
+                    // 同じ都道府県を2回目タップ：市区町村詳細パネルを開閉
+                    if (onSelectPref) {
+                      onSelectPref(isSelected ? null : item.pref);
+                    }
+                  }
+                }}
                 className="cursor-pointer transition-opacity hover:opacity-90"
               >
-                <title>{`${item.pref}（タップして市町村を表示）`}</title>
+                <title>{item.pref}</title>
                 <path
                   d={item.d}
                   fill={fillColor}
-                  stroke={isSelected ? '#16A34A' : '#111827'}
-                  strokeWidth={isSelected ? '1.8' : '0.95'}
+                  stroke={isFocused || isSelected ? '#16A34A' : '#111827'}
+                  strokeWidth={isFocused || isSelected ? '1.5' : '0.65'}
                   strokeLinejoin="round"
                 />
               </g>
             );
           })}
 
-          {/* 琵琶湖（滋賀県中央の湖シルエット） */}
-          <path
-            d="M183,313 L187,312 L186,324 L182,323 Z"
-            fill="#111827"
-            pointerEvents="none"
-          />
-
-          {/* 選択中の都道府県名ピンラベル */}
-          {selectedPrefObj && (
+          {/* 1回タップした都道府県の名前ピンラベル（大きく見やすく表示） */}
+          {focusedPrefObj && (
             <g pointerEvents="none">
               <circle
-                cx={selectedPrefObj.cx}
-                cy={selectedPrefObj.cy}
-                r="11"
+                cx={focusedPrefObj.cx}
+                cy={focusedPrefObj.cy}
+                r="12"
                 fill="none"
                 stroke="#22C55E"
-                strokeWidth="2.2"
+                strokeWidth="2.4"
               />
               <rect
-                x={selectedPrefObj.cx - 28}
-                y={Math.max(4, selectedPrefObj.cy - 24)}
-                width="56"
-                height="14"
-                rx="7"
-                fill="#22C55E"
-                stroke="#111827"
-                strokeWidth="1"
+                x={Math.max(4, Math.min(404, focusedPrefObj.cx - 36))}
+                y={Math.max(4, focusedPrefObj.cy - 28)}
+                width="72"
+                height="18"
+                rx="9"
+                fill="#16A34A"
+                stroke="#FFFFFF"
+                strokeWidth="1.2"
               />
               <text
-                x={selectedPrefObj.cx}
-                y={Math.max(14, selectedPrefObj.cy - 14.5)}
+                x={Math.max(40, Math.min(440, focusedPrefObj.cx))}
+                y={Math.max(16, focusedPrefObj.cy - 16)}
                 textAnchor="middle"
-                fontSize="8.5"
+                fontSize="10.5"
                 fontWeight="900"
                 fill="#FFFFFF"
               >
-                {selectedPrefObj.pref}
+                {focusedPrefObj.pref}
               </text>
             </g>
           )}
         </svg>
 
-        {/* 下部：小さな県も押しやすい47都道府県クイック選択バー */}
-        <div className="mt-2 pt-2 border-t border-white/15 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {JAPAN_MAP_LAYOUT.map(tile => {
-            const isSelected = selectedPref === tile.pref;
-            const isVisited = (badgesByPref[tile.pref] || []).length > 0;
-            return (
+        {/* 1回タップした時に地図の下に出る「都道府県名バッジ＆市区町村表示ボタン」バー */}
+        {focusedPrefObj && (
+          <div className="mt-2 pt-2 border-t border-white/15 flex items-center justify-between gap-2 px-1 animate-in fade-in duration-150">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-lg leading-none shrink-0">{getPrefMeta(focusedPrefObj.pref).icon}</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-extrabold text-white truncate">
+                    {focusedPrefObj.pref}
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-400/30 px-2 py-0.2 rounded-full shrink-0">
+                    {focusedPrefObj.region}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
-                key={tile.pref}
                 type="button"
-                onClick={() => onSelectPref && onSelectPref(isSelected ? null : tile.pref)}
-                className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-extrabold border transition-all flex items-center gap-1 cursor-pointer active:scale-95 ${
-                  isSelected || isVisited
-                    ? 'bg-[#22C55E] text-white border-emerald-300 shadow-xs'
-                    : 'bg-white/12 hover:bg-white/25 text-white border-white/20'
-                }`}
+                onClick={() => onSelectPref && onSelectPref(selectedPref === focusedPrefObj.pref ? null : focusedPrefObj.pref)}
+                className="px-3 py-1.5 rounded-xl bg-[#22C55E] hover:bg-emerald-400 text-stone-950 text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer shadow-xs"
               >
-                <span>{tile.icon}</span>
-                <span>{tile.short}</span>
+                {selectedPref === focusedPrefObj.pref ? '詳細を閉じる ▲' : '市区町村を見る ▼'}
               </button>
-            );
-          })}
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFocusedPref(null);
+                  if (onSelectPref) onSelectPref(null);
+                }}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-stone-300 transition-colors cursor-pointer"
+                title="選択解除"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ② 都道府県をタップした時に展開する「国土地理院ベースの都道府県拡大マップ＆全市町村リスト」 */}
+      {/* ② 都道府県を2回タップ（または「市区町村を見る」をタップ）した時に展開する詳細マップ */}
       {selectedPref && selectedPrefObj && (
         <div className="p-4 bg-white text-stone-800 rounded-2xl border-2 border-emerald-400 shadow-lg space-y-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-start justify-between gap-2">
@@ -562,7 +1162,7 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
                     国土地理院・行政区域データ準拠
                   </span>
                   <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-                    収録 {fullMuniList.length} 市区町村
+                    全 {officialMuniTotalCount} 市区町村
                   </span>
                 </div>
                 <h4 className="text-sm sm:text-base font-extrabold text-stone-900 mt-0.5">
@@ -583,38 +1183,129 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center bg-stone-900 text-white p-3 rounded-2xl border border-stone-700">
             <div className="relative flex flex-col items-center justify-center">
               {renderedGsiMuniPaths ? (
-                <svg viewBox="0 0 200 200" className="w-full h-44 mx-auto select-none">
+                <svg viewBox="0 0 220 220" className="w-full h-52 mx-auto select-none">
                   {renderedGsiMuniPaths.map(mp => {
+                    const cleanSelected = (selectedMuni || '').replace(/（.*?）/g, '');
                     const isMuniVisited = (badgesByPref[selectedPref] || []).some(
-                      b => b.municipality && (mp.name.includes(b.municipality) || b.municipality.includes(mp.name))
+                      b =>
+                        b.municipality &&
+                        (mp.name === b.municipality ||
+                          mp.shortName === b.municipality ||
+                          mp.name.includes(b.municipality.replace(/（.*?）/g, '')) ||
+                          b.municipality.replace(/（.*?）/g, '').includes(mp.shortName))
                     );
-                    const isMuniSelected = selectedMuni && (mp.name.includes(selectedMuni) || selectedMuni.includes(mp.name));
+                    const isMuniSelected =
+                      Boolean(cleanSelected) &&
+                      (mp.name === cleanSelected ||
+                        mp.shortName === cleanSelected ||
+                        mp.name.includes(cleanSelected) ||
+                        cleanSelected.includes(mp.shortName));
                     return (
                       <path
                         key={mp.id}
                         d={mp.d}
                         onClick={() => setSelectedMuni(mp.name)}
                         fill={isMuniSelected ? '#4ADE80' : isMuniVisited ? '#22C55E' : '#FFFFFF'}
-                        stroke="#111827"
-                        strokeWidth="0.7"
+                        stroke={isMuniSelected ? '#15803D' : '#1E293B'}
+                        strokeWidth={isMuniSelected ? '1.3' : '0.55'}
+                        strokeLinejoin="round"
                         className="cursor-pointer transition-colors hover:fill-emerald-300"
                       >
                         <title>{`${selectedPref} ${mp.name}`}</title>
                       </path>
                     );
                   })}
+
+                  {/* 選択中の市区町村がある場合はその中心にピンと自治体名ラベルを表示 */}
+                  {(() => {
+                    const cleanSelected = (selectedMuni || '').replace(/（.*?）/g, '');
+                    if (!cleanSelected) return null;
+                    const target = renderedGsiMuniPaths.find(
+                      mp =>
+                        mp.name === cleanSelected ||
+                        mp.shortName === cleanSelected ||
+                        mp.name.includes(cleanSelected) ||
+                        cleanSelected.includes(mp.shortName)
+                    );
+                    if (!target) return null;
+                    const boxW = Math.max(46, Math.min(110, target.name.length * 10 + 14));
+                    const boxX = Math.max(4, Math.min(216 - boxW, target.cx - boxW / 2));
+                    const boxY = Math.max(4, target.cy - 22);
+                    return (
+                      <g pointerEvents="none">
+                        <circle cx={target.cx} cy={target.cy} r="3.2" fill="#16A34A" stroke="#FFFFFF" strokeWidth="1.2" />
+                        <rect
+                          x={boxX}
+                          y={boxY}
+                          width={boxW}
+                          height="15"
+                          rx="7.5"
+                          fill="#15803D"
+                          stroke="#FFFFFF"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x={boxX + boxW / 2}
+                          y={boxY + 10.5}
+                          textAnchor="middle"
+                          fontSize="8.5"
+                          fontWeight="900"
+                          fill="#FFFFFF"
+                        >
+                          {target.name}
+                        </text>
+                      </g>
+                    );
+                  })()}
+                </svg>
+              ) : voronoiRealMuniData ? (
+                <svg viewBox="0 0 220 220" className="w-full h-52 mx-auto select-none">
+                  <defs>
+                    <clipPath id={`clip_real_pref_${selectedPrefObj.code}`}>
+                      <path d={voronoiRealMuniData.outlineD} />
+                    </clipPath>
+                  </defs>
+                  <g clipPath={`url(#clip_real_pref_${selectedPrefObj.code})`}>
+                    {voronoiRealMuniData.cells.map(cell => {
+                      const cleanSelected = (selectedMuni || '').replace(/（.*?）/g, '');
+                      const isMuniVisited = (badgesByPref[selectedPref] || []).some(
+                        b =>
+                          b.municipality &&
+                          (cell.name.includes(b.municipality.replace(/（.*?）/g, '')) ||
+                            b.municipality.replace(/（.*?）/g, '').includes(cell.name))
+                      );
+                      const isMuniSelected =
+                        Boolean(cleanSelected) &&
+                        (cell.name === cleanSelected ||
+                          cell.name.includes(cleanSelected) ||
+                          cleanSelected.includes(cell.name));
+                      return (
+                        <path
+                          key={cell.id}
+                          d={cell.d}
+                          onClick={() => setSelectedMuni(cell.name)}
+                          fill={isMuniSelected ? '#4ADE80' : isMuniVisited ? '#22C55E' : '#FFFFFF'}
+                          stroke="#1E293B"
+                          strokeWidth="0.65"
+                          strokeLinejoin="round"
+                          className="cursor-pointer transition-colors hover:fill-emerald-300"
+                        >
+                          <title>{`${selectedPref} ${cell.name}`}</title>
+                        </path>
+                      );
+                    })}
+                  </g>
+                  <path
+                    d={voronoiRealMuniData.outlineD}
+                    fill="none"
+                    stroke="#1E293B"
+                    strokeWidth="1.2"
+                    pointerEvents="none"
+                  />
                 </svg>
               ) : (
                 fallbackPrefZoomData && (
-                  <svg viewBox={fallbackPrefZoomData.viewBox} className="w-full h-44 mx-auto select-none">
-                    <defs>
-                      <clipPath id={`clip_pref_${selectedPrefObj.code}`}>
-                        <path d={selectedPrefObj.d} />
-                      </clipPath>
-                      <pattern id="muniSubdivGrid" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
-                        <path d="M 6 0 L 0 0 0 6" fill="none" stroke="#1E293B" strokeWidth="0.35" strokeOpacity="0.65" />
-                      </pattern>
-                    </defs>
+                  <svg viewBox={fallbackPrefZoomData.viewBox} className="w-full h-52 mx-auto select-none">
                     <path
                       d={selectedPrefObj.d}
                       fill={(badgesByPref[selectedPref] || []).length > 0 || selectedMuni ? '#22C55E' : '#FFFFFF'}
@@ -622,30 +1313,16 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
                       strokeWidth="1.2"
                       strokeLinejoin="round"
                     />
-                    <rect
-                      x={fallbackPrefZoomData.minX - 20}
-                      y={fallbackPrefZoomData.minY - 20}
-                      width={fallbackPrefZoomData.maxX - fallbackPrefZoomData.minX + 40}
-                      height={fallbackPrefZoomData.maxY - fallbackPrefZoomData.minY + 40}
-                      fill="url(#muniSubdivGrid)"
-                      clipPath={`url(#clip_pref_${selectedPrefObj.code})`}
-                    />
-                    <circle
-                      cx={fallbackPrefZoomData.cx}
-                      cy={fallbackPrefZoomData.cy}
-                      r="1.8"
-                      fill="#22C55E"
-                      stroke="#FFFFFF"
-                      strokeWidth="0.6"
-                    />
                   </svg>
                 )
               )}
-              <span className="text-[9px] font-bold text-stone-300 mt-1">
+              <span className="text-[9px] font-bold text-stone-300 mt-1 text-center">
                 {renderedGsiMuniPaths
-                  ? `🗾 ${selectedPref} 市区町村境界マップ（行った場所は緑色）`
+                  ? `🗾 ${selectedPref} 国土地理院・市区町村境界マップ（タップで選択）`
+                  : voronoiRealMuniData
+                  ? `🗾 ${selectedPref} 実在市区町村区画マップ（タップで選択）`
                   : isLoadingGsi
-                  ? `🛰️ ${selectedPref}の市町村境界データを読み込み中...`
+                  ? `🛰️ ${selectedPref}の正確な市区町村境界データを読み込み中...`
                   : `🗾 ${selectedPref} 行政区域シルエット`}
               </span>
             </div>
@@ -658,12 +1335,12 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
                 <p className="text-xs font-extrabold text-white mt-0.5">
                   {selectedMuni
                     ? `${selectedPref} ${selectedMuni}`
-                    : `${selectedPref}内の3つ以上の市区町村を訪問`}
+                    : `${selectedPref}の全 ${officialMuniTotalCount} 市区町村をすべて訪問`}
                 </p>
                 <p className="text-[10px] text-stone-300 mt-1 leading-relaxed">
                   {selectedMuni
                     ? `アプリ版では「${selectedMuni}」エリアに入るとバックグラウンド位置情報で自動判定され、地図が緑色に塗られます！`
-                    : `下の市区町村リスト（全${fullMuniList.length}件）から気になる街をタップして確認できます。`}
+                    : `${selectedPref}内の全${officialMuniTotalCount}市区町村すべてを訪れると「${selectedPref}完全制覇コンプリート」バッジが解放されます！`}
                 </p>
               </div>
             </div>
@@ -673,7 +1350,7 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {} })
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-extrabold text-stone-700">
-                📍 {selectedPref}の市区町村一覧 ({filteredMuniList.length}件)
+                📍 {selectedPref}の市区町村一覧 ({muniSearch.trim() ? `${filteredMuniList.length}/${officialMuniTotalCount}` : `全${officialMuniTotalCount}`}件)
               </span>
               <div className="relative w-44">
                 <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -988,8 +1665,7 @@ const computeEarnedTitleBadges = (municipalBadges = []) => {
       });
     }
   });
-
-  // 2) 各都道府県コンプリートバッジ（その都道府県の主要3都市以上を巡ると「〇〇県コンプリート」バッジが解放）
+  // 2) 各都道府県コンプリートバッジ（その都道府県の全市区町村すべてを訪問し終えた時のみ「〇〇県コンプリート」バッジが解放）
   const byPref = {};
   safeBadges.forEach(b => {
     if (!b.prefecture) return;
@@ -999,19 +1675,20 @@ const computeEarnedTitleBadges = (municipalBadges = []) => {
 
   Object.keys(byPref).forEach(pref => {
     const list = byPref[pref];
-    if (list.length >= 3) {
+    const totalMuniCount = OFFICIAL_MUNICIPALITY_COUNT_BY_PREF[pref] || (FULL_MUNICIPALITIES_BY_PREF[pref] || []).length || 30;
+    if (list.length >= totalMuniCount) {
       const meta = getPrefMeta(pref);
       unlockedList.push({
         id: `title_pref_${pref}`,
         category: 'prefecture',
-        rarity: list.length >= 5 ? 'SSR' : 'SR',
+        rarity: 'UR',
         icon: meta.icon,
         name: `${pref}コンプリート`,
-        condHint: `${pref}の${list.length}市区町村を制覇！（${list.slice(0, 3).map(x => x.municipality).join('・')}など）`,
-        secretHint: `${pref}で3つ以上の市区町村を訪れる`,
+        condHint: `${pref}の全${totalMuniCount}市区町村をすべて完全制覇！`,
+        secretHint: `${pref}内の全${totalMuniCount}市区町村をすべて訪れる`,
         color: meta.color,
         isUnlocked: true,
-        progress: { current: list.length, max: 3, label: `${list.length}都市制覇` }
+        progress: { current: list.length, max: totalMuniCount, label: `${list.length}/${totalMuniCount}全制覇` }
       });
     }
   });
@@ -1917,17 +2594,19 @@ const setCachedAiResponse = (cacheKey, data) => {
   } catch (e) {}
 };
 
-// Google Gemini API 構造化出力呼び出し（VITE_GEMINI_API_KEY を環境変数から取得）
+// Google Gemini API 構造化出力呼び出し（ハードコードされたAPIキーを除去し、.envのVITE_GEMINI_API_KEYのみを参照）
+const DEFAULT_GEMINI_API_KEY = "";
+
 const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
-  let apiKey = "";
+  let envKey = "";
   try {
     if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-      apiKey = String(import.meta.env.VITE_GEMINI_API_KEY).trim();
+      envKey = import.meta.env.VITE_GEMINI_API_KEY;
     }
   } catch (e) {}
-
+  const apiKey = (envKey || DEFAULT_GEMINI_API_KEY || "").trim();
   if (!apiKey) {
-    throw new Error('Gemini API key is not configured. Set VITE_GEMINI_API_KEY in your environment.');
+    throw new Error('VITE_GEMINI_API_KEY is not set');
   }
 
   const payload = {
@@ -2375,11 +3054,26 @@ const generateSuggests = (baseName, emailBase) => {
   return [`${romaji}_${Math.floor(Math.random()*1000)}`, `${romaji}_travel`, `tabi_${romaji}`];
 };
 
-// ★ HeartRails Express API 公式クレジット表記コンポーネント（利用規約準拠・リンク付き）
-function HeartRailsCreditBadge({ className = '' }) {
+// ★ HeartRails Express / HeartRails Geo API 公式クレジット表記コンポーネント（利用規約準拠・リンク付き）
+function HeartRailsCreditBadge({ className = '', showGeo = true }) {
   return (
-    <div className={`flex items-center justify-end gap-1 text-[10px] font-bold text-stone-400 ${className}`}>
-      <span>駅データ提供:</span>
+    <div className={`flex items-center justify-end flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-bold text-stone-400 ${className}`}>
+      <span>データ提供:</span>
+      {showGeo && (
+        <>
+          <a
+            href="https://geoapi.heartrails.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-[#557465] hover:underline inline-flex items-center gap-0.5"
+          >
+            <span>HeartRails Geo API</span>
+            <ExternalLink size={9} />
+          </a>
+          <span>/</span>
+        </>
+      )}
       <a
         href="https://express.heartrails.com/"
         target="_blank"
@@ -2394,14 +3088,884 @@ function HeartRailsCreditBadge({ className = '' }) {
   );
 }
 
-// 駅データAPI（HeartRails Express: https://express.heartrails.com/api.html）を使ったインライン候補展開型の駅検索コンポーネント
-// （初回登録・プロフィール編集・出発地点設定・予定追加/編集のすべてで共通利用可能）
+// HeartRails Geo API (method=getCities) のレスポンスを都道府県ごとにキャッシュするマップ
+const geoApiCityCache = {};
+// HeartRails Geo API (method=getTowns) および市区町村内の実在駅リストをキャッシュするマップ
+const geoApiTownCache = {};
+const cityStationsCache = {};
+const postalToCityCache = {};
+
+// カタカナをひらがなに変換するヘルパー（よみがな検索用）
+const toHiragana = (str = '') =>
+  str.replace(/[\u30a1-\u30f6]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0x60));
+
+// ひらがなをカタカナに変換するヘルパー
+const toKatakana = (str = '') =>
+  str.replace(/[\u3041-\u3096]/g, (m) => String.fromCharCode(m.charCodeAt(0) + 0x60));
+
+// ローマ字入力をひらがなに変換するヘルパー（例: matsumoto -> まつもと, shinjuku -> しんじゅく）
+const romajiToHiragana = (input = '') => {
+  let s = input.toLowerCase().trim();
+  if (!/^[a-z\-]+$/.test(s)) return s;
+  const table = [
+    ['shinjuku', 'しんじゅく'], ['shibuya', 'しぶや'], ['tokyo', 'とうきょう'], ['yokohama', 'よこはま'],
+    ['matsumoto', 'まつもと'], ['nagano', 'ながの'], ['karuizawa', 'かるいざわ'], ['kanazawa', 'かなざわ'],
+    ['kyoto', 'きょうと'], ['osaka', 'おおさか'], ['umeda', 'うめだ'], ['nanba', 'なんば'], ['namba', 'なんば'],
+    ['hakata', 'はかた'], ['fukuoka', 'ふくおか'], ['sapporo', 'さっぽろ'], ['sendai', 'せんだい'], ['hiroshima', 'ひろしま'],
+    ['nagoya', 'なごや'], ['kobe', 'こうべ'], ['nara', 'なら'], ['okinawa', 'おきなわ'], ['naha', 'なは'],
+    ['sha', 'しゃ'], ['shi', 'し'], ['shu', 'しゅ'], ['she', 'しぇ'], ['sho', 'しょ'],
+    ['cha', 'ちゃ'], ['chi', 'ち'], ['chu', 'ちゅ'], ['che', 'ちぇ'], ['cho', 'ちょ'],
+    ['tsu', 'つ'], ['kya', 'きゃ'], ['kyu', 'きゅ'], ['kyo', 'きょ'],
+    ['nya', 'にゃ'], ['nyu', 'にゅ'], ['nyo', 'にょ'],
+    ['hya', 'ひゃ'], ['hyu', 'ひゅ'], ['hyo', 'ひょ'],
+    ['mya', 'みゃ'], ['myu', 'みゅ'], ['myo', 'みょ'],
+    ['rya', 'りゃ'], ['ryu', 'りゅ'], ['ryo', 'りょ'],
+    ['gya', 'ぎゃ'], ['gyu', 'ぎゅ'], ['gyo', 'ぎょ'],
+    ['ja', 'じゃ'], ['ji', 'じ'], ['ju', 'じゅ'], ['je', 'じぇ'], ['jo', 'じょ'],
+    ['bya', 'びゃ'], ['byu', 'びゅ'], ['byo', 'びょ'],
+    ['pya', 'ぴゃ'], ['pyu', 'ぴゅ'], ['pyo', 'ぴょ'],
+    ['fu', 'ふ'],
+    ['ka', 'か'], ['ki', 'き'], ['ku', 'く'], ['ke', 'け'], ['ko', 'こ'],
+    ['sa', 'さ'], ['su', 'す'], ['se', 'せ'], ['so', 'そ'],
+    ['ta', 'た'], ['te', 'て'], ['to', 'と'],
+    ['na', 'な'], ['ni', 'に'], ['nu', 'ぬ'], ['ne', 'ね'], ['no', 'の'],
+    ['ha', 'は'], ['hi', 'ひ'], ['he', 'へ'], ['ho', 'ほ'],
+    ['ma', 'ま'], ['mi', 'み'], ['mu', 'む'], ['me', 'め'], ['mo', 'も'],
+    ['ya', 'や'], ['yu', 'ゆ'], ['yo', 'よ'],
+    ['ra', 'ら'], ['ri', 'り'], ['ru', 'る'], ['re', 'れ'], ['ro', 'ろ'],
+    ['wa', 'わ'], ['wo', 'を'], ['nn', 'ん'],
+    ['ga', 'が'], ['gi', 'ぎ'], ['gu', 'ぐ'], ['ge', 'げ'], ['go', 'ご'],
+    ['za', 'ざ'], ['zu', 'ず'], ['ze', 'ぜ'], ['zo', 'ぞ'],
+    ['da', 'だ'], ['di', 'ぢ'], ['du', 'づ'], ['de', 'で'], ['do', 'ど'],
+    ['ba', 'ば'], ['bi', 'び'], ['bu', 'ぶ'], ['be', 'べ'], ['bo', 'ぼ'],
+    ['pa', 'ぱ'], ['pi', 'ぴ'], ['pu', 'ぷ'], ['pe', 'ぺ'], ['po', 'ぽ'],
+    ['a', 'あ'], ['i', 'い'], ['u', 'う'], ['e', 'え'], ['o', 'お'], ['n', 'ん']
+  ];
+  s = s.replace(/([bcdfghjklmnpqrstvwxyz])\1/g, 'っ$1');
+  for (const [rom, hira] of table) {
+    s = s.split(rom).join(hira);
+  }
+  return s;
+};
+
+// ひらがな入力から実在の漢字（市区町村・駅名）へ即座に解決するための全国主要よみがな辞書
+const HIRAGANA_TO_KANJI_PLACE_MAP = [
+  // 北海道・東北
+  { kana: 'さっぽろ', kanji: '札幌', pref: '北海道' },
+  { kana: 'はこだて', kanji: '函館', pref: '北海道' },
+  { kana: 'おたる', kanji: '小樽', pref: '北海道' },
+  { kana: 'あさひかわ', kanji: '旭川', pref: '北海道' },
+  { kana: 'ふらの', kanji: '富良野', pref: '北海道' },
+  { kana: 'びえい', kanji: '美瑛', pref: '北海道' },
+  { kana: 'のぼりべつ', kanji: '登別', pref: '北海道' },
+  { kana: 'くしろ', kanji: '釧路', pref: '北海道' },
+  { kana: 'おびひろ', kanji: '帯広', pref: '北海道' },
+  { kana: 'あばしり', kanji: '網走', pref: '北海道' },
+  { kana: 'ちとせ', kanji: '千歳', pref: '北海道' },
+  { kana: 'しんちとせくうこう', kanji: '新千歳空港', pref: '北海道' },
+  { kana: 'あおもり', kanji: '青森', pref: '青森県' },
+  { kana: 'ひろさき', kanji: '弘前', pref: '青森県' },
+  { kana: 'はちのへ', kanji: '八戸', pref: '青森県' },
+  { kana: 'もりおか', kanji: '盛岡', pref: '岩手県' },
+  { kana: 'ひらいずみ', kanji: '平泉', pref: '岩手県' },
+  { kana: 'せんだい', kanji: '仙台', pref: '宮城県' },
+  { kana: 'まつしま', kanji: '松島', pref: '宮城県' },
+  { kana: 'あきた', kanji: '秋田', pref: '秋田県' },
+  { kana: 'かくのだて', kanji: '角館', pref: '秋田県' },
+  { kana: 'やまがた', kanji: '山形', pref: '山形県' },
+  { kana: 'つるおか', kanji: '鶴岡', pref: '山形県' },
+  { kana: 'さかた', kanji: '酒田', pref: '山形県' },
+  { kana: 'ふくしま', kanji: '福島', pref: '福島県' },
+  { kana: 'あいづわかまつ', kanji: '会津若松', pref: '福島県' },
+  { kana: 'こおりやま', kanji: '郡山', pref: '福島県' },
+  { kana: 'いわき', kanji: 'いわき', pref: '福島県' },
+  // 関東
+  { kana: 'とうきょう', kanji: '東京', pref: '東京都' },
+  { kana: 'しんじゅく', kanji: '新宿', pref: '東京都' },
+  { kana: 'しぶや', kanji: '渋谷', pref: '東京都' },
+  { kana: 'いけぶくろ', kanji: '池袋', pref: '東京都' },
+  { kana: 'しながわ', kanji: '品川', pref: '東京都' },
+  { kana: 'うえの', kanji: '上野', pref: '東京都' },
+  { kana: 'あさくさ', kanji: '浅草', pref: '東京都' },
+  { kana: 'あきはばら', kanji: '秋葉原', pref: '東京都' },
+  { kana: 'えびす', kanji: '恵比寿', pref: '東京都' },
+  { kana: 'きちじょうじ', kanji: '吉祥寺', pref: '東京都' },
+  { kana: 'なかめぐろ', kanji: '中目黒', pref: '東京都' },
+  { kana: 'しもきたざわ', kanji: '下北沢', pref: '東京都' },
+  { kana: 'まちだ', kanji: '町田', pref: '東京都' },
+  { kana: 'たちかわ', kanji: '立川', pref: '東京都' },
+  { kana: 'はちおうじ', kanji: '八王子', pref: '東京都' },
+  { kana: 'ちよだ', kanji: '千代田', pref: '東京都' },
+  { kana: 'ちゅうおう', kanji: '中央', pref: '東京都' },
+  { kana: 'みなと', kanji: '港', pref: '東京都' },
+  { kana: 'せたがや', kanji: '世田谷', pref: '東京都' },
+  { kana: 'よこはま', kanji: '横浜', pref: '神奈川県' },
+  { kana: 'しんよこはま', kanji: '新横浜', pref: '神奈川県' },
+  { kana: 'みなとみらい', kanji: 'みなとみらい', pref: '神奈川県' },
+  { kana: 'かわさき', kanji: '川崎', pref: '神奈川県' },
+  { kana: 'かまくら', kanji: '鎌倉', pref: '神奈川県' },
+  { kana: 'ふじさわ', kanji: '藤沢', pref: '神奈川県' },
+  { kana: 'えのしま', kanji: '江ノ島', pref: '神奈川県' },
+  { kana: 'おだわら', kanji: '小田原', pref: '神奈川県' },
+  { kana: 'はこね', kanji: '箱根', pref: '神奈川県' },
+  { kana: 'はこねゆもと', kanji: '箱根湯本', pref: '神奈川県' },
+  { kana: 'よこすか', kanji: '横須賀', pref: '神奈川県' },
+  { kana: 'さいたま', kanji: 'さいたま', pref: '埼玉県' },
+  { kana: 'おおみや', kanji: '大宮', pref: '埼玉県' },
+  { kana: 'うらわ', kanji: '浦和', pref: '埼玉県' },
+  { kana: 'かわごえ', kanji: '川越', pref: '埼玉県' },
+  { kana: 'ちちぶ', kanji: '秩父', pref: '埼玉県' },
+  { kana: 'رباط', kanji: '所沢', pref: '埼玉県' },
+  { kana: 'ところざわ', kanji: '所沢', pref: '埼玉県' },
+  { kana: 'ちば', kanji: '千葉', pref: '千葉県' },
+  { kana: 'まいはま', kanji: '舞浜', pref: '千葉県' },
+  { kana: 'うらやす', kanji: '浦安', pref: '千葉県' },
+  { kana: 'ふなばし', kanji: '船橋', pref: '千葉県' },
+  { kana: 'かしわ', kanji: '柏', pref: '千葉県' },
+  { kana: 'なりた', kanji: '成田', pref: '千葉県' },
+  { kana: 'みと', kanji: '水戸', pref: '茨城県' },
+  { kana: 'つくば', kanji: 'つくば', pref: '茨城県' },
+  { kana: 'うつのみや', kanji: '宇都宮', pref: '栃木県' },
+  { kana: 'にっこう', kanji: '日光', pref: '栃木県' },
+  { kana: 'なす', kanji: '那須', pref: '栃木県' },
+  { kana: 'たかさき', kanji: '高崎', pref: '群馬県' },
+  { kana: 'まえばし', kanji: '前橋', pref: '群馬県' },
+  { kana: 'くさつ', kanji: '草津', pref: '群馬県' },
+  // 中部・北陸・甲信越
+  { kana: 'まつもと', kanji: '松本', pref: '長野県' },
+  { kana: 'きたまつもと', kanji: '北松本', pref: '長野県' },
+  { kana: 'みなみまつもと', kanji: '南松本', pref: '長野県' },
+  { kana: 'にしまつもと', kanji: '西松本', pref: '長野県' },
+  { kana: 'しまない', kanji: '島内', pref: '長野県' },
+  { kana: 'しまたかまつ', kanji: '島高松', pref: '長野県' },
+  { kana: 'あずさばし', kanji: '梓橋', pref: '長野県' },
+  { kana: 'ひらた', kanji: '平田', pref: '長野県' },
+  { kana: 'むらい', kanji: '村井', pref: '長野県' },
+  { kana: 'なぎさ', kanji: '渚', pref: '長野県' },
+  { kana: 'しなのあらい', kanji: '信濃荒井', pref: '長野県' },
+  { kana: 'おおば', kanji: '大庭', pref: '長野県' },
+  { kana: 'しもにい', kanji: '下新', pref: '長野県' },
+  { kana: 'きたにい', kanji: '北新・松本大学前', pref: '長野県' },
+  { kana: 'にいむら', kanji: '新村', pref: '長野県' },
+  { kana: 'さみぞ', kanji: '三溝', pref: '長野県' },
+  { kana: 'もりぐち', kanji: '森口', pref: '長野県' },
+  { kana: 'しもじま', kanji: '下島', pref: '長野県' },
+  { kana: 'はた', kanji: '波田', pref: '長野県' },
+  { kana: 'えんどう', kanji: '渕東', pref: '長野県' },
+  { kana: 'しんしましま', kanji: '新島々', pref: '長野県' },
+  { kana: 'ながの', kanji: '長野', pref: '長野県' },
+  { kana: 'かるいざわ', kanji: '軽井沢', pref: '長野県' },
+  { kana: 'うえだ', kanji: '上田', pref: '長野県' },
+  { kana: 'すわ', kanji: '諏訪', pref: '長野県' },
+  { kana: 'しおじり', kanji: '塩尻', pref: '長野県' },
+  { kana: 'あづみの', kanji: '安曇野', pref: '長野県' },
+  { kana: 'はくば', kanji: '白馬', pref: '長野県' },
+  { kana: 'にいがた', kanji: '新潟', pref: '新潟県' },
+  { kana: 'ながおか', kanji: '長岡', pref: '新潟県' },
+  { kana: 'とやま', kanji: '富山', pref: '富山県' },
+  { kana: 'かなざわ', kanji: '金沢', pref: '石川県' },
+  { kana: 'ふくい', kanji: '福井', pref: '福井県' },
+  { kana: 'こうふ', kanji: '甲府', pref: '山梨県' },
+  { kana: 'かわぐちこ', kanji: '河口湖', pref: '山梨県' },
+  { kana: 'ぎふ', kanji: '岐阜', pref: '岐阜県' },
+  { kana: 'たかやま', kanji: '高山', pref: '岐阜県' },
+  { kana: 'げろ', kanji: '下呂', pref: '岐阜県' },
+  { kana: 'しずおか', kanji: '静岡', pref: '静岡県' },
+  { kana: 'はままつ', kanji: '浜松', pref: '静岡県' },
+  { kana: 'あたみ', kanji: '熱海', pref: '静岡県' },
+  { kana: 'いとう', kanji: '伊東', pref: '静岡県' },
+  { kana: 'みしま', kanji: '三島', pref: '静岡県' },
+  { kana: 'なごや', kanji: '名古屋', pref: '愛知県' },
+  { kana: 'とよはし', kanji: '豊橋', pref: '愛知県' },
+  { kana: 'おかざき', kanji: '岡崎', pref: '愛知県' },
+  // 関西・中国・四国・九州・沖縄
+  { kana: 'いせ', kanji: '伊勢', pref: '三重県' },
+  { kana: 'とば', kanji: '鳥羽', pref: '三重県' },
+  { kana: 'おおつ', kanji: '大津', pref: '滋賀県' },
+  { kana: 'ひこね', kanji: '彦根', pref: '滋賀県' },
+  { kana: 'きょうと', kanji: '京都', pref: '京都府' },
+  { kana: 'あらしやま', kanji: '嵐山', pref: '京都府' },
+  { kana: 'うじ', kanji: '宇治', pref: '京都府' },
+  { kana: 'おおさか', kanji: '大阪', pref: '大阪府' },
+  { kana: 'しんおおさか', kanji: '新大阪', pref: '大阪府' },
+  { kana: 'うめだ', kanji: '梅田', pref: '大阪府' },
+  { kana: 'なんば', kanji: '難波', pref: '大阪府' },
+  { kana: 'てんのうじ', kanji: '天王寺', pref: '大阪府' },
+  { kana: 'さかい', kanji: '堺', pref: '大阪府' },
+  { kana: 'こうべ', kanji: '神戸', pref: '兵庫県' },
+  { kana: 'さんのみや', kanji: '三ノ宮', pref: '兵庫県' },
+  { kana: 'ひめじ', kanji: '姫路', pref: '兵庫県' },
+  { kana: 'きのさきおんせん', kanji: '城崎温泉', pref: '兵庫県' },
+  { kana: 'なら', kanji: '奈良', pref: '奈良県' },
+  { kana: 'わかやま', kanji: '和歌山', pref: '和歌山県' },
+  { kana: 'しらはま', kanji: '白浜', pref: '和歌山県' },
+  { kana: 'とっとり', kanji: '鳥取', pref: '鳥取県' },
+  { kana: 'よなご', kanji: '米子', pref: '鳥取県' },
+  { kana: 'まつえ', kanji: '松江', pref: '島根県' },
+  { kana: 'いずも', kanji: '出雲', pref: '島根県' },
+  { kana: 'おかやま', kanji: '岡山', pref: '岡山県' },
+  { kana: 'くらしき', kanji: '倉敷', pref: '岡山県' },
+  { kana: 'ひろしま', kanji: '広島', pref: '広島県' },
+  { kana: 'おのみち', kanji: '尾道', pref: '広島県' },
+  { kana: 'みやじまぐち', kanji: '宮島口', pref: '広島県' },
+  { kana: 'ふくやま', kanji: '福山', pref: '広島県' },
+  { kana: 'しものせき', kanji: '下関', pref: '山口県' },
+  { kana: 'やまぐち', kanji: '山口', pref: '山口県' },
+  { kana: 'とくしま', kanji: '徳島', pref: '徳島県' },
+  { kana: 'たかまつ', kanji: '高松', pref: '香川県' },
+  { kana: 'ことひら', kanji: '琴平', pref: '香川県' },
+  { kana: 'まつやま', kanji: '松山', pref: '愛媛県' },
+  { kana: 'いまばり', kanji: '今治', pref: '愛媛県' },
+  { kana: 'こうち', kanji: '高知', pref: '高知県' },
+  { kana: 'ふくおか', kanji: '福岡', pref: '福岡県' },
+  { kana: 'はかた', kanji: '博多', pref: '福岡県' },
+  { kana: 'てんじん', kanji: '天神', pref: '福岡県' },
+  { kana: 'こくら', kanji: '小倉', pref: '福岡県' },
+  { kana: 'だざいふ', kanji: '太宰府', pref: '福岡県' },
+  { kana: 'さが', kanji: '佐賀', pref: '佐賀県' },
+  { kana: 'ながさき', kanji: '長崎', pref: '長崎県' },
+  { kana: 'させぼ', kanji: '佐世保', pref: '長崎県' },
+  { kana: 'くまもと', kanji: '熊本', pref: '熊本県' },
+  { kana: 'あそ', kanji: '阿蘇', pref: '熊本県' },
+  { kana: 'おおいた', kanji: '大分', pref: '大分県' },
+  { kana: 'べっぷ', kanji: '別府', pref: '大分県' },
+  { kana: 'ゆふいん', kanji: '由布院', pref: '大分県' },
+  { kana: 'みやざき', kanji: '宮崎', pref: '宮崎県' },
+  { kana: 'かごしま', kanji: '鹿児島', pref: '鹿児島県' },
+  { kana: 'いぶすき', kanji: '指宿', pref: '鹿児島県' },
+  { kana: 'なは', kanji: '那覇', pref: '沖縄県' },
+  { kana: 'おきなわ', kanji: '沖縄', pref: '沖縄県' }
+];
+
+// ひらがな・カタカナ・ローマ字クエリから漢字の地名・駅名候補を解決する関数（内蔵辞書＋町名よみがな＋Wikipedia API併用）
+const resolveKanjiPlaceCandidates = async (rawQuery, suffixType = '駅', extraKanaMap = []) => {
+  const cleaned = (rawQuery || '').trim().replace(/(駅|市|区|町|村)$/, '');
+  if (!cleaned) return [];
+
+  const hira = toHiragana(romajiToHiragana(cleaned));
+  const kata = toKatakana(hira);
+
+  // 1) 内蔵よみがな辞書＋市区町村の町名よみがなデータから漢字候補を取得
+  // ※「しま」で「まつしま（松島）」がヒットして「松」から「松本」が誤爆しないよう、前方一致を最優先し、2文字以上のときのみ部分一致を許可
+  const combinedDict = [...extraKanaMap, ...HIRAGANA_TO_KANJI_PLACE_MAP];
+  const prefixMatches = combinedDict
+    .filter((entry) => entry.kana && (entry.kana.startsWith(hira) || entry.kanji.startsWith(cleaned)))
+    .map((entry) => entry.kanji);
+
+  const partialMatches =
+    hira.length >= 2
+      ? combinedDict
+          .filter(
+            (entry) =>
+              entry.kana &&
+              !entry.kana.startsWith(hira) &&
+              (entry.kana.includes(hira) || entry.kanji.includes(cleaned))
+          )
+          .map((entry) => entry.kanji)
+      : [];
+
+  // すでに漢字が含まれている場合はそのまま先頭に追加
+  const hasKanji = /[\u4e00-\u9faf]/.test(cleaned);
+  const baseCandidates = Array.from(
+    new Set([...(hasKanji ? [cleaned] : []), ...prefixMatches, ...partialMatches, kata])
+  );
+
+  // 2) ひらがなのみが入力されている場合、Wikipedia CORS APIで全国の駅名・自治体名の漢字表記を補完
+  if (!hasKanji && hira.length >= 2) {
+    try {
+      const wikiUrl = `https://ja.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=8&srsearch=${encodeURIComponent(
+        `${hira} ${suffixType}`
+      )}`;
+      const res = await fetch(wikiUrl);
+      const data = await res.json();
+      const searchItems = data?.query?.search || [];
+      searchItems.forEach((item) => {
+        const title = (item.title || '').replace(/\s*\(.*?\)\s*/g, '');
+        if (suffixType === '駅' && title.endsWith('駅')) {
+          baseCandidates.push(title.replace(/駅$/, ''));
+        } else if (suffixType !== '駅' && /(市|区|町|村)$/.test(title)) {
+          baseCandidates.push(title);
+        }
+      });
+    } catch (e) {
+      // オフライン時は内蔵辞書でフォールバック
+    }
+  }
+
+  return Array.from(new Set(baseCandidates)).slice(0, 8);
+};
+
+// 指定された市区町村（例: 松本市）の町名・郵便番号・よみがな・実在駅一覧を取得するヘルパー
+const fetchCityStationsAndTowns = async (rawCityName, prefContext = '') => {
+  const cleanCity = (rawCityName || '').replace(/（.*?）/g, '').trim();
+  if (!cleanCity) return null;
+
+  const cacheKey = `${prefContext || 'ALL'}_${cleanCity}`;
+  if (cityStationsCache[cacheKey]) {
+    return cityStationsCache[cacheKey];
+  }
+
+  try {
+    // 1. HeartRails Geo API (getTowns) でその市区町村の全町名・よみがな・郵便番号・座標範囲を取得
+    const townUrl = `https://geoapi.heartrails.com/api/json?method=getTowns&city=${encodeURIComponent(
+      cleanCity
+    )}${prefContext && prefContext !== '未設定' ? `&prefecture=${encodeURIComponent(prefContext)}` : ''}`;
+    const townRes = await fetch(townUrl);
+    const townData = await townRes.json();
+    const locations = townData?.response?.location || [];
+
+    if (!Array.isArray(locations) || locations.length === 0) {
+      return null;
+    }
+
+    const detectedPref = locations[0].prefecture || prefContext || '';
+    const postalSet7 = new Set();
+    const postalPrefix5Set = new Set();
+    const townKanaList = [];
+    let minX = 180, maxX = -180, minY = 90, maxY = -90;
+
+    locations.forEach((loc) => {
+      if (loc.postal) {
+        postalSet7.add(loc.postal);
+        postalPrefix5Set.add(loc.postal.slice(0, 5));
+        postalToCityCache[loc.postal] = loc.city;
+      }
+      const x = parseFloat(loc.x);
+      const y = parseFloat(loc.y);
+      if (!isNaN(x) && !isNaN(y)) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      if (loc.town && loc.town_kana) {
+        const cleanTown = loc.town.replace(/（.*?）/g, '').replace(/(町|丁目|番地|字|大字)$/, '');
+        const cleanKana = toHiragana(loc.town_kana).replace(/(まち|ちょう|ちょうめ)$/, '');
+        if (cleanTown && cleanKana) {
+          townKanaList.push({ kana: cleanKana, kanji: cleanTown, pref: detectedPref });
+        }
+      }
+    });
+
+    const centerX = ((minX + maxX) / 2).toFixed(4);
+    const centerY = ((minY + maxY) / 2).toFixed(4);
+    const cityBase = cleanCity.replace(/^(.*?市)(.+区)$/, '$2').replace(/(市|区|町|村)$/, '');
+
+    // 2. その市区町村を通る鉄道路線を取得（代表駅検索＋中心座標検索）
+    const [byNameRes, byCoordRes] = await Promise.all([
+      fetch(`https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(cityBase)}`)
+        .then((r) => r.json())
+        .catch(() => null),
+      fetch(`https://express.heartrails.com/api/json?method=getStations&x=${centerX}&y=${centerY}`)
+        .then((r) => r.json())
+        .catch(() => null)
+    ]);
+
+    const seedStations = [
+      ...(byNameRes?.response?.station || []),
+      ...(byCoordRes?.response?.station || [])
+    ].filter((s) => !detectedPref || s.prefecture === detectedPref);
+
+    const candidateLines = Array.from(new Set(seedStations.map((s) => s.line).filter(Boolean)));
+
+    // もし路線が見つからなかった場合は都道府県の全路線から探索
+    if (candidateLines.length === 0 && detectedPref) {
+      try {
+        const lineRes = await fetch(
+          `https://express.heartrails.com/api/json?method=getLines&prefecture=${encodeURIComponent(detectedPref)}`
+        );
+        const lineData = await lineRes.json();
+        const allLines = lineData?.response?.line || [];
+        candidateLines.push(...allLines.slice(0, 12));
+      } catch (e) {}
+    }
+
+    // 3. 各路線の駅一覧を取得し、この市区町村（cleanCity）に存在する駅だけを厳密に抽出
+    const lineResponses = await Promise.all(
+      candidateLines.slice(0, 10).map((line) =>
+        fetch(`https://express.heartrails.com/api/json?method=getStations&line=${encodeURIComponent(line)}`)
+          .then((r) => r.json())
+          .then((d) => d?.response?.station || [])
+          .catch(() => [])
+      )
+    );
+
+    const rawStations = [...seedStations, ...lineResponses.flat()];
+    const uniqueMap = new Map();
+    rawStations.forEach((s) => {
+      if (detectedPref && s.prefecture !== detectedPref) return;
+      const key = `${s.name}_${s.line}_${s.prefecture}`;
+      if (!uniqueMap.has(key)) uniqueMap.set(key, s);
+    });
+
+    const verifiedStations = [];
+    const margin = 0.045; // 座標バウンディングボックスの許容マージン
+
+    for (const s of uniqueMap.values()) {
+      const sx = parseFloat(s.x);
+      const sy = parseFloat(s.y);
+      const inBbox =
+        !isNaN(sx) &&
+        !isNaN(sy) &&
+        sx >= minX - margin &&
+        sx <= maxX + margin &&
+        sy >= minY - margin &&
+        sy <= maxY + margin;
+
+      if (!inBbox) continue;
+
+      let belongsToCity = false;
+      if (s.postal && postalSet7.has(s.postal)) {
+        belongsToCity = true;
+      } else if (s.postal && postalPrefix5Set.has(s.postal.slice(0, 5))) {
+        belongsToCity = true;
+      } else if (s.postal) {
+        // 郵便番号APIで正確な市区町村名を確認（キャッシュ付き）
+        if (!postalToCityCache[s.postal]) {
+          try {
+            const pRes = await fetch(
+              `https://geoapi.heartrails.com/api/json?method=searchByPostal&postal=${encodeURIComponent(s.postal)}`
+            );
+            const pData = await pRes.json();
+            const matchedCity = pData?.response?.location?.[0]?.city || '';
+            postalToCityCache[s.postal] = matchedCity;
+          } catch (e) {}
+        }
+        const resolvedCity = postalToCityCache[s.postal] || '';
+        if (
+          resolvedCity === cleanCity ||
+          resolvedCity.endsWith(cleanCity) ||
+          cleanCity.endsWith(resolvedCity)
+        ) {
+          belongsToCity = true;
+        }
+      }
+
+      if (belongsToCity) {
+        // 駅のよみがなを辞書または町名かなから付与（完全一致を最優先して誤判定を防止）
+        const allKanaDict = [...HIRAGANA_TO_KANJI_PLACE_MAP, ...townKanaList];
+        const exactHit = allKanaDict.find((d) => d.kanji === s.name);
+        const prefixHit =
+          exactHit ||
+          allKanaDict.find(
+            (d) => d.kanji.length >= 2 && (s.name.startsWith(d.kanji) || d.kanji.startsWith(s.name))
+          );
+        verifiedStations.push({
+          ...s,
+          reading: prefixHit ? prefixHit.kana : ''
+        });
+      }
+    }
+
+    const resultObj = {
+      prefecture: detectedPref,
+      city: cleanCity,
+      postalSet7,
+      postalPrefix5Set,
+      townKanaList,
+      minX: minX - margin,
+      maxX: maxX + margin,
+      minY: minY - margin,
+      maxY: maxY + margin,
+      stations: verifiedStations
+    };
+    cityStationsCache[cacheKey] = resultObj;
+    return resultObj;
+  } catch (e) {
+    return null;
+  }
+};
+
+// ★ HeartRails Geo API (https://geoapi.heartrails.com/api.html#city) を使った実在市区町村サジェスト検索コンポーネント
+// ・実在する日本の市区町村のみを選択可能（架空の市区町村名は設定不可）
+// ・ひらがな（例: しんじゅく / よこはま）、カタカナ、ローマ字、漢字のすべてに対応
+// ・都道府県が未選択でも市区町村を選ぶと自動で都道府県もセット
+function MunicipalitySearchInput({
+  value,
+  onChange,
+  prefectureContext = '未設定',
+  onSelectPrefecture,
+  onValidityChange,
+  placeholder = '市区町村 (例: 新宿区 / 横浜市 / 大阪市)'
+}) {
+  const [query, setQuery] = useState(value || '');
+  const [isOpen, setIsOpen] = useState(false);
+  const [apiCities, setApiCities] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    setQuery(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
+  // 全国47都道府県の実在市区町村マスターリスト（よみがな辞書連携つき）
+  const localAllMunicipalities = useMemo(() => {
+    const list = [];
+    PREFECTURES.forEach((pref) => {
+      const munis = FULL_MUNICIPALITIES_BY_PREF[pref] || SAMPLE_MUNICIPALITIES_BY_PREF[pref] || [];
+      munis.forEach((rawMuni) => {
+        const cleanMuni = rawMuni.replace(/（.*?）/g, '');
+        const baseNoSuffix = cleanMuni.replace(/(市|区|町|村)$/, '');
+        const matchedDict = HIRAGANA_TO_KANJI_PLACE_MAP.find(
+          (d) =>
+            (d.pref === pref && (cleanMuni.includes(d.kanji) || d.kanji.includes(baseNoSuffix))) ||
+            cleanMuni.startsWith(d.kanji)
+        );
+        list.push({
+          pref,
+          city: cleanMuni,
+          city_kana: matchedDict ? matchedDict.kana : '',
+          rawName: rawMuni
+        });
+      });
+    });
+    return list;
+  }, []);
+
+  // 入力中または選択中の値が「実在する市区町村」かどうかを判定する
+  const matchedRealMunicipality = useMemo(() => {
+    const trimmed = (query || '').trim();
+    if (!trimmed) return null;
+    const pool = [...apiCities, ...localAllMunicipalities];
+    return (
+      pool.find(
+        (m) =>
+          m.city === trimmed ||
+          m.rawName === trimmed ||
+          m.city.replace(/(市|区|町|村)$/, '') === trimmed
+      ) || null
+    );
+  }, [query, apiCities, localAllMunicipalities]);
+
+  const isInvalidInput = Boolean((query || '').trim()) && !matchedRealMunicipality;
+
+  useEffect(() => {
+    if (onValidityChange) {
+      onValidityChange(!isInvalidInput);
+    }
+  }, [isInvalidInput, onValidityChange]);
+
+  // 都道府県が選択されている（またはひらがな・漢字入力から都道府県が推測できる）場合、HeartRails Geo API (method=getCities) から公式市区町村リスト（漢字＋ひらがなよみがな）を取得
+  useEffect(() => {
+    const trimmed = (query || '').trim();
+    const hira = toHiragana(romajiToHiragana(trimmed)).replace(/(し|く|まち|ちょう|むら|そん)$/, '');
+
+    let targetPrefs = [];
+    if (prefectureContext && prefectureContext !== '未設定') {
+      targetPrefs.push(prefectureContext);
+    }
+
+    if (trimmed.length >= 1) {
+      // ひらがな辞書または漢字マスターから該当しそうな都道府県を特定してGeo APIから公式よみがなデータを取得
+      HIRAGANA_TO_KANJI_PLACE_MAP.forEach((d) => {
+        if (d.kana.startsWith(hira) || d.kana.includes(hira) || d.kanji.includes(trimmed)) {
+          if (!targetPrefs.includes(d.pref)) targetPrefs.push(d.pref);
+        }
+      });
+      localAllMunicipalities.forEach((m) => {
+        if (m.city.includes(trimmed) || (hira.length >= 2 && m.city_kana.includes(hira))) {
+          if (!targetPrefs.includes(m.pref)) targetPrefs.push(m.pref);
+        }
+      });
+    }
+
+    targetPrefs = targetPrefs.slice(0, 3);
+    if (targetPrefs.length === 0) {
+      setApiCities([]);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchPrefs = async () => {
+      const uncached = targetPrefs.filter((p) => !geoApiCityCache[p]);
+      if (uncached.length > 0) {
+        setIsLoading(true);
+        await Promise.all(
+          uncached.map(async (prefName) => {
+            try {
+              const res = await fetch(
+                `https://geoapi.heartrails.com/api/json?method=getCities&prefecture=${encodeURIComponent(
+                  prefName
+                )}`
+              );
+              const data = await res.json();
+              const locations = data?.response?.location || [];
+              if (Array.isArray(locations) && locations.length > 0) {
+                geoApiCityCache[prefName] = locations.map((loc) => ({
+                  pref: prefName,
+                  city: loc.city,
+                  city_kana: loc.city_kana || '',
+                  rawName: loc.city
+                }));
+              }
+            } catch (e) {}
+          })
+        );
+      }
+      if (!cancelled) {
+        const merged = [];
+        targetPrefs.forEach((p) => {
+          if (geoApiCityCache[p]) merged.push(...geoApiCityCache[p]);
+        });
+        setApiCities(merged);
+        setIsLoading(false);
+      }
+    };
+
+    fetchPrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, [prefectureContext, query, localAllMunicipalities]);
+
+  // 実在する市区町村候補のフィルタリング（ひらがな・カタカナ・ローマ字・漢字すべて対応、架空の直接設定は不可）
+  const filteredCandidates = useMemo(() => {
+    const trimmed = (query || '').trim();
+    const hiraQuery = toHiragana(romajiToHiragana(trimmed));
+    const hiraBase = hiraQuery.replace(/(し|く|まち|ちょう|むら|そん)$/, '');
+    const hasPref = prefectureContext && prefectureContext !== '未設定';
+
+    // ひらがなから変換された漢字キーワード
+    const kanjiHints = HIRAGANA_TO_KANJI_PLACE_MAP.filter(
+      (d) =>
+        hiraBase.length >= 1 &&
+        (d.kana.startsWith(hiraBase) || d.kana.includes(hiraBase))
+    ).map((d) => d.kanji);
+
+    // HeartRails Geo API から取得した市区町村リストと内蔵マスターを統合（重複排除）
+    const seen = new Set();
+    const combinedPool = [];
+    [...apiCities, ...localAllMunicipalities].forEach((item) => {
+      if (hasPref && item.pref !== prefectureContext) return;
+      const key = `${item.pref}_${item.city}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        combinedPool.push(item);
+      }
+    });
+
+    if (!trimmed) {
+      if (hasPref) return combinedPool.slice(0, 50);
+      const majorCities = [
+        '新宿区',
+        '渋谷区',
+        '港区',
+        '中央区',
+        '横浜市西区',
+        'さいたま市大宮区',
+        '札幌市中央区',
+        '仙台市青葉区',
+        '名古屋市中村区',
+        '京都市中京区',
+        '大阪市北区',
+        '神戸市中央区',
+        '広島市中区',
+        '福岡市博多区',
+        '那覇市'
+      ];
+      return combinedPool.filter((m) => majorCities.includes(m.city)).slice(0, 20);
+    }
+
+    // スコアリングで前方一致（よみがな・漢字）を最優先してソート
+    const scored = [];
+    combinedPool.forEach((item) => {
+      let score = 0;
+      if (item.city === trimmed || item.rawName === trimmed) score = 100;
+      else if (item.city.startsWith(trimmed)) score = 90;
+      else if (item.city_kana && hiraBase && item.city_kana.startsWith(hiraBase)) score = 85;
+      else if (kanjiHints.some((k) => item.city.startsWith(k))) score = 80;
+      else if (item.city.includes(trimmed) || item.rawName.includes(trimmed)) score = 60;
+      else if (item.city_kana && hiraBase.length >= 2 && item.city_kana.includes(hiraBase)) score = 50;
+      else if (kanjiHints.some((k) => k.length >= 2 && item.city.includes(k))) score = 40;
+
+      if (score > 0) {
+        scored.push({ item, score });
+      }
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.item).slice(0, 35);
+  }, [query, prefectureContext, apiCities, localAllMunicipalities]);
+
+  const handleSelect = (item) => {
+    setQuery(item.city);
+    onChange(item.city);
+    if (item.pref && onSelectPrefecture) {
+      onSelectPrefecture(item.pref);
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onFocus={() => setIsOpen(true)}
+          onBlur={() => {
+            // フォーカスが外れた際、実在の市区町村と完全一致していれば正規化して確定
+            setTimeout(() => {
+              if (matchedRealMunicipality && query.trim() !== matchedRealMunicipality.city) {
+                setQuery(matchedRealMunicipality.city);
+                onChange(matchedRealMunicipality.city);
+                if (matchedRealMunicipality.pref && onSelectPrefecture) {
+                  onSelectPrefecture(matchedRealMunicipality.pref);
+                }
+              }
+            }, 160);
+          }}
+          onChange={(e) => {
+            const nextVal = e.target.value;
+            setQuery(nextVal);
+            setIsOpen(true);
+
+            const trimmed = nextVal.trim();
+            if (!trimmed) {
+              onChange('');
+              return;
+            }
+            // 実在する市区町村に一致した場合のみ親のステートを更新し、都道府県も自動セット
+            const exact = [...apiCities, ...localAllMunicipalities].find(
+              (m) => m.city === trimmed || m.rawName === trimmed
+            );
+            if (exact) {
+              onChange(exact.city);
+              if (exact.pref && onSelectPrefecture) {
+                onSelectPrefecture(exact.pref);
+              }
+            } else {
+              onChange(nextVal);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && filteredCandidates.length > 0) {
+              e.preventDefault();
+              handleSelect(filteredCandidates[0]);
+            }
+          }}
+          placeholder={placeholder}
+          className={`w-full p-2 pr-7 bg-white border rounded-xl text-base sm:text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
+            isInvalidInput && !isOpen
+              ? 'border-amber-400 focus:ring-amber-400 bg-amber-50/30'
+              : matchedRealMunicipality
+              ? 'border-[#7A9D8C] focus:ring-[#7A9D8C]'
+              : 'border-stone-200 focus:ring-[#7A9D8C]'
+          }`}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              onChange('');
+              setIsOpen(true);
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+            title="クリア"
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      {/* 未確定（実在リストから未選択）の場合のガイド表示 */}
+      {isInvalidInput && !isOpen && (
+        <p className="mt-1 text-[10px] font-extrabold text-amber-700 flex items-center gap-1 pl-1">
+          <AlertCircle size={11} className="shrink-0" />
+          <span>候補リストから実在する市区町村をタップして選択してください</span>
+        </p>
+      )}
+
+      {isOpen && (
+        <div className="mt-1 bg-white rounded-xl border-2 border-[#7A9D8C]/60 shadow-md overflow-hidden animate-in fade-in duration-100 z-30">
+          <div className="px-2.5 py-1.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between text-[10px] font-bold text-stone-500">
+            <span className="truncate">
+              {prefectureContext && prefectureContext !== '未設定'
+                ? `${prefectureContext}の実在市区町村 (ひらがな・漢字対応)`
+                : '全国の実在市区町村 (ひらがな・漢字対応)'}
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0 ml-1">
+              {isLoading && <span className="text-[#7A9D8C] animate-pulse">取得中...</span>}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="text-stone-400 hover:text-stone-600 font-extrabold"
+              >
+                閉じる ×
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-44 overflow-y-auto divide-y divide-stone-100">
+            {filteredCandidates.length === 0 ? (
+              <div className="px-3 py-3 text-[11px] font-bold text-stone-400 text-center">
+                該当する実在の市区町村が見つかりません（ひらがな・漢字をご確認ください）
+              </div>
+            ) : (
+              filteredCandidates.map((item, idx) => (
+                <button
+                  key={`${item.pref}_${item.city}_${idx}`}
+                  type="button"
+                  onClick={() => handleSelect(item)}
+                  className="w-full px-2.5 py-1.5 hover:bg-emerald-50/70 flex items-center justify-between gap-1.5 text-left transition-colors active:bg-emerald-100/60"
+                >
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <span className="text-[11px] shrink-0">📍</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-extrabold text-stone-800 block truncate">
+                        {item.city}
+                      </span>
+                      <span className="text-[9px] font-bold text-stone-400 block truncate">
+                        {item.city_kana ? `${item.city_kana} ` : ''}
+                        {item.pref ? `（${item.pref}）` : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-md bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
+                    選択
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="px-2.5 py-1 bg-stone-50 border-t border-stone-100">
+            <HeartRailsCreditBadge showGeo={true} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 駅データAPI（HeartRails Express: https://express.heartrails.com/api.html）を使ったインライン候補展開型の実在駅検索コンポーネント
+// ・ひらがな（例: とうきょう / しんじゅく / うめだ）、カタカナ、ローマ字、漢字のすべてで全国の実在駅を検索可能
+// ・市区町村（例: 新宿区・松本市）が選択されている場合、その市区町村内の実在駅のみで厳密にフィルタリング
+// ・allowCustomText=false（最寄り駅設定など）のときは、必ずAPIで検証された実在駅のみを選択可能
 function StationSearchInput({
   value,
   onChange,
   cityContext = '',
   prefectureContext = '',
-  placeholder = '駅名を入力 (例: 東京 / 横浜 / 梅田 / 博多)',
+  onSelectPrefecture,
+  onSelectCity,
+  onValidityChange,
+  placeholder = '駅名を検索 (例: 東京駅 / 新宿駅 / 梅田駅)',
   allowCustomText = false,
   compact = false
 }) {
@@ -2409,10 +3973,19 @@ function StationSearchInput({
   const [isOpen, setIsOpen] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [cityFilterInfo, setCityFilterInfo] = useState(null);
+  const [verifiedStationNames, setVerifiedStationNames] = useState(() => {
+    const initialSet = new Set(MOCK_STATIONS.map((s) => s.name.split(' (')[0]));
+    if (value && value.trim().endsWith('駅')) initialSet.add(value.trim());
+    return initialSet;
+  });
   const wrapperRef = useRef(null);
 
   useEffect(() => {
     setQuery(value || '');
+    if (value && value.trim().endsWith('駅')) {
+      setVerifiedStationNames((prev) => new Set([...prev, value.trim()]));
+    }
   }, [value]);
 
   // 枠外タップで候補リストを閉じる
@@ -2430,84 +4003,269 @@ function StationSearchInput({
     };
   }, []);
 
-  const kanaToHira = (str) =>
-    str.replace(/[\u30a1-\u30f6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 0x60));
-
+  // 市区町村（cityContext）が指定されている場合、その市区町村に存在する全駅データと町名よみがなデータを取得
   useEffect(() => {
-    if (!isOpen) return;
-    const trimmed = (query || '').trim();
-    if (!trimmed) {
-      setSuggestions(
-        MOCK_STATIONS.slice(0, 6).map((s) => ({
-          label: s.name,
-          stationName: s.name.split(' (')[0],
-          line: (s.name.split(' (')[1] || '').replace(/\)$/, ''),
-          prefecture: ''
-        }))
-      );
+    const cleanCity = (cityContext || '').replace(/（.*?）/g, '').trim();
+    if (!cleanCity) {
+      setCityFilterInfo(null);
       return;
     }
+    let cancelled = false;
+    setIsLoading(true);
+    fetchCityStationsAndTowns(cleanCity, prefectureContext)
+      .then((info) => {
+        if (cancelled) return;
+        setCityFilterInfo(info);
+        if (info && Array.isArray(info.stations)) {
+          const validNamesInCity = new Set(info.stations.map((s) => `${s.name}駅`));
+          setVerifiedStationNames((prev) => {
+            if (!allowCustomText) {
+              // 市区町村でフィルター中は、その市区町村内の駅のみを有効とする
+              return validNamesInCity;
+            }
+            return new Set([...prev, ...validNamesInCity]);
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
 
+    return () => {
+      cancelled = true;
+    };
+  }, [cityContext, prefectureContext, allowCustomText]);
+
+  // 現在の入力値が実在確認済みの駅（かつ市区町村指定時はその市区町村内の駅）かどうかを判定
+  const isConfirmedStation = useMemo(() => {
+    const trimmed = (query || '').trim();
+    if (!trimmed) return true; // 空欄は任意項目としてOK
+    if (allowCustomText) return true;
+    const normalized = trimmed.replace(/駅$/, '') + '駅';
+    if (cityFilterInfo && Array.isArray(cityFilterInfo.stations) && cityFilterInfo.stations.length > 0) {
+      return cityFilterInfo.stations.some((s) => `${s.name}駅` === normalized);
+    }
+    return verifiedStationNames.has(normalized) || verifiedStationNames.has(trimmed);
+  }, [query, allowCustomText, verifiedStationNames, cityFilterInfo]);
+
+  const isInvalidStationInput = Boolean((query || '').trim()) && !isConfirmedStation;
+
+  useEffect(() => {
+    if (onValidityChange) {
+      onValidityChange(!isInvalidStationInput);
+    }
+  }, [isInvalidStationInput, onValidityChange]);
+
+  useEffect(() => {
+    const trimmed = (query || '').trim();
+    const cleanCity = (cityContext || '').replace(/（.*?）/g, '').trim();
+    const hiraQuery = toHiragana(romajiToHiragana(trimmed)).replace(/えき$/, '');
+
+    let cancelled = false;
     const timer = setTimeout(async () => {
+      // ★ ケース1：市区町村（cityContext）が指定されている場合 → その市区町村に実在する駅のみで厳密にフィルタリング
+      if (cleanCity) {
+        setIsLoading(true);
+        try {
+          const info = cityFilterInfo || (await fetchCityStationsAndTowns(cleanCity, prefectureContext));
+          if (cancelled) return;
+
+          const cityStations = info?.stations || [];
+          const extraKana = info?.townKanaList || [];
+
+          // ひらがな入力された場合でも漢字の駅名にマッチさせるため、漢字変換候補を取得
+          let kanjiHints = [];
+          if (trimmed) {
+            kanjiHints = await resolveKanjiPlaceCandidates(trimmed, '駅', extraKana);
+          }
+          if (cancelled) return;
+
+          // スコア付きマッチング（「しま」と打ったときに「松本駅」が誤って混ざらないよう厳密化＆前方一致を最上位にソート）
+          const scoredStations = [];
+          cityStations.forEach((s) => {
+            if (!trimmed) {
+              scoredStations.push({ station: s, score: 10 });
+              return;
+            }
+            const nameWithSuffix = `${s.name}駅`;
+            const sReading = s.reading || '';
+            let score = 0;
+
+            if (s.name === trimmed || nameWithSuffix === trimmed) {
+              score = 100;
+            } else if (s.name.startsWith(trimmed)) {
+              score = 95;
+            } else if (sReading && hiraQuery && sReading === hiraQuery) {
+              score = 92;
+            } else if (sReading && hiraQuery && sReading.startsWith(hiraQuery)) {
+              score = 88;
+            } else if (kanjiHints.some((k) => s.name === k || s.name.startsWith(k))) {
+              score = 82;
+            } else if (s.name.includes(trimmed)) {
+              score = 65;
+            } else if (sReading && hiraQuery.length >= 2 && sReading.includes(hiraQuery)) {
+              score = 55;
+            } else if (kanjiHints.some((k) => k.length >= 2 && s.name.includes(k))) {
+              score = 45;
+            }
+
+            if (score > 0) {
+              scoredStations.push({ station: s, score });
+            }
+          });
+
+          scoredStations.sort((a, b) => b.score - a.score);
+
+          const seen = new Set();
+          const formatted = [];
+          scoredStations.forEach(({ station: s }) => {
+            const fullStationName = `${s.name}駅`;
+            const key = `${s.name}_${s.line}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              formatted.push({
+                label: `${fullStationName} (${s.line} / ${cleanCity})`,
+                stationName: fullStationName,
+                reading: s.reading || '',
+                line: s.line,
+                prefecture: s.prefecture,
+                city: cleanCity,
+                postal: s.postal || ''
+              });
+            }
+          });
+
+          setSuggestions(formatted.slice(0, 30));
+        } finally {
+          if (!cancelled) setIsLoading(false);
+        }
+        return;
+      }
+
+      // ★ ケース2：市区町村が未選択の場合 → 全国（または選択中の都道府県）からひらがな・漢字で実在駅を検索
+      const effectiveSeed =
+        trimmed ||
+        (prefectureContext && prefectureContext !== '未設定'
+          ? prefectureContext.replace(/(都|道|府|県)$/, '')
+          : '');
+
+      if (!effectiveSeed) {
+        setSuggestions(
+          MOCK_STATIONS.slice(0, 8).map((s) => ({
+            label: s.name,
+            stationName: s.name.split(' (')[0],
+            line: (s.name.split(' (')[1] || '').replace(/\)$/, ''),
+            prefecture: ''
+          }))
+        );
+        return;
+      }
+
       setIsLoading(true);
       try {
-        const searchWord = trimmed.replace(/駅$/, '');
-        // HeartRails Express 駅名検索API (getStations)
-        const apiUrl = `https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(searchWord)}`;
-        const response = await fetch(apiUrl);
-        const data = await response.json();
+        const kanjiCandidates = await resolveKanjiPlaceCandidates(effectiveSeed, '駅');
+        const searchWords =
+          kanjiCandidates.length > 0
+            ? kanjiCandidates
+            : [effectiveSeed.replace(/駅$/, '')];
 
-        let stations = data?.response?.station || [];
-        // 都道府県が指定されていて一致する候補がある場合は優先表示
+        const responses = await Promise.all(
+          searchWords.slice(0, 4).map(async (word) => {
+            try {
+              const apiUrl = `https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(
+                word
+              )}`;
+              const res = await fetch(apiUrl);
+              const data = await res.json();
+              return data?.response?.station || [];
+            } catch (e) {
+              return [];
+            }
+          })
+        );
+
+        if (cancelled) return;
+        let stations = responses.flat();
+
+        // 都道府県が選択されている場合はその都道府県の駅に絞り込む
         if (stations.length > 0 && prefectureContext && prefectureContext !== '未設定') {
-          const prefMatched = stations.filter((s) => s.prefecture === prefectureContext);
-          const others = stations.filter((s) => s.prefecture !== prefectureContext);
-          stations = [...prefMatched, ...others];
+          stations = stations.filter((s) => s.prefecture === prefectureContext);
         }
 
         if (stations.length > 0) {
           const seen = new Set();
           const formatted = [];
-          stations.forEach((s) => {
+          const newVerified = new Set(verifiedStationNames);
+
+          // 入力されたよみがな・漢字に対して前方一致する駅を最優先にソート
+          const scoredList = stations.map((s) => {
+            const matchedReadingObj = HIRAGANA_TO_KANJI_PLACE_MAP.find((d) => d.kanji === s.name);
+            const reading = matchedReadingObj ? matchedReadingObj.kana : '';
+            let score = 10;
+            if (trimmed) {
+              if (s.name === trimmed || `${s.name}駅` === trimmed) score = 100;
+              else if (s.name.startsWith(trimmed)) score = 90;
+              else if (reading && hiraQuery && reading.startsWith(hiraQuery)) score = 85;
+              else if (kanjiCandidates.some((k) => s.name === k || s.name.startsWith(k))) score = 80;
+              else if (s.name.includes(trimmed)) score = 50;
+            }
+            return { s, reading, score };
+          });
+          scoredList.sort((a, b) => b.score - a.score);
+
+          scoredList.forEach(({ s, reading }) => {
+            const fullStationName = `${s.name}駅`;
+            newVerified.add(fullStationName);
             const key = `${s.name}_${s.line}_${s.prefecture}`;
             if (!seen.has(key)) {
               seen.add(key);
               formatted.push({
-                label: `${s.name}駅 (${s.line} / ${s.prefecture}${s.prev ? `・隣:${s.prev}` : ''})`,
-                stationName: `${s.name}駅`,
+                label: `${fullStationName} (${s.line} / ${s.prefecture}${s.prev ? `・隣:${s.prev}` : ''})`,
+                stationName: fullStationName,
+                reading,
                 line: s.line,
-                prefecture: s.prefecture
+                prefecture: s.prefecture,
+                postal: s.postal || ''
               });
             }
           });
-          if (allowCustomText) {
+
+          setVerifiedStationNames(newVerified);
+
+          if (allowCustomText && trimmed) {
             formatted.push({
-              label: `「${trimmed}」をそのまま場所として設定`,
+              label: `「${trimmed}」をスポット名として設定`,
               stationName: trimmed,
-              line: '自由入力スポット',
+              line: 'スポット・施設名',
               prefecture: '',
               isRawText: true
             });
           }
-          setSuggestions(formatted.slice(0, 15));
+          setSuggestions(formatted.slice(0, 25));
         } else {
-          fallbackSearch(trimmed);
+          fallbackSearch(trimmed || effectiveSeed);
         }
       } catch (error) {
-        fallbackSearch(trimmed);
+        if (!cancelled) fallbackSearch(trimmed || effectiveSeed);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }, 180);
 
-    return () => clearTimeout(timer);
-  }, [query, isOpen, prefectureContext, cityContext, allowCustomText]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, cityContext, prefectureContext, allowCustomText, cityFilterInfo]);
 
   const fallbackSearch = (val) => {
-    const lowerVal = val.toLowerCase();
-    const hiraVal = kanaToHira(lowerVal);
+    const lowerVal = (val || '').toLowerCase();
+    const hiraVal = toHiragana(romajiToHiragana(lowerVal)).replace(/えき$/, '');
     const localMatches = MOCK_STATIONS.filter(
-      (s) => s.name.includes(val) || s.yomi.includes(lowerVal) || s.yomi.includes(hiraVal)
+      (s) =>
+        s.name.includes(val) ||
+        s.yomi.includes(lowerVal) ||
+        (hiraVal && s.yomi.includes(hiraVal))
     ).map((s) => ({
       label: s.name,
       stationName: s.name.split(' (')[0],
@@ -2515,22 +4273,50 @@ function StationSearchInput({
       prefecture: ''
     }));
 
-    const cleanStation = allowCustomText ? val : `${val.replace(/駅$/, '')}駅`;
-    const directItem = {
-      label: `${cleanStation} (そのまま設定)`,
-      stationName: cleanStation,
-      line: '直接入力',
-      prefecture: '',
-      isRawText: allowCustomText
-    };
-    setSuggestions(localMatches.length > 0 ? [...localMatches, directItem] : [directItem]);
+    if (allowCustomText && val) {
+      setSuggestions([
+        ...localMatches,
+        {
+          label: `「${val}」をスポット名として設定`,
+          stationName: val,
+          line: 'スポット・施設名',
+          prefecture: '',
+          isRawText: true
+        }
+      ]);
+    } else {
+      // 最寄り駅モード（allowCustomText=false）では実在しない駅名の直接登録は許可しない
+      setSuggestions(localMatches);
+    }
   };
 
-  const handleSelect = (item) => {
+  const handleSelect = async (item) => {
     const baseName = item.stationName || item.label.split(' (')[0];
     const cleanName = item.isRawText ? baseName : baseName.replace(/駅$/, '') + '駅';
+    setVerifiedStationNames((prev) => new Set([...prev, cleanName]));
     setQuery(cleanName);
     onChange(cleanName);
+
+    // 駅が選択されたらその駅の都道府県も自動反映
+    if (item.prefecture && onSelectPrefecture) {
+      onSelectPrefecture(item.prefecture);
+    }
+    // 郵便番号がある場合はHeartRails Geo APIから市区町村も自動補完可能
+    if (item.postal && onSelectCity && !cityContext) {
+      try {
+        const res = await fetch(
+          `https://geoapi.heartrails.com/api/json?method=searchByPostal&postal=${encodeURIComponent(
+            item.postal
+          )}`
+        );
+        const data = await res.json();
+        const loc = data?.response?.location?.[0];
+        if (loc?.city) {
+          onSelectCity(loc.city);
+        }
+      } catch (e) {}
+    }
+
     setIsOpen(false);
   };
 
@@ -2543,9 +4329,29 @@ function StationSearchInput({
           type="text"
           value={query}
           onFocus={() => setIsOpen(true)}
+          onBlur={() => {
+            // 候補が1件以上あり、入力文字が実在駅名と完全一致している場合は自動で「〇〇駅」に確定
+            setTimeout(() => {
+              const trimmed = (query || '').trim();
+              if (!trimmed || allowCustomText) return;
+              const normalized = trimmed.replace(/駅$/, '') + '駅';
+              const matched = suggestions.find(
+                (s) => !s.isRawText && (s.stationName === normalized || s.stationName === trimmed)
+              );
+              if (matched) {
+                setVerifiedStationNames((prev) => new Set([...prev, matched.stationName]));
+                setQuery(matched.stationName);
+                onChange(matched.stationName);
+                if (matched.prefecture && onSelectPrefecture) {
+                  onSelectPrefecture(matched.prefecture);
+                }
+              }
+            }, 160);
+          }}
           onChange={(e) => {
-            setQuery(e.target.value);
-            onChange(e.target.value);
+            const nextVal = e.target.value;
+            setQuery(nextVal);
+            onChange(nextVal);
             setIsOpen(true);
           }}
           onKeyDown={(e) => {
@@ -2555,7 +4361,13 @@ function StationSearchInput({
             }
           }}
           placeholder={placeholder}
-          className={`w-full ${compact ? 'py-2 text-xs' : 'py-2.5 text-xs sm:text-sm'} pl-9 pr-14 bg-white rounded-xl border border-stone-200 focus:border-[#7A9D8C] font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]`}
+          className={`w-full ${compact ? 'py-2 text-base sm:text-xs' : 'py-2.5 text-base sm:text-sm'} pl-9 pr-14 bg-white rounded-xl border font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
+            isInvalidStationInput && !isOpen
+              ? 'border-amber-400 focus:ring-amber-400 bg-amber-50/30'
+              : query && isConfirmedStation
+              ? 'border-[#7A9D8C] focus:ring-[#7A9D8C]'
+              : 'border-stone-200 focus:border-[#7A9D8C] focus:ring-[#7A9D8C]'
+          }`}
         />
         {query && (
           <button
@@ -2572,17 +4384,31 @@ function StationSearchInput({
         )}
       </div>
 
-      {/* 入力欄のすぐ下にインラインで展開される候補リスト（別ページを開かずその場で選択可能） */}
+      {/* 実在駅リストからまだ選択されていない場合のガイドメッセージ */}
+      {isInvalidStationInput && !isOpen && (
+        <p className="text-[10px] font-extrabold text-amber-700 flex items-center gap-1 pl-1">
+          <AlertCircle size={11} className="shrink-0" />
+          <span>
+            {cityContext
+              ? `「${cityContext}」内の実在する駅を候補リストから選択してください`
+              : '候補リストから実在する駅名をタップして選択してください'}
+          </span>
+        </p>
+      )}
+
+      {/* 入力欄のすぐ下にインラインで展開される実在駅候補リスト */}
       {isOpen && (
         <div className="bg-white rounded-xl border-2 border-[#7A9D8C]/60 shadow-md overflow-hidden animate-in fade-in duration-100">
           <div className="px-3 py-1.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between text-[10px] font-bold text-stone-500">
             <span className="truncate">
-              {query.trim()
-                ? `「${query.trim()}」の駅候補`
-                : '全国の駅候補（文字入力でリアルタイム検索）'}
+              {cityContext
+                ? `${cityContext}内の実在駅候補${query.trim() ? `（「${query.trim()}」で絞り込み）` : ''}`
+                : query.trim()
+                ? `「${query.trim()}」の実在駅候補`
+                : '全国の実在駅候補'}
             </span>
             <div className="flex items-center gap-2 shrink-0">
-              {isLoading && <span className="text-[#7A9D8C] animate-pulse">検索中...</span>}
+              {isLoading && <span className="text-[#7A9D8C] animate-pulse">駅検索中...</span>}
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -2594,43 +4420,60 @@ function StationSearchInput({
           </div>
 
           <div className="max-h-48 overflow-y-auto divide-y divide-stone-100">
-            {suggestions.map((item, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleSelect(item)}
-                className="w-full px-3 py-2 hover:bg-emerald-50/70 flex items-center justify-between gap-2 text-left transition-colors active:bg-emerald-100/60"
-              >
-                <div className="min-w-0 flex items-center gap-2">
-                  <span className="text-xs shrink-0">{item.isRawText ? '📍' : '🚉'}</span>
-                  <div className="min-w-0">
-                    <span className="text-xs sm:text-sm font-extrabold text-stone-800 block truncate">
-                      {item.stationName}
-                    </span>
-                    {(item.line || item.prefecture) && (
-                      <span className="text-[10px] font-bold text-stone-500 block truncate">
-                        {item.line}
-                        {item.prefecture ? ` / ${item.prefecture}` : ''}
-                      </span>
-                    )}
+            {suggestions.length === 0 ? (
+              <div className="px-3 py-3 text-[11px] font-bold text-stone-400 text-center">
+                {isLoading
+                  ? '実在する駅データを検索しています...'
+                  : cityContext
+                  ? `「${cityContext}」内に該当する駅が見つかりません`
+                  : '該当する実在の駅が見つかりません'}
+              </div>
+            ) : (
+              suggestions.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSelect(item)}
+                  className="w-full px-3 py-2 hover:bg-emerald-50/70 flex items-center justify-between gap-2 text-left transition-colors active:bg-emerald-100/60"
+                >
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className="text-xs shrink-0">{item.isRawText ? '📍' : '🚉'}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs sm:text-sm font-extrabold text-stone-800 truncate">
+                          {item.stationName}
+                        </span>
+                        {item.reading && (
+                          <span className="text-[10px] font-bold text-stone-400 shrink-0">
+                            （{item.reading}）
+                          </span>
+                        )}
+                      </div>
+                      {(item.line || item.prefecture) && (
+                        <span className="text-[10px] font-bold text-stone-500 block truncate">
+                          {item.line}
+                          {item.prefecture ? ` / ${item.prefecture}` : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
-                  選択
-                </span>
-              </button>
-            ))}
+                  <span className="px-2.5 py-1 rounded-lg bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold shrink-0">
+                    選択
+                  </span>
+                </button>
+              ))
+            )}
           </div>
 
-          {/* ドロップダウン下部にもHeartRails Expressの公式クレジットリンクを明記 */}
-          <div className="px-3 py-1 bg-stone-50 border-t border-stone-100">
-            <HeartRailsCreditBadge />
+          {/* ドロップダウン下部にもHeartRailsの公式クレジットリンクを明記 */}
+          <div className="px-3.5 py-1 bg-stone-50 border-t border-stone-100">
+            <HeartRailsCreditBadge showGeo={false} />
           </div>
         </div>
       )}
 
-      {/* 常時見える位置にも控えめなクレジット表示 */}
-      <HeartRailsCreditBadge className="px-1" />
+      {/* 候補リストが閉じている時のみ下部に1行クレジットを表示（二重表示を防止） */}
+      {!isOpen && <HeartRailsCreditBadge className="px-1" />}
     </div>
   );
 }
@@ -2681,17 +4524,44 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
   const [station, setStation] = useState(
     initialUser?.station && initialUser?.name !== 'たびたろう（開発用）' ? initialUser.station : ''
   );
+  const [isCityValid, setIsCityValid] = useState(true);
+  const [isStationValid, setIsStationValid] = useState(true);
+  const [locationError, setLocationError] = useState('');
   const [avatar, setAvatar] = useState(initialUser?.avatar || MALE_AVATARS[0]);
   const [customAvatar, setCustomAvatar] = useState(null);
   const [legalModalType, setLegalModalType] = useState(null);
+  const [nameError, setNameError] = useState('');
+  const nameInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const handleStart = (e) => {
     if (e) e.preventDefault();
     if (!name.trim()) {
+      const msg = '⚠️ ニックネームを入力してください（必須）';
+      setNameError(msg);
       customAlert('お友達に表示されるニックネームを入力してください！');
+      if (nameInputRef.current) {
+        nameInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        nameInputRef.current.focus();
+      }
       return;
     }
+    setNameError('');
+
+    if (city.trim() && !isCityValid) {
+      const msg = '⚠️ 市区町村は候補リストに表示される実在の自治体から選択してください';
+      setLocationError(msg);
+      customAlert('実在する市区町村を候補リストから選択してください！');
+      return;
+    }
+    if (station.trim() && !isStationValid) {
+      const msg = '⚠️ 駅名は候補リストに表示される実在の駅から選択してください';
+      setLocationError(msg);
+      customAlert('実在する駅名を候補リストから選択してください！');
+      return;
+    }
+    setLocationError('');
+
     const cleanStation = station.trim() ? station.trim().replace(/駅$/, '') + '駅' : '';
     const newUser = {
       id: initialUser?.id && initialUser.id !== 'dev_user' ? initialUser.id : 'user_' + generateId(),
@@ -2852,18 +4722,32 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
           </div>
 
           {/* 2. ニックネーム入力 */}
-          <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl shrink-0">
+          <div className={`p-2.5 border rounded-2xl shrink-0 transition-colors ${nameError ? 'bg-rose-50/70 border-rose-300' : 'bg-stone-50 border-stone-200/80'}`}>
             <label className="text-xs font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
               <span>② ニックネーム（友達のしおりに表示）</span>
               <span className="text-[10px] font-extrabold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">必須</span>
             </label>
             <input
+              ref={nameInputRef}
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例: たびたろう / おみやげ買いすぎ子 / 胃袋無限ちゃん"
-              className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError && e.target.value.trim()) setNameError('');
+              }}
+              placeholder="例: たびたろう"
+              className={`w-full p-2 bg-white border rounded-xl text-base sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
+                nameError
+                  ? 'border-rose-400 focus:ring-rose-400'
+                  : 'border-stone-200 focus:ring-[#7A9D8C]'
+              }`}
             />
+            {nameError && (
+              <p className="mt-1.5 text-xs font-extrabold text-rose-600 flex items-center gap-1 pl-1 animate-in fade-in">
+                <AlertCircle size={13} className="shrink-0" />
+                <span>{nameError}</span>
+              </p>
+            )}
           </div>
 
           {/* 3. 自宅・最寄り駅設定（別ページを開かず、すぐ下に駅候補リストを展開） */}
@@ -2886,35 +4770,65 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
             <div className="grid grid-cols-2 gap-1.5">
               <select
                 value={residence}
-                onChange={(e) => setResidence(e.target.value)}
-                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                onChange={(e) => {
+                  setResidence(e.target.value);
+                  setCity('');
+                  setStation('');
+                }}
+                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-base sm:text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
               >
-                <option value="未設定">🗾 都道府県（全国）</option>
+                <option value="未設定">🗾 都道府県（未選択）</option>
                 {PREFECTURES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
-              <input
-                type="text"
+              <MunicipalitySearchInput
                 value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="市区町村 (例: 新宿区 / 横浜市 / 大阪市)"
-                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                onChange={(val) => {
+                  setCity(val);
+                  if (locationError) setLocationError('');
+                }}
+                prefectureContext={residence}
+                onSelectPrefecture={(autoPref) => setResidence(autoPref)}
+                onValidityChange={setIsCityValid}
+                placeholder="市区町村 (例: 新宿区 / 横浜市)"
               />
             </div>
 
             {/* 全国の駅名リアルタイム検索（その場のすぐ下に候補リストを展開） */}
             <StationSearchInput
               value={station}
-              onChange={setStation}
+              onChange={(val) => {
+                setStation(val);
+                if (locationError) setLocationError('');
+              }}
               cityContext={city}
               prefectureContext={residence}
+              onSelectPrefecture={(autoPref) => setResidence(autoPref)}
+              onSelectCity={(autoCity) => {
+                if (!city) setCity(autoCity);
+              }}
+              onValidityChange={setIsStationValid}
+              placeholder={city ? `${city}内の駅名を検索` : '駅名を検索 (例: 東京駅 / 新宿駅 / 梅田駅)'}
             />
+
+            {locationError && (
+              <p className="text-xs font-extrabold text-rose-600 flex items-center gap-1 pl-1 animate-in fade-in">
+                <AlertCircle size={13} className="shrink-0" />
+                <span>{locationError}</span>
+              </p>
+            )}
           </div>
         </form>
 
         {/* 下部固定ボタン */}
         <div className="pt-2.5 mt-1 border-t border-stone-100 shrink-0 space-y-1.5">
+          {(nameError || locationError) && (
+            <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-extrabold flex items-center justify-center gap-1.5 animate-in fade-in">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>{nameError || locationError}</span>
+            </div>
+          )}
           <button
             type="button"
             onClick={handleStart}
@@ -3679,10 +5593,16 @@ function AuthScreen({ onLogin }) {
                 <p className="text-[9px] text-stone-400 mb-2 leading-tight px-1">※公開されません。登録すると交通手段の検索が便利になります。</p>
                 <div className="space-y-2">
                   <select value={residence} onChange={e=>setResidence(e.target.value)} className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]">
-                    <option value="未設定">都道府県を選択 (未設定)</option>
+                    <option value="未設定">🗾 都道府県（未選択）</option>
                     {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
-                  <input type="text" value={city} onChange={e=>setCity(e.target.value)} placeholder="市区町村 (例: 渋谷区)" className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]" />
+                  <MunicipalitySearchInput
+                    value={city}
+                    onChange={setCity}
+                    prefectureContext={residence}
+                    onSelectPrefecture={(autoPref) => setResidence(autoPref)}
+                    placeholder="市区町村 (例: 新宿区 / 横浜市 / 大阪市)"
+                  />
                   <StationSearchInput value={station} onChange={setStation} cityContext={city} prefectureContext={residence} />
                 </div>
               </div>
@@ -5031,7 +6951,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="例: たびたろう / おみやげ買いすぎ子 / 胃袋無限ちゃん"
+                  placeholder="例: たびたろう"
                   className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                 />
               </div>
@@ -5048,15 +6968,15 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
                     onChange={e => setResidence(e.target.value)}
                     className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                   >
-                    <option value="未設定">🗾 都道府県を選択</option>
+                    <option value="未設定">🗾 都道府県（未選択）</option>
                     {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
-                  <input
-                    type="text"
+                  <MunicipalitySearchInput
                     value={city}
-                    onChange={e => setCity(e.target.value)}
-                    placeholder="市区町村 (例: 横浜市 / 福岡市)"
-                    className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                    onChange={setCity}
+                    prefectureContext={residence}
+                    onSelectPrefecture={(autoPref) => setResidence(autoPref)}
+                    placeholder="市区町村 (例: 新宿区 / 横浜市 / 大阪市)"
                   />
                 </div>
                 <StationSearchInput
@@ -5064,6 +6984,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
                   onChange={setStation}
                   cityContext={city}
                   prefectureContext={residence}
+                  onSelectPrefecture={(autoPref) => setResidence(autoPref)}
                 />
               </div>
 
@@ -5347,6 +7268,16 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
                 <p className="text-[11px] leading-relaxed">
                   ・React / Lucide Icons (MIT License)<br/>
                   ・Google Gemini API (Google AI)<br/>
+                  ・市区町村データAPI：
+                  <a
+                    href="https://geoapi.heartrails.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#557465] underline font-bold ml-1"
+                  >
+                    HeartRails Geo API (https://geoapi.heartrails.com/)
+                  </a>
+                  <br/>
                   ・駅名検索API：
                   <a
                     href="https://express.heartrails.com/"
@@ -13147,11 +15078,12 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
   // 現在解放されている特別コンプリート＆シークレット称号バッジ一覧
   const earnedTitleBadges = useMemo(() => computeEarnedTitleBadges(badges), [badges]);
 
-  // 都道府県コンプリート一覧（全47都道府県のうち3都市以上訪問で解放）
+  // 都道府県コンプリート一覧（全47都道府県・各県の全市区町村すべてを訪問した時のみコンプリート達成）
   const prefectureTitleProgressList = useMemo(() => {
     return JAPAN_MAP_LAYOUT.map(tile => {
       const visitedList = badgesByPref[tile.pref] || [];
-      const isComplete = visitedList.length >= 3;
+      const totalMuniCount = OFFICIAL_MUNICIPALITY_COUNT_BY_PREF[tile.pref] || (FULL_MUNICIPALITIES_BY_PREF[tile.pref] || []).length || 30;
+      const isComplete = visitedList.length >= totalMuniCount;
       return {
         id: `title_pref_${tile.pref}`,
         pref: tile.pref,
@@ -13159,9 +15091,10 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
         icon: tile.icon,
         color: tile.color,
         visitedCount: visitedList.length,
+        totalMuniCount,
         visitedCities: visitedList.map(x => x.municipality),
         isUnlocked: isComplete,
-        rarity: visitedList.length >= 5 ? 'SSR' : 'SR',
+        rarity: 'UR',
         name: `${tile.pref}コンプリート`
       };
     });
@@ -13279,7 +15212,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
 
           {!selectedPref && (
             <p className="text-[10px] font-bold text-emerald-100/90 text-center">
-              👆 白地図上の都道府県（または下の県ボタン）をタップすると、その都道府県の形状と市町村一覧が表示されます
+              👆 白地図上の都道府県をタップすると、その都道府県の形状と市町村一覧が表示されます
             </p>
           )}
         </div>
@@ -13631,21 +15564,21 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
             </div>
           </div>
 
-          {/* セクションB：47都道府県コンプリートバッジ（各県で3都市以上訪れると解放！） */}
+          {/* セクションB：47都道府県コンプリートバッジ（各県の全市区町村すべてを訪問すると解放！） */}
           <div className="bg-white p-4 rounded-[28px] border border-stone-200/90 shadow-xs space-y-3">
             <div>
               <h3 className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center gap-1.5">
-                🗾 47都道府県コンプリートバッジ（各県3都市以上で解放）
+                🗾 47都道府県コンプリートバッジ（県内すべての市区町村制覇で解放）
               </h3>
               <p className="text-[10px] font-bold text-stone-400 mt-0.5">
-                1つの都道府県で3つ以上の市区町村を訪れると「〇〇県コンプリート」バッジを獲得してプロフィールに飾れます！
+                その都道府県にある全市区町村をすべて回りきると、最高難度の「〇〇県コンプリート」バッジを獲得してプロフィールに飾れます！
               </p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {prefectureTitleProgressList.map(item => {
                 const isPinned = featuredBadgeIds.includes(item.id);
-                const pct = Math.min(100, Math.round((item.visitedCount / 3) * 100));
+                const pct = Math.min(100, Math.round((item.visitedCount / Math.max(1, item.totalMuniCount)) * 100));
                 return (
                   <button
                     key={item.pref}
@@ -13670,11 +15603,11 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                       <span className="text-base">{item.icon}</span>
                       {item.isUnlocked ? (
                         <span className="text-[8px] font-black px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950">
-                          {isPinned ? '⭐表示中' : '制覇！'}
+                          {isPinned ? '⭐表示中' : '全制覇！'}
                         </span>
                       ) : (
                         <span className="text-[9px] font-extrabold text-stone-400">
-                          {item.visitedCount}/3都市
+                          {item.visitedCount}/{item.totalMuniCount}市区町村
                         </span>
                       )}
                     </div>
@@ -13702,7 +15635,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                 🗾 日本列島 47都道府県 制覇マップ
               </h3>
               <p className="text-[10px] font-bold text-stone-400 mt-0.5">
-                県をタップすると通過済みの市区町村と県コンプリートまでの残り都市数を確認できます
+                県をタップすると通過済みの市区町村と県コンプリート（全自治体訪問）までの進捗を確認できます
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-stone-500 shrink-0">
@@ -13713,7 +15646,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                 <span className="w-2.5 h-2.5 rounded-xs bg-[#7A9D8C] border border-[#5E8473] inline-block" /> 訪問済
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-xs bg-amber-400 border border-amber-500 inline-block" /> 県制覇(3+)
+                <span className="w-2.5 h-2.5 rounded-xs bg-amber-400 border border-amber-500 inline-block" /> 全市町村制覇
               </span>
             </div>
           </div>
