@@ -2951,65 +2951,31 @@ const setCachedAiResponse = (cacheKey, data) => {
   } catch (e) {}
 };
 
-// Google Gemini API 構造化出力呼び出し（環境変数で管理し、秘密情報はコード内に置かない）
+// Google Gemini API 構造化出力呼び出し（サーバー側の /api/gemini 窓口を経由し、APIキーをブラウザに露出しない安全構成）
 const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
-  let envKey = "";
-  try {
-    if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-      envKey = import.meta.env.VITE_GEMINI_API_KEY;
-    }
-  } catch (e) {}
-  const apiKey = envKey.trim();
-  if (!apiKey) {
-    throw new Error('VITE_GEMINI_API_KEY is not configured. Add it to your .env.local file.');
-  }
-
-  const payload = {
-    contents: [{ parts: [{ text: userPrompt }] }],
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      responseMimeType: "application/json",
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: userPrompt,
+      systemInstruction: systemPrompt,
+      responseMimeType: 'application/json',
       responseSchema
-    }
-  };
+    })
+  });
 
-  const modelsToTry = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
-  ];
-
-  let lastError = null;
-  for (const modelName of modelsToTry) {
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent${apiKey ? `?key=${encodeURIComponent(apiKey)}` : ''}`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) {
-      headers['x-goog-api-key'] = apiKey;
-    }
-
-    try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) {
-        lastError = new Error(`HTTP ${response.status} (${modelName})`);
-        continue;
-      }
-      const result = await response.json();
-      const text = result?.candidates
-        ?.flatMap(candidate => candidate?.content?.parts ?? [])
-        .map(part => part?.text ?? '')
-        .join('')
-        .trim();
-      if (text) return JSON.parse(text);
-    } catch (err) {
-      lastError = err;
-    }
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result?.error || `HTTP ${response.status}`);
   }
-  throw lastError || new Error('Gemini API request failed');
+
+  const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error('Gemini API returned empty text');
+  }
+
+  const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+  return JSON.parse(cleaned);
 };
 
 // 🎬 動画広告視聴でAI利用回数を＋3回増やすリワード広告モーダル
@@ -3983,9 +3949,6 @@ function StationSearchInput({
           </div>
         </div>
       )}
-
-      {/* 候補リストが閉じている時のみ下部に1行クレジットを表示（二重表示を防止） */}
-      {!isOpen && <HeartRailsCreditBadge className="px-1" />}
     </div>
   );
 }
@@ -4302,10 +4265,13 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
             <Check size={17} strokeWidth={2.8} />
             <span>この内容で「たびたび」を始める</span>
           </button>
-          <div className="flex items-center justify-center gap-3 text-[10px] font-bold text-stone-400">
-            <button type="button" onClick={() => setLegalModalType('terms')} className="underline hover:text-[#7A9D8C]">利用規約</button>
-            <span>・</span>
-            <button type="button" onClick={() => setLegalModalType('privacy')} className="underline hover:text-[#7A9D8C]">プライバシーポリシー</button>
+          <div className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-stone-400">
+            <div className="flex items-center justify-center gap-3">
+              <button type="button" onClick={() => setLegalModalType('terms')} className="underline hover:text-[#7A9D8C]">利用規約</button>
+              <span>・</span>
+              <button type="button" onClick={() => setLegalModalType('privacy')} className="underline hover:text-[#7A9D8C]">プライバシーポリシー</button>
+            </div>
+            <HeartRailsCreditBadge className="justify-center text-[9px] opacity-75" />
           </div>
         </div>
 
@@ -5129,11 +5095,12 @@ function AuthScreen({ onLogin }) {
         <div className="mt-8 pt-4 border-t border-stone-100 text-center flex flex-col items-center">
           <button onClick={handleGuest} className="text-[11px] font-bold text-stone-400 hover:text-stone-600 flex justify-center items-center gap-1 mx-auto mb-2"><User size={12} /> アカウントを作らずにゲストとして始める</button>
           <p className="text-[9px] text-stone-400 leading-tight mb-2">※ゲスト利用は一部機能が制限されます。後から引き継ぎ可能です。</p>
-          <div className="flex items-center justify-center gap-3 text-[10px] font-bold text-stone-400">
+          <div className="flex items-center justify-center gap-3 text-[10px] font-bold text-stone-400 mb-1">
             <button type="button" onClick={() => setLegalModalType('terms')} className="underline hover:text-[#7A9D8C]">利用規約</button>
             <span>・</span>
             <button type="button" onClick={() => setLegalModalType('privacy')} className="underline hover:text-[#7A9D8C]">プライバシーポリシー</button>
           </div>
+          <HeartRailsCreditBadge className="justify-center text-[9px] opacity-75" />
         </div>
 
         {/* App Store / Google Play 審査必須：ログイン前の利用規約・プライバシーポリシー確認モーダル */}
@@ -5346,7 +5313,7 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
         {activeTab === 'my' ? (
           <div className={`px-5 py-4 animate-in fade-in duration-300 ${trips.length === 0 ? 'flex-1 flex flex-col overflow-hidden' : 'pb-28'}`}>
             <div className="flex gap-2.5 mb-5 shrink-0">
-              <button onClick={() => setShowCreateModal(true)} className="flex-1 py-3.5 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-sm text-sm flex justify-center items-center gap-1.5 hover:bg-[#688a79] active:scale-[0.99] transition-all"><Plus size={18} /> 新しい旅</button>
+              <button onClick={() => setShowCreateModal(true)} className="flex-1 py-3.5 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-sm text-sm flex justify-center items-center gap-1.5 hover:bg-[#688a79] active:scale-[0.99] transition-all"><Plus size={18} /> 新しい旅のしおり</button>
               <button onClick={() => setShowJoinModal(true)} className="flex-1 py-3.5 bg-white text-[#7A9D8C] border-2 border-[#7A9D8C] font-extrabold rounded-2xl shadow-sm text-sm flex justify-center items-center gap-1.5 hover:bg-stone-50 active:scale-[0.99] transition-all"><Check size={18} /> コードで参加</button>
             </div>
             {trips.length === 0 ? (
@@ -5355,7 +5322,7 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
                   <Compass size={36} strokeWidth={1.5} />
                 </div>
                 <h3 className="text-lg font-extrabold text-stone-800 mb-1">旅行のしおりがありません</h3>
-                <p className="text-sm text-stone-500">「新しい旅」を作るか、<br />友達の招待コードで参加しましょう。</p>
+                <p className="text-sm text-stone-500">「新しい旅のしおり」を作るか、<br />友達の招待コードで参加しましょう。</p>
               </div>
             ) : (
               <div className="flex flex-col gap-5">
@@ -5532,6 +5499,8 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
   const [isSoloStyle, setIsSoloStyle] = useState(Boolean(currentUser?.isGuest));
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedInviteMsg, setCopiedInviteMsg] = useState(false);
+  const [destinationError, setDestinationError] = useState(false);
+  const destinationInputRef = useRef(null);
   const tripCodeRef = useRef(generateTripCode());
   const myColor = PRESET_COLORS[0];
 
@@ -5549,7 +5518,19 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
   });
   const [saveOriginForNext, setSaveOriginForNext] = useState(false);
 
+  const validateDestinationBeforeProceed = () => {
+    if (!tripData.destination || !tripData.destination.trim()) {
+      setDestinationError(true);
+      customAlert('⚠️ 行き先（エリア）を入力してください！');
+      destinationInputRef.current?.focus();
+      return false;
+    }
+    setDestinationError(false);
+    return true;
+  };
+
   const handleCreate = (isSolo = false) => {
+    if (!validateDestinationBeforeProceed()) return;
     if (saveOriginForNext && tripData.departurePoint.trim()) {
       addSavedDeparturePoint(tripData.departurePoint.trim());
     }
@@ -5562,9 +5543,9 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
     }));
     onComplete({
       id: tripCodeRef.current,
-      title: tripData.title || '新しい旅行',
+      title: tripData.title || `${tripData.destination.trim()}の旅`,
       departurePoint: tripData.departurePoint.trim() || defaultOrigin,
-      destination: tripData.destination || '行き先未定',
+      destination: tripData.destination.trim(),
       transportMethod: tripData.transportMethod,
       transportPriority: tripData.transportPriority,
       startDate: tripData.startDate,
@@ -5577,6 +5558,11 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
     });
   };
 
+  const getInviteShareText = () => {
+    const tripTitle = tripData.title || `${tripData.destination || '新しい'}旅行`;
+    return `「${tripTitle}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${tripCodeRef.current}\n\n▼ アプリはこちら\nhttps://tabitabi.app/dl`;
+  };
+
   const handleCopyInviteCode = (e) => {
     if (e) e.stopPropagation();
     copyToClipboard(
@@ -5584,19 +5570,36 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
       `招待コード「${tripCodeRef.current}」をコピーしました！`
     );
     setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2500);
+    setTimeout(() => setCopiedCode(false), 3500);
   };
 
   const handleCopyInviteWithAppUrl = (e) => {
     if (e) e.stopPropagation();
-    const tripTitle = tripData.title || '新しい旅行';
-    const inviteText = `「${tripTitle}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${tripCodeRef.current}\n\n▼ アプリをまだ持っていない方はこちら（インストールURL）\nhttps://tabitabi.app/dl`;
     copyToClipboard(
-      inviteText,
+      getInviteShareText(),
       'アプリ紹介URL付きの招待文をコピーしました！'
     );
     setCopiedInviteMsg(true);
-    setTimeout(() => setCopiedInviteMsg(false), 2500);
+    setTimeout(() => setCopiedInviteMsg(false), 3500);
+  };
+
+  const handleShareViaLine = () => {
+    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(getInviteShareText())}`;
+    window.open(lineUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleShareViaNative = async () => {
+    const shareText = getInviteShareText();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${tripData.title || '新しい旅行'}のしおり招待`,
+          text: shareText
+        });
+        return;
+      } catch (e) {}
+    }
+    handleShareViaLine();
   };
 
   return (
@@ -5607,7 +5610,7 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-3 shrink-0">
-          <h3 className="font-extrabold text-base sm:text-lg text-stone-800">{step === 1 ? '新しい旅の作成' : 'メンバーの招待・共有コード'}</h3>
+          <h3 className="font-extrabold text-base sm:text-lg text-stone-800">{step === 1 ? '新しい旅のしおり作成' : 'メンバーの招待・共有コード'}</h3>
           <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
         </div>
 
@@ -5627,7 +5630,7 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 <span className="truncate">AIにおまかせでプランを提案してもらう</span>
               </button>
 
-              {/* 旅のタイトル ＆ 行き先 */}
+              {/* 旅のタイトル ＆ 行き先（必須バリデーション付き） */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="min-w-0">
                   <label className="text-xs font-extrabold text-stone-600 mb-1 block pl-1">旅のタイトル</label>
@@ -5640,16 +5643,33 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                   />
                 </div>
                 <div className="min-w-0">
-                  <label className="text-xs font-extrabold text-stone-600 mb-1 block pl-1">行き先（エリア）</label>
+                  <label className="text-xs font-extrabold text-stone-600 mb-1 flex items-center justify-between pl-1">
+                    <span>行き先（エリア）</span>
+                    <span className="text-[9px] font-extrabold text-rose-500 bg-rose-50 px-1.5 py-0.2 rounded-full border border-rose-200">必須</span>
+                  </label>
                   <input
+                    ref={destinationInputRef}
                     type="text"
                     value={tripData.destination}
-                    onChange={e => setTripData({ ...tripData, destination: e.target.value })}
+                    onChange={e => {
+                      setTripData({ ...tripData, destination: e.target.value });
+                      if (destinationError && e.target.value.trim()) setDestinationError(false);
+                    }}
                     placeholder="例: 京都府"
-                    className="w-full min-w-0 p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                    className={`w-full min-w-0 p-2.5 rounded-xl text-xs sm:text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 transition-all ${
+                      destinationError
+                        ? 'bg-rose-50/80 border-2 border-rose-400 focus:ring-rose-400'
+                        : 'bg-stone-50 border border-stone-200 focus:ring-[#7A9D8C]'
+                    }`}
                   />
                 </div>
               </div>
+              {destinationError && (
+                <p className="text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-1 -mt-1 animate-in fade-in">
+                  <AlertCircle size={13} className="shrink-0 text-rose-500" />
+                  <span>行き先（都道府県やエリア名）を入力してください！</span>
+                </p>
+              )}
 
               {/* 出発地点（🏠自宅 / ⭐登録先 / ✏️その他） */}
               <DepartureSelectorBox
@@ -5678,22 +5698,51 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 }
               />
 
-              {/* 1人あたり予算（クイック選択ピル付きで入力しやすく） */}
-              <div className="p-2.5 bg-stone-50/90 border border-stone-200/90 rounded-2xl space-y-2">
+              {/* 1人あたり予算（横スライドバー＋クイック選択ピル） */}
+              <div className="p-3 bg-stone-50/90 border border-stone-200/90 rounded-2xl space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1.5">
                     <Banknote size={14} className="text-[#7A9D8C]" /> 1人あたりの予算目安
                   </label>
-                  <div className="flex items-center gap-1 bg-white px-2.5 py-1 rounded-xl border border-stone-200">
+                  <div className="flex items-center gap-1 bg-white px-2.5 py-1 rounded-xl border border-stone-200 shadow-2xs">
                     <span className="text-xs font-bold text-stone-400">¥</span>
                     <input
                       type="number"
+                      step="1000"
                       value={tripData.budget}
-                      onChange={e => setTripData({ ...tripData, budget: e.target.value })}
-                      className="w-24 text-right text-sm font-extrabold text-stone-800 focus:outline-none"
+                      onChange={e => setTripData({ ...tripData, budget: Math.max(0, Number(e.target.value) || 0) })}
+                      className="w-24 text-right text-sm font-extrabold text-[#4A6B5D] font-mono focus:outline-none"
                     />
                   </div>
                 </div>
+
+                {/* 左右に動かせる横タイプの予算スライダーバー */}
+                <div className="px-0.5 pt-0.5">
+                  <input
+                    type="range"
+                    min="5000"
+                    max="150000"
+                    step="5000"
+                    value={Math.min(150000, Math.max(5000, Number(tripData.budget) || 5000))}
+                    onChange={e => setTripData({ ...tripData, budget: Number(e.target.value) })}
+                    style={{
+                      background: `linear-gradient(to right, #7A9D8C 0%, #7A9D8C ${Math.round(
+                        ((Math.min(150000, Math.max(5000, Number(tripData.budget) || 5000)) - 5000) / (150000 - 5000)) * 100
+                      )}%, #E7E5E4 ${Math.round(
+                        ((Math.min(150000, Math.max(5000, Number(tripData.budget) || 5000)) - 5000) / (150000 - 5000)) * 100
+                      )}%, #E7E5E4 100%)`
+                    }}
+                    className="w-full h-2.5 rounded-full appearance-none cursor-pointer accent-[#7A9D8C]"
+                  />
+                  <div className="flex justify-between text-[9px] font-bold text-stone-400 mt-1 px-0.5">
+                    <span>¥5,000</span>
+                    <span>3万円</span>
+                    <span>5万円</span>
+                    <span>10万円</span>
+                    <span>15万円</span>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-4 gap-1.5">
                   {[20000, 30000, 50000, 100000].map(amt => (
                     <button
@@ -5765,7 +5814,10 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => {
+                    if (!validateDestinationBeforeProceed()) return;
+                    setStep(2);
+                  }}
                   className="w-full py-3 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
                 >
                   <span className="pointer-events-none">しおりを作成してメンバー招待へ</span>
@@ -5775,9 +5827,9 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
             </div>
           </>
         ) : (
-          <div className="space-y-5 text-center animate-in slide-in-from-right-4 overflow-y-auto no-scrollbar">
-            <div className="bg-[#7A9D8C]/10 p-5 rounded-3xl border border-[#7A9D8C]/20">
-              <p className="text-xs font-bold text-[#7A9D8C] mb-2">しおりの共有・招待コード</p>
+          <div className="space-y-4 text-center animate-in slide-in-from-right-4 overflow-y-auto no-scrollbar">
+            <div className="bg-[#7A9D8C]/10 p-5 rounded-3xl border border-[#7A9D8C]/20 space-y-2.5">
+              <p className="text-xs font-bold text-[#7A9D8C]">しおりの共有・招待コード</p>
               <div className="flex items-center justify-between gap-2 bg-white py-2.5 px-3.5 rounded-2xl border border-stone-200/80 shadow-2xs">
                 <span className="text-lg sm:text-xl font-mono font-extrabold tracking-widest text-stone-800 select-all flex-1 text-center pl-2">
                   {tripCodeRef.current}
@@ -5785,7 +5837,7 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 <button
                   type="button"
                   onClick={handleCopyInviteCode}
-                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors active:scale-95 ${
+                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1 transition-colors active:scale-95 ${
                     copiedCode
                       ? 'bg-[#7A9D8C] text-white'
                       : 'bg-[#7A9D8C]/15 hover:bg-[#7A9D8C]/25 text-[#557465]'
@@ -5793,26 +5845,46 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                   title="招待コードをコピー"
                 >
                   {copiedCode ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedCode ? 'コピー済' : 'コピー'}</span>
+                  <span>{copiedCode ? '✓ コピー済み' : 'コピー'}</span>
                 </button>
               </div>
               <button
                 type="button"
                 onClick={handleCopyInviteWithAppUrl}
-                className={`w-full mt-3 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
+                className={`w-full py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
                   copiedInviteMsg
                     ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
                     : 'bg-white hover:bg-stone-50 text-[#557465] border-[#7A9D8C]/30 shadow-2xs'
                 }`}
               >
-                {copiedInviteMsg ? <Check size={14} /> : <Share2 size={14} />}
-                <span>{copiedInviteMsg ? '招待文をコピーしました！' : 'アプリ紹介リンク付きで招待文をコピー'}</span>
+                {copiedInviteMsg ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedInviteMsg ? '✓ 招待文をコピー済み！' : 'アプリ紹介リンク付きで招待文をコピー'}</span>
               </button>
+
+              {/* LINEや他のアプリで直接送れる別ボタン */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleShareViaLine}
+                  className="py-2.5 px-3 rounded-xl bg-[#06C755] hover:brightness-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                >
+                  <MessageCircle size={14} />
+                  <span>LINEで送る</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareViaNative}
+                  className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-900 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                >
+                  <Share2 size={14} />
+                  <span>他のアプリで共有</span>
+                </button>
+              </div>
             </div>
             <p className="text-xs text-stone-500 leading-relaxed">
               友達やパートナーにこのコードを共有すると、<br />一緒にしおりの予定を編集できるようになります。
             </p>
-            <div className="space-y-2.5 pt-2">
+            <div className="space-y-2.5 pt-1">
               <button
                 type="button"
                 onClick={() => handleCreate(false)}
@@ -7735,6 +7807,8 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
   // スワイプで戻るジェスチャー（画面左端28pxからの明確な右スワイプのみ反応させ、縦スクロール中の画面ブレを完全防止）
   const swipeStartRef = useRef(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const [copiedDrawerCode, setCopiedDrawerCode] = useState(false);
+  const [copiedDrawerInviteMsg, setCopiedDrawerInviteMsg] = useState(false);
 
   const handleSwipeStart = (clientX, clientY, target) => {
     if (target && target.closest('input, textarea, select, [data-no-swipe]')) return;
@@ -8123,19 +8197,65 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
                   <span className="text-xs font-mono font-extrabold tracking-wider text-stone-700 select-all">{trip.id}</span>
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(trip.id, `招待コード「${trip.id}」をコピーしました！`)}
-                    className="px-2.5 py-1 bg-[#7A9D8C]/15 hover:bg-[#7A9D8C]/25 text-[#557465] rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
+                    onClick={() => {
+                      copyToClipboard(trip.id, `招待コード「${trip.id}」をコピーしました！`);
+                      setCopiedDrawerCode(true);
+                      setTimeout(() => setCopiedDrawerCode(false), 3500);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-colors ${
+                      copiedDrawerCode
+                        ? 'bg-[#7A9D8C] text-white'
+                        : 'bg-[#7A9D8C]/15 hover:bg-[#7A9D8C]/25 text-[#557465]'
+                    }`}
                   >
-                    <Copy size={12} /> コードのみコピー
+                    {copiedDrawerCode ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedDrawerCode ? '✓ コピー済み' : 'コードのみコピー'}</span>
                   </button>
                 </div>
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(`「${trip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${trip.id}\n\n▼ アプリをまだ持っていない方はこちら（インストールURL）\nhttps://tabitabi.app/dl`, 'アプリ紹介URL付きの招待文をコピーしました！')}
-                  className="w-full py-2 px-3 bg-white hover:bg-stone-100 text-[#557465] border border-[#7A9D8C]/30 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                  onClick={() => {
+                    copyToClipboard(`「${trip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${trip.id}\n\n▼ アプリをまだ持っていない方はこちら（インストールURL）\nhttps://tabitabi.app/dl`, 'アプリ紹介URL付きの招待文をコピーしました！');
+                    setCopiedDrawerInviteMsg(true);
+                    setTimeout(() => setCopiedDrawerInviteMsg(false), 3500);
+                  }}
+                  className={`w-full py-2 px-3 border rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-colors shadow-2xs ${
+                    copiedDrawerInviteMsg
+                      ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                      : 'bg-white hover:bg-stone-100 text-[#557465] border-[#7A9D8C]/30'
+                  }`}
                 >
-                  <Share2 size={13} /> アプリ紹介リンク付きで招待文をコピー
+                  {copiedDrawerInviteMsg ? <Check size={13} /> : <Copy size={13} />}
+                  <span>{copiedDrawerInviteMsg ? '✓ 招待文をコピー済み！' : 'アプリ紹介リンク付きで招待文をコピー'}</span>
                 </button>
+                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shareText = `「${trip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${trip.id}\n\n▼ アプリはこちら\nhttps://tabitabi.app/dl`;
+                      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="py-2 px-2.5 bg-[#06C755] hover:brightness-95 text-white rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all"
+                  >
+                    <MessageCircle size={13} /> LINEで送る
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const shareText = `「${trip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${trip.id}\n\n▼ アプリはこちら\nhttps://tabitabi.app/dl`;
+                      if (navigator.share) {
+                        try {
+                          await navigator.share({ title: `${trip.title}のしおり招待`, text: shareText });
+                          return;
+                        } catch (e) {}
+                      }
+                      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="py-2 px-2.5 bg-stone-800 hover:bg-stone-900 text-white rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all"
+                  >
+                    <Share2 size={13} /> 他のアプリで共有
+                  </button>
+                </div>
               </div>
             </div>
             {(trip.members || []).length === 1 && !trip.isSoloTrip && (<div className="mb-4"><button onClick={() => updateTrip({ ...trip, isSoloTrip: true })} className="w-full py-3 bg-stone-100 text-stone-600 font-bold rounded-xl text-xs flex justify-center items-center gap-2 hover:bg-stone-200 transition-colors">👤 ひとり旅行として確定する（承認省略）</button></div>)}
@@ -9612,7 +9732,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
       `招待コード「${createdGroupTrip.id}」をコピーしました！`
     );
     setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2500);
+    setTimeout(() => setCopiedCode(false), 3500);
   };
 
   const handleCopyInviteWithAppUrl = () => {
@@ -9623,7 +9743,25 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
       'アプリ紹介URL付きの招待文をコピーしました！'
     );
     setCopiedInviteMsg(true);
-    setTimeout(() => setCopiedInviteMsg(false), 2500);
+    setTimeout(() => setCopiedInviteMsg(false), 3500);
+  };
+
+  const handleShareCopiedTripLine = () => {
+    if (!createdGroupTrip) return;
+    const inviteText = `「${createdGroupTrip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${createdGroupTrip.id}\n\n▼ アプリはこちら\nhttps://tabitabi.app/dl`;
+    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(inviteText)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleShareCopiedTripNative = async () => {
+    if (!createdGroupTrip) return;
+    const inviteText = `「${createdGroupTrip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${createdGroupTrip.id}\n\n▼ アプリはこちら\nhttps://tabitabi.app/dl`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${createdGroupTrip.title}の招待コード`, text: inviteText });
+        return;
+      } catch (e) {}
+    }
+    handleShareCopiedTripLine();
   };
 
   return (
@@ -9644,9 +9782,9 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
         </div>
 
         {step === 2 && createdGroupTrip ? (
-          <div className="space-y-5 text-center animate-in slide-in-from-right-4 py-2">
-            <div className="bg-[#7A9D8C]/10 p-5 rounded-3xl border border-[#7A9D8C]/20">
-              <p className="text-xs font-bold text-[#7A9D8C] mb-2">コピーしたしおりの共有・招待コード</p>
+          <div className="space-y-4 text-center animate-in slide-in-from-right-4 py-2">
+            <div className="bg-[#7A9D8C]/10 p-5 rounded-3xl border border-[#7A9D8C]/20 space-y-2.5">
+              <p className="text-xs font-bold text-[#7A9D8C]">コピーしたしおりの共有・招待コード</p>
               <div className="flex items-center justify-between gap-2 bg-white py-2.5 px-3.5 rounded-2xl border border-stone-200/80 shadow-2xs">
                 <span className="text-lg sm:text-xl font-mono font-extrabold tracking-widest text-stone-800 select-all flex-1 text-center pl-2">
                   {createdGroupTrip.id}
@@ -9654,28 +9792,44 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                 <button
                   type="button"
                   onClick={handleCopyInviteCode}
-                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors active:scale-95 ${
+                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1 transition-colors active:scale-95 ${
                     copiedCode
                       ? 'bg-[#7A9D8C] text-white'
                       : 'bg-[#7A9D8C]/15 hover:bg-[#7A9D8C]/25 text-[#557465]'
                   }`}
                 >
                   {copiedCode ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedCode ? 'コピー済' : 'コピー'}</span>
+                  <span>{copiedCode ? '✓ コピー済み' : 'コピー'}</span>
                 </button>
               </div>
               <button
                 type="button"
                 onClick={handleCopyInviteWithAppUrl}
-                className={`w-full mt-3 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
+                className={`w-full py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
                   copiedInviteMsg
                     ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
                     : 'bg-white hover:bg-stone-50 text-[#557465] border-[#7A9D8C]/30 shadow-2xs'
                 }`}
               >
-                {copiedInviteMsg ? <Check size={14} /> : <Share2 size={14} />}
-                <span>{copiedInviteMsg ? '招待文をコピーしました！' : 'アプリ紹介リンク付きで招待文をコピー'}</span>
+                {copiedInviteMsg ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedInviteMsg ? '✓ 招待文をコピー済み！' : 'アプリ紹介リンク付きで招待文をコピー'}</span>
               </button>
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleShareCopiedTripLine}
+                  className="py-2.5 px-3 rounded-xl bg-[#06C755] hover:brightness-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                >
+                  <MessageCircle size={14} /> LINEで送る
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareCopiedTripNative}
+                  className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-900 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                >
+                  <Share2 size={14} /> 他のアプリで共有
+                </button>
+              </div>
             </div>
             <p className="text-xs text-stone-500 leading-relaxed">
               友達やパートナーにこのコードを共有すると、<br />コピーしたしおりを一緒に編集できるようになります。<br />
@@ -10352,14 +10506,14 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
             onClick={() => {
               setInsertIndex(null);
               const lastEvent = currentEvents[currentEvents.length - 1];
-              const nextTime = lastEvent?.time ? getMidpointTime(lastEvent.time, null) : '12:00';
+              const nextTime = (lastEvent?.endTime || lastEvent?.time) ? getMidpointTime(lastEvent.endTime || lastEvent.time, null) : '12:00';
               setInsertRouteContext(
                 lastEvent
                   ? {
                       time: nextTime,
                       prevTitle: lastEvent.title || '',
                       prevLocation: lastEvent.location || lastEvent.title || '',
-                      prevTime: lastEvent.time || '',
+                      prevTime: lastEvent.endTime || lastEvent.time || '',
                       nextTitle: '',
                       nextLocation: '',
                       nextTime: ''
@@ -10374,7 +10528,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
             <Plus size={16} strokeWidth={2.5} /> 予定を追加する
           </button>
 
-          {/* サブ：可愛い薄い水色のミニAI相談＆スポット候補ボタン */}
+          {/* サブ：可愛い薄い水色のミニAI相談＆スポット候補ポップアップボタン */}
           <div className="flex items-center justify-end gap-1.5 pt-0.5">
             <span className="text-[10px] font-bold text-stone-400 mr-0.5">迷ったときは:</span>
             <button
@@ -10388,14 +10542,14 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
               type="button"
               onClick={() => {
                 const lastEvent = currentEvents[currentEvents.length - 1];
-                const nextTime = lastEvent?.time ? getMidpointTime(lastEvent.time, null) : '13:30';
+                const nextTime = (lastEvent?.endTime || lastEvent?.time) ? getMidpointTime(lastEvent.endTime || lastEvent.time, null) : '13:30';
                 setInsertRouteContext(
                   lastEvent
                     ? {
                         time: nextTime,
                         prevTitle: lastEvent.title || '',
                         prevLocation: lastEvent.location || lastEvent.title || '',
-                        prevTime: lastEvent.time || '',
+                        prevTime: lastEvent.endTime || lastEvent.time || '',
                         nextTitle: '',
                         nextLocation: '',
                         nextTime: ''
@@ -10927,7 +11081,15 @@ function PublishModal({ trip, currentUser, onClose, onPublish }) {
 // タイムライン内で予定を直接追加・差し込むフォーム
 function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialData, routeContext, onOpenAiSuggest, onOpenAiChat }) {
   const defaultOrigin = useMemo(() => getHomeDepartureLabel(currentUser), [currentUser]);
-  const [time, setTime] = useState(initialData?.time || routeContext?.time || '12:00');
+  const addMinutesToTimeStr = (tStr, minsToAdd = 60) => {
+    if (!tStr || !tStr.includes(':')) return '13:00';
+    const [h, m] = tStr.split(':').map(Number);
+    const total = ((isNaN(h) ? 12 : h) * 60 + (isNaN(m) ? 0 : m) + minsToAdd) % (24 * 60);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  };
+  const initialStart = initialData?.time || routeContext?.time || '12:00';
+  const [time, setTime] = useState(initialStart);
+  const [endTime, setEndTime] = useState(initialData?.endTime || addMinutesToTimeStr(initialStart, 60));
   const [title, setTitle] = useState(initialData?.title || '');
   const [type, setType] = useState(initialData?.type || 'sightseeing');
   const [departureOrigin, setDepartureOrigin] = useState(
@@ -10944,7 +11106,13 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
 
   useEffect(() => {
     if (initialData) {
-      if (initialData.time) setTime(initialData.time);
+      if (initialData.time) {
+        setTime(initialData.time);
+        if (!initialData.endTime) {
+          setEndTime(addMinutesToTimeStr(initialData.time, 60));
+        }
+      }
+      if (initialData.endTime !== undefined) setEndTime(initialData.endTime);
       if (initialData.title !== undefined) setTitle(initialData.title);
       if (initialData.type) setType(initialData.type);
       if (initialData.departureOrigin !== undefined) setDepartureOrigin(initialData.departureOrigin);
@@ -10960,10 +11128,8 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
   const extractPinQuery = (rawInput) => {
     const val = (rawInput || '').trim();
     if (!val) return '';
-    // GoogleマップURL内の @lat,lng を検出
     const atCoordMatch = val.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if (atCoordMatch) return `${atCoordMatch[1]},${atCoordMatch[2]}`;
-    // ?q=xxx または /place/xxx を検出
     const placeMatch = val.match(/\/place\/([^/?]+)/);
     if (placeMatch) return decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
     const qMatch = val.match(/[?&](?:q|query)=([^&]+)/);
@@ -10988,7 +11154,8 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (saveOriginForNext && departureOrigin.trim()) {
+    const isTransport = type === 'transport';
+    if (isTransport && saveOriginForNext && departureOrigin.trim()) {
       addSavedDeparturePoint(departureOrigin.trim());
       customAlert(`📍「${departureOrigin.trim()}」を次の旅行でも使える出発地点に登録しました！`);
     }
@@ -11000,10 +11167,11 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
       id: generateId(),
       date,
       time: time || '12:00',
+      endTime: endTime || '',
       title: finalTitle,
       type,
-      departureOrigin: departureOrigin.trim(),
-      transportMethod,
+      departureOrigin: isTransport ? departureOrigin.trim() : '',
+      transportMethod: isTransport ? transportMethod : '',
       location: finalLocation,
       mapPinQuery: finalPinQuery,
       cost: Number(cost) || 0,
@@ -11032,7 +11200,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
         </button>
       </div>
 
-      {/* 2段目：AIスポット提案・AI相談ボタン */}
+      {/* 2段目：スポット候補ポップアップ・AI相談ボタン */}
       {(onOpenAiSuggest || onOpenAiChat) && (
         <div className="flex items-center gap-1.5 flex-wrap">
           {onOpenAiSuggest && (
@@ -11041,7 +11209,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
               onClick={onOpenAiSuggest}
               className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-full text-[10px] font-extrabold flex items-center gap-1 transition-colors active:scale-95"
             >
-              <Sparkles size={11} className="text-sky-500" /> AIスポット提案
+              <Sparkles size={11} className="text-sky-500" /> スポット候補を見る
             </button>
           )}
           {onOpenAiChat && (
@@ -11098,89 +11266,115 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
         })}
       </div>
 
-      {/* 1段目：時間 ＆ 1人あたり予算（iOS Safariで時間枠が隣の入力欄と重ならないようゆとりある2列配置） */}
+      {/* ★「移動」ボタンを押したときだけ出発地点＆交通手段（新幹線・車など）を表示（それ以外のタブでは非表示） */}
+      {type === 'transport' && (
+        <div className="space-y-2 p-2.5 bg-sky-50/50 border border-sky-200/70 rounded-2xl animate-in fade-in duration-150">
+          <DepartureSelectorBox
+            user={currentUser}
+            value={departureOrigin}
+            onChange={setDepartureOrigin}
+            saveForNext={saveOriginForNext}
+            onChangeSaveForNext={setSaveOriginForNext}
+            extraQuickPoint={routeContext?.prevLocation || ''}
+            extraQuickLabel="前の予定地"
+            label="この移動の出発地点"
+            compact
+          />
+          <div>
+            <label className="text-[10px] font-extrabold text-sky-900 block mb-1 pl-0.5">
+              🚆 交通手段を選択
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {TRANSPORT_METHODS.map(m => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setTransportMethod(m.id)}
+                  className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold border transition-all whitespace-nowrap flex items-center justify-center gap-1 ${
+                    transportMethod === m.id
+                      ? 'bg-[#5E8473] text-white border-[#5E8473] shadow-2xs'
+                      : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  <span>{m.label.split(' ')[0]}</span>
+                  <span>{m.short}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1段目：開始時間 ＆ 終了時間（両方記録可能） */}
       <div className="grid grid-cols-2 gap-2.5">
         <div className="min-w-0">
-          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">時間</label>
+          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">開始時間</label>
           <input
             type="time"
             value={time}
-            onChange={e => setTime(e.target.value)}
+            onChange={e => {
+              const nextStart = e.target.value;
+              setTime(nextStart);
+              if (endTime && endTime < nextStart) {
+                setEndTime(addMinutesToTimeStr(nextStart, 60));
+              }
+            }}
             className="w-full min-w-0 h-10 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] appearance-none"
           />
         </div>
         <div className="min-w-0">
-          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">1人あたり予算 (円)</label>
+          <div className="flex items-center justify-between mb-1 px-0.5">
+            <label className="text-[11px] font-extrabold text-stone-500">終了時間 (任意)</label>
+            {endTime && (
+              <button
+                type="button"
+                onClick={() => setEndTime('')}
+                className="text-[10px] font-bold text-stone-400 hover:text-stone-600"
+              >
+                クリア
+              </button>
+            )}
+          </div>
+          <input
+            type="time"
+            value={endTime}
+            onChange={e => setEndTime(e.target.value)}
+            className="w-full min-w-0 h-10 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] appearance-none"
+          />
+        </div>
+      </div>
+
+      {/* 2段目：予定のタイトル ＆ 1人あたり予算 */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="col-span-2 min-w-0">
+          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">予定のタイトル</label>
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder={type === 'transport' ? '例: 新幹線で京都へ移動' : '例: カフェでひと休み'}
+            className="w-full h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+          />
+        </div>
+        <div className="min-w-0">
+          <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">1人予算(円)</label>
           <input
             type="number"
             inputMode="numeric"
             value={cost}
             onChange={e => setCost(e.target.value)}
             placeholder="例: 1500"
-            className="w-full min-w-0 h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+            className="w-full min-w-0 h-10 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
           />
         </div>
       </div>
 
-      {/* 2段目：予定のタイトル（横幅100%でゆったり入力） */}
-      <div>
-        <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">予定のタイトル</label>
-        <input
-          type="text"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          placeholder="例: カフェでひと休み / 恐竜博物館見学"
-          className="w-full h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-        />
-      </div>
-
-      {/* 3段目：場所・駅・スポット名（横幅100%で文字切れなし） */}
-      <div>
-        <label className="text-[11px] font-extrabold text-stone-500 block mb-1 pl-0.5">場所・駅・スポット名</label>
-        <input
-          type="text"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder="例: 福井県立恐竜博物館 / 芦原温泉駅"
-          className="w-full h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-        />
-      </div>
-
-      {/* ★ 個別の予定ごとの出発地点＆移動手段（スマホで見やすいレイアウト） */}
-      <div className="space-y-2">
-        <DepartureSelectorBox
-          user={currentUser}
-          value={departureOrigin}
-          onChange={setDepartureOrigin}
-          saveForNext={saveOriginForNext}
-          onChangeSaveForNext={setSaveOriginForNext}
-          extraQuickPoint={routeContext?.prevLocation || ''}
-          extraQuickLabel="前の予定地"
-          label="この予定の出発地点（任意）"
-          compact
-        />
-        <div className="grid grid-cols-3 gap-1.5">
-          {TRANSPORT_METHODS.map(m => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setTransportMethod(m.id)}
-              className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold border transition-all whitespace-nowrap flex items-center justify-center gap-1 ${
-                transportMethod === m.id
-                  ? 'bg-[#5E8473] text-white border-[#5E8473] shadow-2xs'
-                  : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-              }`}
-            >
-              <span>{m.label.split(' ')[0]}</span>
-              <span>{m.short}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 📍 Googleマップのピン設定・プレビュー機能 */}
-      <div className="space-y-2">
+      {/* 3段目：場所・駅・スポット名 ＆ すぐ近くに「🗺️ Googleマップでピンを指定・確認」ボタンを配置 */}
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2 flex-wrap">
+          <label className="text-[11px] font-extrabold text-stone-500 pl-0.5">
+            {type === 'transport' ? '到着地・駅・空港名' : '場所・駅・スポット名'}
+          </label>
           <button
             type="button"
             onClick={() => {
@@ -11189,7 +11383,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
               }
               setShowMapPicker(!showMapPicker);
             }}
-            className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 transition-all active:scale-95 ${
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border flex items-center gap-1 transition-all active:scale-95 ${
               mapPinQuery
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs'
                 : showMapPicker
@@ -11197,23 +11391,20 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
                 : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
             }`}
           >
-            <MapPin size={13} className={mapPinQuery ? 'text-rose-500 fill-rose-500' : 'text-[#7A9D8C]'} />
+            <MapPin size={11} className={mapPinQuery ? 'text-rose-500 fill-rose-500' : 'text-[#7A9D8C]'} />
             <span>
-              {mapPinQuery ? `ピン固定済: ${mapPinQuery.slice(0, 14)}` : '🗺️ Googleマップでピンを指定・確認'}
+              {mapPinQuery ? `ピン固定済: ${mapPinQuery.slice(0, 10)}` : '🗺️ Googleマップでピンを指定・確認'}
             </span>
           </button>
-
-          {(location.trim() || mapPinQuery.trim()) && (
-            <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(extractPinQuery(mapPinQuery || location))}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:underline"
-            >
-              <ExternalLink size={11} /> Googleマップアプリで開く
-            </a>
-          )}
         </div>
+
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="例: 福井県立恐竜博物館 / 芦原温泉駅"
+          className="w-full h-10 px-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+        />
 
         {showMapPicker && (
           <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/90 space-y-2.5 animate-in fade-in">
@@ -11252,7 +11443,6 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
               </button>
             </div>
 
-            {/* 埋め込みGoogleマップ（赤いピン表示） */}
             <div className="w-full h-44 rounded-xl overflow-hidden border border-stone-200 bg-stone-100 relative shadow-inner">
               <iframe
                 title="Google Map Pin Preview"
@@ -11268,7 +11458,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
             </div>
 
             <div className="flex items-center justify-between gap-2 text-[10px] text-stone-500 leading-snug">
-              <span>💡 Googleマップでピンを長押し→「共有」のリンクや座標を貼っても固定できます</span>
+              <span>💡 Googleマップの共有リンクや座標を貼っても固定できます</span>
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
                   extractPinQuery(mapSearchInput || activePinTarget)
@@ -11285,7 +11475,7 @@ function InlineEventForm({ onSave, onCancel, date, trip, currentUser, initialDat
       </div>
 
       <div>
-        <label className="text-[10px] font-bold text-stone-400 block mb-0.5">メモ（やりたいこと・持ち物など）</label>
+        <label className="text-[10px] font-bold text-stone-400 block mb-0.5">メモ（やりたいこと・予約番号など）</label>
         <textarea
           value={memo}
           onChange={e => setMemo(e.target.value)}
@@ -11582,10 +11772,14 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
 // タイムラインの各予定カード (EventCard)
 // ------------------------------------------
 function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false, isPassedEvent = false, betweenNowProgress = null, currentNowTimeStr = '', insertButtonSlot = null, onApprove, onUpdateEvent, onUpdateMemo, onDelete, onCopy, onAddPhoto, onTogglePhotoPublic, onRequestDeletePhoto, canDeletePhoto, onEnlargeImage }) {
+  const defaultOrigin = useMemo(() => getHomeDepartureLabel(currentUser), [currentUser]);
   const [isEditingEvent, setIsEditingEvent] = useState(false);
   const [editTime, setEditTime] = useState(event.time || '12:00');
+  const [editEndTime, setEditEndTime] = useState(event.endTime || '');
   const [editTitle, setEditTitle] = useState(event.title || '');
   const [editType, setEditType] = useState(event.type || 'sightseeing');
+  const [editDepartureOrigin, setEditDepartureOrigin] = useState(event.departureOrigin || trip.departurePoint || defaultOrigin);
+  const [editTransportMethod, setEditTransportMethod] = useState(event.transportMethod || trip.transportMethod || 'shinkansen_train');
   const [editLocation, setEditLocation] = useState(event.location || '');
   const [editMapPinQuery, setEditMapPinQuery] = useState(event.mapPinQuery || '');
   const [showEditMapPicker, setShowEditMapPicker] = useState(false);
@@ -11600,13 +11794,16 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
   useEffect(() => {
     setMemoText(event.memo || '');
     setEditTime(event.time || '12:00');
+    setEditEndTime(event.endTime || '');
     setEditTitle(event.title || '');
     setEditType(event.type || 'sightseeing');
+    setEditDepartureOrigin(event.departureOrigin || trip.departurePoint || defaultOrigin);
+    setEditTransportMethod(event.transportMethod || trip.transportMethod || 'shinkansen_train');
     setEditLocation(event.location || '');
     setEditMapPinQuery(event.mapPinQuery || '');
     setEditCost(event.cost ? String(event.cost) : '');
     setEditMemo(event.memo || '');
-  }, [event]);
+  }, [event, trip.departurePoint, trip.transportMethod, defaultOrigin]);
 
   const parsePinQuery = (rawInput) => {
     const val = (rawInput || '').trim();
@@ -11622,6 +11819,7 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
 
   const handleSaveFullEventEdit = (e) => {
     e.preventDefault();
+    const isTransport = editType === 'transport';
     const selectedTag = QUICK_TAGS.find(t => t.id === editType) || QUICK_TAGS[2];
     const finalTitle = editTitle.trim() || selectedTag.defaultTitle;
     const finalLocation = editLocation.trim() || editMapPinQuery.trim();
@@ -11629,8 +11827,11 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
     if (onUpdateEvent) {
       onUpdateEvent({
         time: editTime || '12:00',
+        endTime: editEndTime || '',
         title: finalTitle,
         type: editType,
+        departureOrigin: isTransport ? editDepartureOrigin.trim() : '',
+        transportMethod: isTransport ? editTransportMethod : '',
         location: finalLocation,
         mapPinQuery: finalPinQuery,
         cost: Number(editCost) || 0,
@@ -11644,15 +11845,16 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
 
   const tagInfo = QUICK_TAGS.find(t => t.id === event.type) || QUICK_TAGS[2];
   const TagIcon = tagInfo.icon;
+  const isTransportEvent = event.type === 'transport';
   const author = (isReadOnly && !ENABLE_PUBLIC_SNS_FEATURES)
     ? { id: OFFICIAL_ACCOUNT_PROFILE.id, name: 'たびたび公式', color: '#7A9D8C', isOfficial: true }
     : ((trip.members || []).find(m => m.id === event.authorId) || { name: trip.authorName || currentUser?.name || 'メンバー', color: '#7A9D8C', avatar: trip.authorAvatar || currentUser?.avatar });
   const isProposed = event.status === 'proposed' && !trip.isSoloTrip && !isReadOnly;
   const memberCount = Math.max(1, (trip.members || []).length);
 
-  // カテゴリごとの淡いパステル背景色とアイコン色（添付画像の雰囲気に合わせた配色）
+  // カテゴリごとの淡いパステル背景色とアイコン色
   const tagStyleMap = {
-    transport: 'bg-sky-50 text-sky-600 border-sky-100',
+    transport: 'bg-sky-50 text-sky-600 border-sky-200',
     meal: 'bg-orange-50 text-orange-500 border-orange-100',
     sightseeing: 'bg-emerald-50 text-[#557465] border-emerald-100',
     active: 'bg-purple-50 text-purple-600 border-purple-100',
@@ -11670,26 +11872,21 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
 
   const handleOpenNavigation = () => {
     const dest = encodeURIComponent(resolvedMapDestination);
-    const originParam = event.departureOrigin
-      ? `&origin=${encodeURIComponent(event.departureOrigin)}`
-      : trip.departurePoint
-      ? `&origin=${encodeURIComponent(trip.departurePoint.replace(/（.*?）/g, ''))}`
-      : '';
     const travelMode =
       event.transportMethod === 'car'
         ? '&travelmode=driving'
         : event.transportMethod === 'shinkansen_train' || event.transportMethod === 'highway_bus'
         ? '&travelmode=transit'
         : '';
-    const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest}${originParam}${travelMode}`;
+    // originを指定しない（またはCurrent Location）ことで、Googleマップが必ず端末の「現在地」を起点として経路ナビを起動する
+    const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest}${travelMode}`;
     window.open(navUrl, '_blank', 'noopener,noreferrer');
   };
 
   return (
     <div className="relative flex items-stretch group">
-      {/* ① 左側：時刻表示＋タイムライン軸＋Yahoo!乗換案内風のポワンポワン波紋ドット＋下部の省スペース「＋」ボタン */}
+      {/* ① 左側：開始〜終了時刻表示＋タイムライン軸＋Yahoo!乗換案内風のポワンポワン波紋ドット＋下部の省スペース「＋」ボタン */}
       <div className="w-[56px] shrink-0 flex flex-col justify-between select-none relative">
-        {/* 通過済み〜現在進行中のライン色ハイライト */}
         {isPassedEvent && (
           <div
             className="absolute left-[47px] top-4 w-[2px] bg-sky-400/80 rounded-full pointer-events-none z-[5]"
@@ -11699,8 +11896,8 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
           />
         )}
 
-        <div className="flex items-center pt-3">
-          <div className="w-[40px] pr-1.5 text-right">
+        <div className={`flex items-start ${isTransportEvent ? 'pt-2' : 'pt-3'}`}>
+          <div className="w-[40px] pr-1.5 text-right flex flex-col items-end">
             <span
               className={`text-[12px] font-extrabold font-mono tracking-tight leading-none ${
                 isClosestNow ? 'text-sky-600' : 'text-stone-700'
@@ -11708,10 +11905,14 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
             >
               {event.time || '--:--'}
             </span>
+            {event.endTime && (
+              <span className="text-[9px] font-bold font-mono text-stone-400 leading-tight mt-0.5">
+                ~{event.endTime}
+              </span>
+            )}
           </div>
-          <div className="w-[16px] flex justify-center items-center relative z-10">
+          <div className="w-[16px] flex justify-center items-center relative z-10 mt-0.5">
             {isClosestNow ? (
-              /* ★ Yahoo!乗換案内風：現在時刻に一番近い点を2重の波紋でポワンポワンと脈動させる */
               <div className="relative flex items-center justify-center w-4 h-4">
                 <span
                   className="absolute inline-flex w-6 h-6 rounded-full bg-sky-400/55 animate-ping"
@@ -11730,6 +11931,8 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                     ? 'bg-amber-400'
                     : isPassedEvent
                     ? 'bg-sky-400'
+                    : isTransportEvent
+                    ? 'bg-sky-500'
                     : 'bg-[#7A9D8C]'
                 }`}
               />
@@ -11737,7 +11940,6 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
           </div>
         </div>
 
-        {/* 予定と予定の間の時間帯にいるとき、タイムラインの線上に現在時刻のポワンポワン位置を表示 */}
         {betweenNowProgress !== null && !isClosestNow && (
           <div
             className="absolute left-[40px] z-20 flex items-center pointer-events-none"
@@ -11753,7 +11955,6 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
           </div>
         )}
 
-        {/* カードとカードの「ちょうど境界線（間）」に重なる位置へ追加ボタンを配置（上下の余白はゼロのまま） */}
         {insertButtonSlot && (
           <div className="absolute -bottom-[11px] left-[2px] z-30">
             {insertButtonSlot}
@@ -11761,16 +11962,18 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
         )}
       </div>
 
-      {/* ③ 右側：スッキリ整理された予定カード本体 */}
+      {/* ③ 右側：予定カード本体（「移動」予定はスリム＆コンパクト表示） */}
       <div
-        className={`flex-1 min-w-0 bg-white p-3 rounded-2xl shadow-xs border transition-all ${
+        className={`flex-1 min-w-0 rounded-2xl shadow-xs border transition-all ${
           isEditingEvent
-            ? 'border-2 border-[#7A9D8C] shadow-md'
+            ? 'bg-white p-3 border-2 border-[#7A9D8C] shadow-md'
+            : isTransportEvent
+            ? 'bg-sky-50/45 px-3 py-2 border-sky-200/80 hover:border-sky-300'
             : isClosestNow
-            ? 'border-sky-300 ring-2 ring-sky-100/80 shadow-sm'
+            ? 'bg-white p-3 border-sky-300 ring-2 ring-sky-100/80 shadow-sm'
             : isProposed
-            ? 'border-amber-300 bg-amber-50/20'
-            : 'border-stone-200/80 hover:border-stone-300'
+            ? 'bg-amber-50/20 p-3 border-amber-300'
+            : 'bg-white p-3 border-stone-200/80 hover:border-stone-300'
         }`}
       >
         {isEditingEvent && !isReadOnly ? (
@@ -11810,9 +12013,39 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
               })}
             </div>
 
+            {/* 編集時も「移動」を選んだときだけ出発地点＆交通手段を表示 */}
+            {editType === 'transport' && (
+              <div className="space-y-2 p-2.5 bg-sky-50/60 border border-sky-200/80 rounded-2xl">
+                <DepartureSelectorBox
+                  user={currentUser}
+                  value={editDepartureOrigin}
+                  onChange={setEditDepartureOrigin}
+                  label="この移動の出発地点"
+                  compact
+                />
+                <div className="grid grid-cols-3 gap-1">
+                  {TRANSPORT_METHODS.map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setEditTransportMethod(m.id)}
+                      className={`py-1.5 px-1.5 rounded-xl text-[10px] font-extrabold border transition-all whitespace-nowrap flex items-center justify-center gap-1 ${
+                        editTransportMethod === m.id
+                          ? 'bg-[#5E8473] text-white border-[#5E8473]'
+                          : 'bg-white text-stone-600 border-stone-200'
+                      }`}
+                    >
+                      <span>{m.label.split(' ')[0]}</span>
+                      <span>{m.short}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0">
-                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">時間</label>
+                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">開始時間</label>
                 <input
                   type="time"
                   value={editTime}
@@ -11821,31 +12054,62 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                 />
               </div>
               <div className="min-w-0">
-                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">1人あたり予算 (円)</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[10px] font-bold text-stone-400">終了時間 (任意)</label>
+                  {editEndTime && (
+                    <button type="button" onClick={() => setEditEndTime('')} className="text-[9px] font-bold text-stone-400">クリア</button>
+                  )}
+                </div>
+                <input
+                  type="time"
+                  value={editEndTime}
+                  onChange={e => setEditEndTime(e.target.value)}
+                  className="w-full min-w-0 h-9 px-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] appearance-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2 min-w-0">
+                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">予定のタイトル</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  placeholder="予定のタイトル"
+                  className="w-full h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="text-[10px] font-bold text-stone-400 block mb-0.5">1人予算 (円)</label>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={editCost}
                   onChange={e => setEditCost(e.target.value)}
                   placeholder="0"
-                  className="w-full min-w-0 h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  className="w-full min-w-0 h-9 px-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="text-[10px] font-bold text-stone-400 block mb-0.5">予定のタイトル</label>
-              <input
-                type="text"
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-                placeholder="予定のタイトル"
-                className="w-full h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold text-stone-400 block mb-0.5">場所・駅・スポット名</label>
+            {/* 場所・駅・スポット名 ＆ すぐ近くにGoogleマップピン指定ボタンを配置 */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="text-[10px] font-bold text-stone-400">場所・駅・スポット名</label>
+                <button
+                  type="button"
+                  onClick={() => setShowEditMapPicker(!showEditMapPicker)}
+                  className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold border flex items-center gap-1 transition-all ${
+                    editMapPinQuery
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  <MapPin size={11} className={editMapPinQuery ? 'text-rose-500 fill-rose-500' : 'text-[#7A9D8C]'} />
+                  <span>{editMapPinQuery ? `ピン固定済: ${editMapPinQuery.slice(0, 10)}` : '🗺️ Googleマップでピンを指定・確認'}</span>
+                </button>
+              </div>
               <input
                 type="text"
                 value={editLocation}
@@ -11853,22 +12117,6 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                 placeholder="例: 福井県立恐竜博物館 / 駅名"
                 className="w-full h-9 px-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
               />
-            </div>
-
-            {/* 編集時のGoogleマップピン指定セクション */}
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setShowEditMapPicker(!showEditMapPicker)}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 transition-all ${
-                  editMapPinQuery
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                    : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-                }`}
-              >
-                <MapPin size={13} className={editMapPinQuery ? 'text-rose-500 fill-rose-500' : 'text-[#7A9D8C]'} />
-                <span>{editMapPinQuery ? `ピン固定済: ${editMapPinQuery.slice(0, 14)}` : '🗺️ Googleマップでピンを指定'}</span>
-              </button>
 
               {showEditMapPicker && (
                 <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 space-y-2">
@@ -11925,7 +12173,7 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
         ) : (
           <>
             {isClosestNow && (
-              <div className="mb-2 flex items-center justify-between bg-sky-50 border border-sky-200/80 px-2.5 py-1 rounded-xl">
+              <div className="mb-1.5 flex items-center justify-between bg-sky-50 border border-sky-200/80 px-2.5 py-1 rounded-xl">
                 <span className="text-[10px] font-extrabold text-sky-700 flex items-center gap-1">
                   <Clock size={11} className="text-sky-500" /> 現在時刻に一番近い予定
                 </span>
@@ -11938,43 +12186,52 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
             )}
 
             {isProposed && (
-              <div className="mb-2.5 flex items-center justify-between bg-amber-50 border border-amber-200/80 px-3 py-1.5 rounded-xl">
+              <div className="mb-2 flex items-center justify-between bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-xl">
                 <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
-                  💡 提案中の予定（みんなの確認待ち）
+                  💡 提案中の予定
                 </span>
                 <button
                   type="button"
                   onClick={onApprove}
-                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                  className="px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs transition-colors"
                 >
-                  <Check size={11} strokeWidth={3} /> 承認して確定
+                  <Check size={11} strokeWidth={3} /> 承認
                 </button>
               </div>
             )}
 
-            {/* メイン行：左に丸型カテゴリアイコン、中央にタイトル＆場所・金額、右に操作ボタン */}
-            <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${iconBadgeStyle}`}>
-                <TagIcon size={18} strokeWidth={2.2} />
+            {/* メイン行：左に丸型カテゴリアイコン、中央に予定名＆すぐ下に「場所 / 予算 / 出発地点(移動時) ＋ コンパクトなマップ確認ボタン」 */}
+            <div className="flex items-start gap-2.5">
+              <div className={`${isTransportEvent ? 'w-7 h-7' : 'w-9 h-9'} rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${iconBadgeStyle}`}>
+                <TagIcon size={isTransportEvent ? 14 : 17} strokeWidth={2.2} />
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <h4
-                    onClick={() => { if (!isReadOnly) setIsEditingEvent(true); }}
-                    className={`font-extrabold text-sm text-stone-800 leading-snug ${!isReadOnly ? 'cursor-pointer hover:text-[#557465] transition-colors' : ''}`}
-                    title={!isReadOnly ? 'タップしてタイトル・予定を編集' : undefined}
-                  >
-                    {event.title}
-                  </h4>
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {event.endTime && (
+                        <span className="text-[10px] font-mono font-extrabold text-[#557465] bg-[#7A9D8C]/12 px-1.5 py-0.2 rounded">
+                          {event.time}〜{event.endTime}
+                        </span>
+                      )}
+                      <h4
+                        onClick={() => { if (!isReadOnly) setIsEditingEvent(true); }}
+                        className={`font-extrabold ${isTransportEvent ? 'text-xs' : 'text-sm'} text-stone-800 leading-snug ${!isReadOnly ? 'cursor-pointer hover:text-[#557465] transition-colors' : ''}`}
+                        title={!isReadOnly ? 'タップして予定を編集' : undefined}
+                      >
+                        {event.title}
+                      </h4>
+                    </div>
+                  </div>
 
-                  {/* 右上アクション（コピー / 編集 / 削除 / 作成者アイコン） */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  {/* 右上アクション（コピー / 鉛筆編集 / 削除 / 作成者アイコン） */}
+                  <div className="flex items-center gap-0.5 shrink-0">
                     {isReadOnly ? (
                       <button
                         type="button"
                         onClick={onCopy}
-                        className="px-2 py-1 bg-[#7A9D8C]/10 hover:bg-[#7A9D8C]/20 text-[#557465] rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
+                        className="px-2 py-0.5 bg-[#7A9D8C]/10 hover:bg-[#7A9D8C]/20 text-[#557465] rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
                         title="この予定をコピー"
                       >
                         <Copy size={11} /> コピー
@@ -11985,9 +12242,9 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                           type="button"
                           onClick={() => setIsEditingEvent(true)}
                           className="text-stone-400 hover:text-[#7A9D8C] p-1 rounded-lg hover:bg-stone-50 transition-colors"
-                          title="タイトル・時間・場所を編集"
+                          title="予定・メモを編集"
                         >
-                          <Edit2 size={14} />
+                          <Edit2 size={13} />
                         </button>
                         <button
                           type="button"
@@ -11995,7 +12252,7 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                           className="text-stone-300 hover:text-red-500 p-1 rounded-lg hover:bg-stone-50 transition-colors"
                           title="予定を削除"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                         </button>
                       </>
                     )}
@@ -12003,76 +12260,66 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                   </div>
                 </div>
 
-                {/* サブメタ情報（出発地点・場所・ピン・予算チップ：1人あたり金額 × 参加人数） */}
-                {(event.departureOrigin || event.location || event.mapPinQuery || Number(event.cost) > 0) && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    {event.departureOrigin && (
-                      <span className="text-[10px] font-bold text-[#557465] bg-[#7A9D8C]/12 px-2 py-0.5 rounded-full flex items-center gap-1 max-w-full truncate">
-                        <Navigation size={10} className="text-[#7A9D8C] shrink-0" />
-                        <span>{event.departureOrigin} 発</span>
-                        {event.transportMethod && (
-                          <span className="text-[9px] text-stone-500">
-                            ({TRANSPORT_METHODS.find(m => m.id === event.transportMethod)?.short || '移動'})
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {(event.location || event.mapPinQuery) && (
-                      <span className="text-[11px] font-bold text-stone-500 flex items-center gap-0.5 truncate max-w-full">
-                        <MapPin size={11} className={event.mapPinQuery ? 'text-rose-500 fill-rose-500 shrink-0' : 'text-stone-400 shrink-0'} />
-                        {event.location || event.mapPinQuery}
-                      </span>
-                    )}
-                    {event.mapPinQuery && (
-                      <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.2 rounded-full">
-                        📍ピン保存済
-                      </span>
-                    )}
-                    {Number(event.cost) > 0 && (
-                      <span className="text-[10px] font-extrabold text-stone-700 bg-stone-100 border border-stone-200/80 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
-                        <span>¥{Number(event.cost).toLocaleString()}/人</span>
-                        <span className="text-[#557465]">× {memberCount}人</span>
-                        {memberCount > 1 && (
-                          <span className="text-[9px] font-bold text-stone-400">
-                            (計¥{(Number(event.cost) * memberCount).toLocaleString()})
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                )}
+                {/* 予定名のすぐ下：「場所 / 予算 / その横に出発地点(移動時) ＋ コンパクトなマップで確認＆ナビボタン」 */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-stone-600">
+                  {(event.location || event.mapPinQuery) && (
+                    <span className="inline-flex items-center gap-0.5 text-stone-700 max-w-full truncate">
+                      <MapPin size={11} className={event.mapPinQuery ? 'text-rose-500 fill-rose-500 shrink-0' : 'text-[#7A9D8C] shrink-0'} />
+                      <span className="truncate">{event.location || event.mapPinQuery}</span>
+                    </span>
+                  )}
+
+                  {Number(event.cost) > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-stone-700 bg-stone-100 px-2 py-0.2 rounded-full text-[10px] font-extrabold">
+                      <span>¥{Number(event.cost).toLocaleString()}/人</span>
+                      {memberCount > 1 && <span className="text-[#557465]">×{memberCount}</span>}
+                    </span>
+                  )}
+
+                  {isTransportEvent && event.departureOrigin && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-sky-800 bg-sky-100/80 px-2 py-0.2 rounded-full max-w-full truncate">
+                      <Navigation size={10} className="text-sky-600 shrink-0" />
+                      <span className="truncate">{event.departureOrigin.replace(/（.*?）/g, '')}発</span>
+                      {event.transportMethod && (
+                        <span className="text-[9px] text-sky-700">
+                          ({TRANSPORT_METHODS.find(m => m.id === event.transportMethod)?.short || '移動'})
+                        </span>
+                      )}
+                    </span>
+                  )}
+
+                  {/* 押しやすいコンパクトな「マップで確認」「ナビ」ピルボタン */}
+                  {(event.location || event.mapPinQuery || event.title) && (
+                    <div className="inline-flex items-center gap-1 ml-auto">
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedMapDestination)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-[10px] font-extrabold inline-flex items-center gap-1 border border-stone-200/80 transition-colors active:scale-95"
+                      >
+                        <ExternalLink size={10} /> マップで確認
+                      </a>
+                      <button
+                        type="button"
+                        onClick={handleOpenNavigation}
+                        className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-extrabold inline-flex items-center gap-0.5 border border-blue-200/70 transition-colors active:scale-95"
+                      >
+                        <Navigation size={10} /> ナビ
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* ① 先に「マップで確認・ナビを起動」を配置（固定されたピンがあればそこへ直接ジャンプ） */}
-            {(event.location || event.mapPinQuery || event.title) && (
-              <div className="mt-3 pt-2.5 border-t border-stone-100 grid grid-cols-2 gap-2">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedMapDestination)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="py-1.5 px-2.5 bg-stone-50 hover:bg-stone-100 text-stone-600 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 border border-stone-200/70 transition-colors"
-                >
-                  <ExternalLink size={11} /> {event.mapPinQuery ? '保存ピンを確認' : 'マップで確認'}
-                </a>
-                <button
-                  type="button"
-                  onClick={handleOpenNavigation}
-                  className="py-1.5 px-2.5 bg-blue-50/70 hover:bg-blue-100/70 text-blue-600 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 border border-blue-200/60 transition-colors"
-                >
-                  <Navigation size={11} /> ナビを起動
-                </button>
-              </div>
-            )}
-
-            {/* ② その下に「メモ」を配置（開いているか閉じているか一目で分かるUI） */}
-            {(!isReadOnly || event.memo) && (
-              <div className="mt-2.5">
+            {/* ② メモがあるときのみ表示（鉛筆マークがあるため「＋メモを追加する」ボタンは廃止） */}
+            {event.memo && (
+              <div className="mt-2">
                 {isMemoOpen ? (
-                  <div className="p-3 bg-[#7A9D8C]/10 rounded-xl border border-[#7A9D8C]/40 text-xs space-y-2 animate-in fade-in">
-                    <div className="flex justify-between items-center border-b border-[#7A9D8C]/20 pb-1.5">
+                  <div className="p-2.5 bg-[#7A9D8C]/10 rounded-xl border border-[#7A9D8C]/40 text-xs space-y-1.5 animate-in fade-in">
+                    <div className="flex justify-between items-center border-b border-[#7A9D8C]/20 pb-1">
                       <span className="font-extrabold text-[#557465] flex items-center gap-1 text-[10px]">
-                        <FileText size={12} /> メモ詳細（全文表示中）
+                        <FileText size={11} /> メモ詳細
                       </span>
                       <div className="flex items-center gap-2">
                         {!isReadOnly && !isEditingMemo && (
@@ -12098,13 +12345,13 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                     </div>
 
                     {isEditingMemo && !isReadOnly ? (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <textarea
                           value={memoText}
                           onChange={e => setMemoText(e.target.value)}
                           rows="3"
                           placeholder="予約番号やメモを入力..."
-                          className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
+                          className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
                         />
                         <div className="flex justify-end gap-1.5">
                           <button
@@ -12112,66 +12359,54 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                             onClick={() => {
                               setMemoText(event.memo || '');
                               setIsEditingMemo(false);
-                              if (!event.memo) setIsMemoOpen(false);
                             }}
-                            className="px-3 py-1 bg-stone-200/70 text-stone-600 rounded-lg text-[10px] font-bold hover:bg-stone-200"
+                            className="px-2.5 py-1 bg-stone-200/70 text-stone-600 rounded-lg text-[10px] font-bold"
                           >
                             キャンセル
                           </button>
                           <button
                             type="button"
                             onClick={handleSaveMemo}
-                            className="px-3 py-1 bg-[#7A9D8C] text-white rounded-lg text-[10px] font-bold hover:bg-[#688a79]"
+                            className="px-2.5 py-1 bg-[#7A9D8C] text-white rounded-lg text-[10px] font-bold"
                           >
                             保存する
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <p className="text-stone-700 font-medium whitespace-pre-wrap leading-relaxed">
-                        {event.memo || 'メモはありません'}
+                      <p className="text-stone-700 font-medium whitespace-pre-wrap leading-relaxed text-[11px]">
+                        {event.memo}
                       </p>
                     )}
                   </div>
-                ) : event.memo ? (
+                ) : (
                   <button
                     type="button"
                     onClick={() => setIsMemoOpen(true)}
-                    className="w-full px-3 py-2 rounded-xl bg-stone-50 hover:bg-stone-100/90 border border-stone-200/80 text-left flex items-center justify-between gap-2 transition-colors group/memo"
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-stone-50 hover:bg-stone-100/90 border border-stone-200/80 text-left flex items-center justify-between gap-2 transition-colors"
                   >
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <FileText size={12} className="text-[#7A9D8C] shrink-0" />
+                      <FileText size={11} className="text-[#7A9D8C] shrink-0" />
                       <span className="text-[11px] font-medium text-stone-600 truncate">
                         {event.memo}
                       </span>
                     </div>
-                    <span className="shrink-0 text-[10px] font-extrabold text-[#557465] bg-white border border-stone-200 px-2 py-0.5 rounded-md group-hover/memo:border-[#7A9D8C]">
-                      全文を開く ▼
+                    <span className="shrink-0 text-[9px] font-extrabold text-[#557465] bg-white border border-stone-200 px-1.5 py-0.2 rounded">
+                      メモ ▼
                     </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMemoOpen(true);
-                      setIsEditingMemo(true);
-                    }}
-                    className="px-2.5 py-1.5 rounded-xl bg-stone-50 hover:bg-stone-100 text-stone-500 border border-dashed border-stone-300 text-[10px] font-bold inline-flex items-center gap-1 transition-colors"
-                  >
-                    <FileText size={11} className="text-[#7A9D8C]" /> ＋ メモを追加する
                   </button>
                 )}
               </div>
             )}
 
-            {/* 予定ごとの思い出写真 */}
+            {/* ③ 思い出の写真を貼る機能（「移動」以外のカードは常時表示、「移動」カードは写真がある時またはコンパクトに追加可能） */}
             {(!isReadOnly || (Array.isArray(event.photos) && event.photos.length > 0)) && (
-              <div className="mt-2.5 pt-2.5 border-t border-stone-100">
+              <div className={`${isTransportEvent ? 'mt-1.5 pt-1.5' : 'mt-2 pt-2'} border-t border-stone-100/90`}>
                 {Array.isArray(event.photos) && event.photos.length > 0 && (
                   <div
                     data-no-swipe="true"
                     style={{ touchAction: 'pan-x pan-y' }}
-                    className="flex gap-2.5 overflow-x-auto no-scrollbar mb-2 pb-0.5"
+                    className="flex gap-2 overflow-x-auto no-scrollbar mb-1.5 pb-0.5"
                   >
                     {event.photos.map(p => {
                       const isMine = canDeletePhoto ? canDeletePhoto(p) : (!p.authorId || p.authorId === currentUser?.id);
@@ -12180,8 +12415,8 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                         <div
                           key={p.id}
                           className={`${
-                            isReadOnly ? 'w-28 h-28' : 'w-20 h-20'
-                          } relative rounded-2xl overflow-hidden border border-stone-200 shrink-0 group/photo shadow-2xs bg-stone-100`}
+                            isReadOnly ? 'w-24 h-24' : 'w-18 h-18'
+                          } relative rounded-xl overflow-hidden border border-stone-200 shrink-0 group/photo shadow-2xs bg-stone-100`}
                         >
                           <img
                             src={p.url}
@@ -12190,7 +12425,6 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                             className="w-full h-full object-cover cursor-pointer group-hover/photo:scale-105 transition-transform duration-300"
                           />
 
-                          {/* 自分のしおりの場合：左上に「🌐公開OK / 🔒非公開」の切り替えボタンを表示（SNS機能が有効な時のみ） */}
                           {!isReadOnly && ENABLE_PUBLIC_SNS_FEATURES && (
                             <button
                               type="button"
@@ -12203,7 +12437,6 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                                   ? 'bg-[#7A9D8C]/95 text-white'
                                   : 'bg-stone-800/80 text-stone-200'
                               }`}
-                              title="みんなの旅に公開するときにこの写真を含めるか切り替え"
                             >
                               <span>{isPublicPhoto ? '🌐公開可' : '🔒非公開'}</span>
                             </button>
@@ -12222,10 +12455,10 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                                 e.stopPropagation();
                                 if (onRequestDeletePhoto) onRequestDeletePhoto(p);
                               }}
-                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
+                              className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
                               title="自分の写真を削除"
                             >
-                              <X size={11} />
+                              <X size={10} />
                             </button>
                           )}
                         </div>
@@ -12239,15 +12472,10 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                     <button
                       type="button"
                       onClick={() => photoInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200/80 rounded-xl text-[10px] font-bold inline-flex items-center gap-1.5 transition-colors"
+                      className="px-2.5 py-1 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200/80 rounded-xl text-[10px] font-bold inline-flex items-center gap-1 transition-colors"
                     >
-                      <Camera size={12} className="text-[#7A9D8C]" /> 思い出の写真を貼る
+                      <Camera size={11} className="text-[#7A9D8C]" /> 思い出の写真を貼る
                     </button>
-                    {ENABLE_PUBLIC_SNS_FEATURES && Array.isArray(event.photos) && event.photos.length > 0 && (
-                      <span className="text-[9px] font-bold text-stone-400">
-                        ※写真の「🌐公開可 / 🔒非公開」をタップで切替可能
-                      </span>
-                    )}
                     <input
                       type="file"
                       accept="image/*"
@@ -12452,11 +12680,14 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   const [isChatConfigOpen, setIsChatConfigOpen] = useState(true);
   const chatInputRef = useRef(null);
   const chatListRef = useRef(null);
+  const conditionScrollRef = useRef(null);
+  const plansResultScrollRef = useRef(null);
   const [departurePoint, setDeparturePoint] = useState(defaultOrigin);
   const [saveOriginForNext, setSaveOriginForNext] = useState(false);
   const [destination, setDestination] = useState('京都府');
+  const [destinationError, setDestinationError] = useState(false);
   const [transportMethod, setTransportMethod] = useState('shinkansen_train');
-  const [transportPriority, setTransportPriority] = useState('cost'); // 'cost' | 'speed' | 'experience'
+  const [transportPriority, setTransportPriority] = useState('cost');
   const [budgetAmount, setBudgetAmount] = useState(30000);
   const budgetTier = useMemo(() => {
     if (budgetAmount <= 10000) return `🌱 気軽にお出かけ (〜¥${budgetAmount.toLocaleString()})`;
@@ -12482,16 +12713,73 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   const [expandedPlanIdx, setExpandedPlanIdx] = useState(null);
   const [editingTitleIdx, setEditingTitleIdx] = useState(null);
 
-  // チャット相談モード用ステート
+  // ★ 選択した予算で目的地まで行けない（交通費＋宿泊費の最低目安を下回る）場合のスマート判定＆代替提案
+  const budgetFeasibility = useMemo(() => {
+    const cleanDest = (destination || '').trim();
+    const cleanOrigin = (departurePoint || '').replace(/（.*?）/g, '').trim();
+    if (!cleanDest) return { isShort: false };
+
+    const isSameArea = cleanOrigin && (cleanDest.includes(cleanOrigin.slice(0, 2)) || cleanOrigin.includes(cleanDest.slice(0, 2)));
+    const isFarFlightArea = /沖縄|宮古|石垣|那覇|北海道|札幌|小樽|函館|富良野|奄美|屋久島|五島/.test(cleanDest) && !isSameArea;
+    const isMidShinkansenArea = /京都|大阪|広島|福岡|博多|金沢|石川|長崎|鹿児島|熊本|大分|別府|由布院|愛媛|高知|青森|仙台|宮城/.test(cleanDest) && !isSameArea;
+
+    // 1人あたりの往復交通費の最低目安
+    let minRoundTripCost = 3000;
+    if (isFarFlightArea) {
+      minRoundTripCost = transportMethod === 'highway_bus' ? 16000 : 24000;
+    } else if (isMidShinkansenArea) {
+      minRoundTripCost = transportMethod === 'highway_bus' ? 8000 : transportMethod === 'car' ? 7000 : 18000;
+    } else if (!isSameArea) {
+      minRoundTripCost = transportMethod === 'highway_bus' ? 3500 : 5000;
+    }
+
+    // 宿泊費の最低目安（1泊あたり約7,000円）＋現地食事・観光最低3,000円
+    const nights = Math.max(0, days - 1);
+    const minHotelCost = nights * 7000;
+    const minTotalRequired = minRoundTripCost + minHotelCost + 3000;
+
+    if (budgetAmount >= minTotalRequired) {
+      return { isShort: false, minTotalRequired };
+    }
+
+    // 出発地から低予算でも行けるおすすめ近場エリア候補
+    const nearAlternatives = /東京|神奈川|埼玉|千葉|横浜|新宿/.test(cleanOrigin)
+      ? ['神奈川県・鎌倉＆江ノ島', '神奈川県・箱根', '埼玉県・川越', '静岡県・熱海']
+      : /大阪|京都|兵庫|奈良|梅田|難波/.test(cleanOrigin)
+      ? ['京都府・嵐山＆東山', '兵庫県・神戸＆有馬', '奈良県・ならまち', '滋賀県・琵琶湖']
+      : /長野|松本/.test(cleanOrigin)
+      ? ['長野県・軽井沢', '長野県・上高地＆松本', '山梨県・河口湖', '石川県・金沢']
+      : ['神奈川県・鎌倉＆江ノ島', '静岡県・熱海', '京都府', '長野県・軽井沢'];
+
+    return {
+      isShort: true,
+      minTotalRequired,
+      shortage: minTotalRequired - budgetAmount,
+      recommendedBudget: Math.ceil(minTotalRequired / 5000) * 5000,
+      canSaveWithBus: transportMethod !== 'highway_bus' && !isFarFlightArea,
+      canSaveWithDayTrip: days > 1 && !isFarFlightArea,
+      nearAlternatives
+    };
+  }, [destination, departurePoint, transportMethod, days, budgetAmount]);
+
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'ai',
-      text: 'こんにちは！AI旅コンシェルジュです✈️\n上の設定バーで「日程・誰と行くか・1人あたり予算」を選んで、下の候補ボタン（タップで入力欄に入ります）からご希望を教えてください！'
+      text: 'こんにちは！AI旅行コンシェルジュです✈️\n上部の条件設定バーで「日付・誰と行くか・予算」を選べるほか、下の提案ボタンを押すと入力欄に相談文が入ります！'
     }
   ]);
 
-  // メッセージ追加時やAI思考開始時にチャットの一番下へスムーズにスクロール
+  useEffect(() => {
+    if (generatedPlans && plansResultScrollRef.current) {
+      requestAnimationFrame(() => {
+        if (plansResultScrollRef.current) {
+          plansResultScrollRef.current.scrollTop = 0;
+        }
+      });
+    }
+  }, [generatedPlans]);
+
   useEffect(() => {
     if (mode === 'chat' && chatListRef.current) {
       setTimeout(() => {
@@ -12500,30 +12788,43 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         }
       }, 60);
     }
-  }, [chatMessages, isAiGenerating, mode]);
+  }, [chatMessages, mode, isAiGenerating]);
 
-  const buildPlansForDestination = (destInput, numDays, compLabel, themeLabel, baseStartDate, adults = 2, children = 0, originInput = departurePoint, transMethod = transportMethod, transPrio = transportPriority, selectedBudgetTier = budgetTier, customBudgetNum = budgetAmount) => {
-    const cleanDest = (destInput || '京都府').trim();
-    const cleanOrigin = (originInput || '自宅最寄り駅').replace(/（.*?）/g, '').trim() || '自宅最寄り駅';
+  const buildPlansForDestination = (
+    destText,
+    numDays,
+    compLabel,
+    themeLabel,
+    baseStartDate,
+    adults = 2,
+    children = 0,
+    originText = '東京駅',
+    transMethod = 'shinkansen_train',
+    transPrio = 'cost',
+    budgetStr = '🌷 標準プラン (¥30,000前後)',
+    rawBudgetAmount = 30000
+  ) => {
+    const cleanDest = (destText || '京都府').trim();
+    const cleanOrigin = (originText || '自宅最寄り駅').replace(/（.*?）/g, '').trim() || '東京駅';
     const methodObj = TRANSPORT_METHODS.find(m => m.id === transMethod) || TRANSPORT_METHODS[0];
     const prioObj = TRANSPORT_PRIORITIES.find(p => p.id === transPrio) || TRANSPORT_PRIORITIES[0];
-    const targetAmount = Number(customBudgetNum) || 40000;
+    const targetAmount = Number(rawBudgetAmount) || 30000;
     const budgetObj = {
-      id: selectedBudgetTier,
+      id: budgetStr,
       label: `¥${targetAmount.toLocaleString()}`,
       amount: targetAmount
     };
-    const isOkinawa = /沖縄|宮古|石垣|那覇/.test(cleanDest);
-    const isHokkaido = /北海道|札幌|小樽|函館|富良野/.test(cleanDest);
-    const isOnsen = /箱根|温泉|由布院|別府|草津|熱海|伊豆|城崎|道後/.test(cleanDest);
+    const isOkinawa = cleanDest.includes('沖縄') || cleanDest.includes('宮古') || cleanDest.includes('石垣') || cleanDest.includes('那覇');
+    const isHokkaido = cleanDest.includes('北海道') || cleanDest.includes('札幌') || cleanDest.includes('小樽') || cleanDest.includes('函館');
+    const isOnsen = cleanDest.includes('箱根') || cleanDest.includes('熱海') || cleanDest.includes('別府') || cleanDest.includes('由布院') || cleanDest.includes('草津') || themeLabel.includes('温泉');
 
-    const hasChildren = children > 0;
-    const totalPeople = adults + children;
+    const totalPeople = Math.max(1, Number(adults) + Number(children));
+    const hasChildren = Number(children) > 0 || compLabel.includes('家族') || compLabel.includes('子連れ');
     const isLargeGroup = totalPeople >= 5;
     const compDetailLabel =
-      compLabel === 'ひとり旅'
-        ? 'ひとり旅'
-        : compLabel === 'カップル・夫婦（2名）'
+      compLabel === 'ひとり旅' && totalPeople === 1
+        ? 'ひとり旅（大人1名）'
+        : compLabel.includes('カップル') && totalPeople === 2 && !hasChildren
         ? 'カップル・夫婦（2名）'
         : `${compLabel}（大人${adults}名${children > 0 ? `・子ども${children}名` : ''}）`;
 
@@ -12683,12 +12984,13 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         ? {
             ...ev,
             time: '09:00',
-            title: `${cleanOrigin}から${methodObj.short}で${cleanDest}へ出発（${prioObj.label}）`,
+            endTime: '10:30',
+            title: `${cleanOrigin}から${methodObj.short}で${cleanDest}へ出発`,
             type: 'transport',
             departureOrigin: cleanOrigin,
             transportMethod: transMethod,
             cost: transportCostEstimate,
-            memo: `${departureMemo} ${ev.memo || ''}`
+            memo: `【📍家から旅先までの移動: ${cleanOrigin} → ${cleanDest}（${methodObj.label}）】 ${ev.memo || ''}`
           }
         : ev
     );
@@ -12698,12 +13000,13 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         return {
           ...ev,
           time: '09:00',
-          title: `${cleanOrigin}発・${methodObj.short}で行く${cleanDest}（${prioObj.label}ルート）`,
+          endTime: '10:30',
+          title: `${cleanOrigin}発・${methodObj.short}で行く${cleanDest}`,
           type: 'transport',
           departureOrigin: cleanOrigin,
           transportMethod: transMethod,
           cost: transportCostEstimate,
-          memo: `${departureMemo} ${ev.memo || ''}`
+          memo: `【📍家から旅先までの移動: ${cleanOrigin} → ${cleanDest}（${methodObj.label}）】 ${ev.memo || ''}`
         };
       }
       return {
@@ -12722,11 +13025,16 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         Math.round((evList.reduce((s, e) => s + (Number(e.cost) || 0), 0) + extra) * childDiscountFactor)
       );
 
+    // 予算が足りない場合のアドバイス注記
+    const budgetRescuePrefix = budgetFeasibility.isShort
+      ? `【💡ご予算¥${targetAmount.toLocaleString()}内で収める工夫】通常は往復交通費＋宿泊で約¥${budgetFeasibility.minTotalRequired.toLocaleString()}〜かかりますが、早割・高速バス・LCCやコスパ宿を活用してご予算に近づけたプランです！ `
+      : '';
+
     return [
       {
-        badge: `${methodObj.short}×${prioObj.label}`,
+        badge: `${methodObj.short}で行く王道プラン`,
         title: `【${seasonWord}】${cleanOrigin}発・${methodObj.short}で行く${cleanDest}${numDays}日間の旅`,
-        description: `📍${cleanOrigin}から${methodObj.label}（${prioObj.label}・予算目安:${budgetObj.label}）で向かう${compDetailLabel}向け最適プラン！実在する高評価の名店と夕食スタイル提案まで収録しています。`,
+        description: `${budgetRescuePrefix}📍${cleanOrigin}から${methodObj.label}（予算目安:${budgetObj.label}）で向かう${compDetailLabel}向け最適プラン！実在する高評価の名店と夕食スタイル提案まで収録しています。`,
         departurePoint: cleanOrigin,
         destination: cleanDest,
         transportMethod: transMethod,
@@ -12738,9 +13046,9 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         events: baseSet1
       },
       {
-        badge: hasChildren ? 'ファミリー向けゆったり' : `穴場・${prioObj.label}`,
+        badge: hasChildren ? 'ファミリー向けゆったり' : '穴場・ゆったりコース',
         title: `【${hasChildren ? 'ゆったり' : '穴場'}】${cleanOrigin}発・${compDetailLabel}で楽しむ${cleanDest}厳選コース`,
-        description: `${cleanOrigin}からの移動負担を抑え、${compDetailLabel}のペースでゆったり過ごせる実在の名店・ミュージアムを中心に組んだプラン。`,
+        description: `${budgetRescuePrefix}${cleanOrigin}からの移動負担を抑え、${compDetailLabel}のペースでゆったり過ごせる実在の名店・ミュージアムを中心に組んだプラン。`,
         departurePoint: cleanOrigin,
         destination: cleanDest,
         transportMethod: transMethod,
@@ -12754,7 +13062,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
       {
         badge: `体験・${themeLabel.slice(0, 8)}満喫`,
         title: `【体験】${cleanOrigin}発・${compDetailLabel}で盛り上がる${cleanDest}アクティビティ＆食べ歩き`,
-        description: `移動も旅の思い出になる${prioObj.label}ルートと、${compDetailLabel}にぴったりの写真映えスポット・ご当地ディナーを詰め込んだ充実コース！`,
+        description: `${budgetRescuePrefix}${compDetailLabel}にぴったりの写真映えスポット・ご当地ディナーを詰め込んだ充実コース！`,
         departurePoint: cleanOrigin,
         destination: cleanDest,
         transportMethod: transMethod,
@@ -12770,14 +13078,20 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
   // ★ 鉄則①＆②：定番エリアの初回プランや過去キャッシュがある場合はAPIを叩かず0秒・0円で返し、カスタム条件や「AIで別プラン再生成」のときだけGemini APIを呼ぶ
   const handleGenerate = async (forceGeminiApi = false) => {
+    if (!destination || !destination.trim()) {
+      setDestinationError(true);
+      customAlert('⚠️ 行きたいエリア・目的地を入力してください！');
+      return;
+    }
+    setDestinationError(false);
     if (saveOriginForNext && departurePoint.trim()) {
       addSavedDeparturePoint(departurePoint.trim());
     }
-    const cleanDest = (destination || '京都府').trim();
+    const cleanDest = destination.trim();
     const cleanOrigin = (departurePoint || '自宅最寄り駅').trim();
     const methodObj = TRANSPORT_METHODS.find(m => m.id === transportMethod) || TRANSPORT_METHODS[0];
     const prioObj = TRANSPORT_PRIORITIES.find(p => p.id === transportPriority) || TRANSPORT_PRIORITIES[0];
-    const cacheKey = `plan_${cleanOrigin}_${cleanDest}_${transportMethod}_${transportPriority}_${budgetAmount}_${days}_${companion}_${adultCount}_${childCount}_${theme}`;
+    const cacheKey = `plan_${cleanOrigin}_${cleanDest}_${transportMethod}_${budgetAmount}_${days}_${companion}_${adultCount}_${childCount}_${theme}`;
     const isPopularPresetArea = POPULAR_CACHED_AREAS.some(area => cleanDest.includes(area)) && days <= 4;
 
     if (!forceGeminiApi) {
@@ -13061,10 +13375,10 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[240] flex justify-center items-end sm:items-center p-0 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 z-[240] flex justify-center items-center p-2.5 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
       <div
         style={{ touchAction: 'pan-y' }}
-        className="bg-white w-full max-w-md rounded-t-[28px] sm:rounded-[28px] p-4 sm:p-5 shadow-2xl h-[82vh] max-h-[88dvh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 pb-safe"
+        className="bg-white w-full max-w-md rounded-[28px] p-4 sm:p-5 shadow-2xl h-[88dvh] max-h-[88dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe"
         onClick={e => e.stopPropagation()}
       >
         {/* ★ 最上段ヘッダー：「AIプラン作成」のすぐ横に i ボタンを配置（残り回数は下の送信・作成ボタンの近くへ移動） */}
@@ -13181,6 +13495,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
             /* ★ スマホで絶対に見切れない「コンパクト入力（スクロール対応）＋下部ボタン固定」レイアウト */
             <>
               <div
+                ref={conditionScrollRef}
                 style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
                 className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain no-scrollbar space-y-2 pr-0.5 pb-2"
               >
@@ -13201,6 +13516,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     <label className="text-xs font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
                       <span className="flex items-center gap-1">
                         <MapPin size={13} className="text-[#7A9D8C] shrink-0" /> 行きたいエリア・目的地
+                        <span className="text-[9px] font-extrabold text-rose-500 bg-rose-50 px-1.5 py-0.2 rounded-full border border-rose-200">必須</span>
                       </span>
                       <button
                         type="button"
@@ -13213,23 +13529,35 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     <input
                       type="text"
                       value={destination}
-                      onChange={e => setDestination(e.target.value)}
+                      onChange={e => {
+                        setDestination(e.target.value);
+                        if (destinationError && e.target.value.trim()) setDestinationError(false);
+                      }}
                       placeholder="例: 京都府、沖縄、箱根、金沢"
-                      className="w-full min-w-0 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                      className={`w-full min-w-0 px-3 py-2 rounded-xl text-xs sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 transition-all ${
+                        destinationError
+                          ? 'bg-rose-50 border-2 border-rose-400 focus:ring-rose-400'
+                          : 'bg-white border border-stone-200 focus:ring-[#7A9D8C]'
+                      }`}
                     />
+                    {destinationError && (
+                      <p className="mt-1 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5">
+                        <AlertCircle size={12} /> 目的地を入力してください！
+                      </p>
+                    )}
                   </div>
 
                   {/* 出発日・最終日（ドラムロール式ホイール選択・日数とも自動連動） */}
                   {(() => {
                     const baseParts = (startDate || getTodayString()).split('-').map(Number);
-                    const startDt =
+                    const safeStartDt =
                       baseParts.length === 3 && !isNaN(baseParts[0])
                         ? new Date(baseParts[0], baseParts[1] - 1, baseParts[2])
                         : new Date();
                     const endDt = new Date(
-                      startDt.getFullYear(),
-                      startDt.getMonth(),
-                      startDt.getDate() + Math.max(0, days - 1)
+                      safeStartDt.getFullYear(),
+                      safeStartDt.getMonth(),
+                      safeStartDt.getDate() + Math.max(0, days - 1)
                     );
                     const computedEndStr = `${endDt.getFullYear()}-${String(
                       endDt.getMonth() + 1
@@ -13262,39 +13590,22 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   })()}
                 </div>
 
-                {/* 3段目：移動手段・重視スタイル（プルダウン）＋ 1人あたり予算（5,000円スタートの可愛いスライダーカード） */}
+                {/* 3段目：移動手段（家から旅先までの移動手段）＋ 1人あたり予算スライダー＋予算不足時の救済提案 */}
                 <div className="p-3 bg-gradient-to-br from-[#FFF9F5] via-[#F4FBF8] to-[#F0F7FF] border border-[#7A9D8C]/30 rounded-[22px] space-y-2.5 shadow-2xs overflow-hidden">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="min-w-0 bg-white/90 p-2 rounded-2xl border border-sky-200/80 shadow-2xs">
-                      <label className="text-[10px] font-extrabold text-sky-800 flex items-center gap-1 mb-1 pl-0.5">
-                        <span className="w-4 h-4 rounded-full bg-sky-100 flex items-center justify-center text-[10px]">🚆</span>
-                        <span>移動手段</span>
-                      </label>
-                      <select
-                        value={transportMethod}
-                        onChange={e => setTransportMethod(e.target.value)}
-                        className="w-full py-1 px-1.5 bg-sky-50/60 hover:bg-sky-50 border border-sky-200/70 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer"
-                      >
-                        {TRANSPORT_METHODS.map(m => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="min-w-0 bg-white/90 p-2 rounded-2xl border border-amber-200/80 shadow-2xs">
-                      <label className="text-[10px] font-extrabold text-amber-900 flex items-center gap-1 mb-1 pl-0.5">
-                        <span className="w-4 h-4 rounded-full bg-amber-100 flex items-center justify-center text-[10px]">⚖️</span>
-                        <span>重視スタイル</span>
-                      </label>
-                      <select
-                        value={transportPriority}
-                        onChange={e => setTransportPriority(e.target.value)}
-                        className="w-full py-1 px-1.5 bg-amber-50/60 hover:bg-amber-50 border border-amber-200/70 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-400 cursor-pointer"
-                      >
-                        {TRANSPORT_PRIORITIES.map(p => (
-                          <option key={p.id} value={p.id}>{p.label}</option>
-                        ))}
-                      </select>
-                    </div>
+                  <div className="bg-white/90 p-2.5 rounded-2xl border border-sky-200/80 shadow-2xs">
+                    <label className="text-xs font-extrabold text-sky-900 flex items-center gap-1.5 mb-1.5 pl-0.5">
+                      <span className="w-5 h-5 rounded-full bg-sky-100 flex items-center justify-center text-xs">🚆</span>
+                      <span>移動手段 (家から旅先までの移動手段)</span>
+                    </label>
+                    <select
+                      value={transportMethod}
+                      onChange={e => setTransportMethod(e.target.value)}
+                      className="w-full py-1.5 px-2.5 bg-sky-50/60 hover:bg-sky-50 border border-sky-200/70 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer"
+                    >
+                      {TRANSPORT_METHODS.map(m => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* 1人あたりの予算スライダー（5,000円スタート＆パステルグラデーション） */}
@@ -13382,6 +13693,72 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                         );
                       })}
                     </div>
+
+                    {/* ★ 予算で目的地まで行けないときの救済アドバイス＆ワンタップ解決ボタン */}
+                    {budgetFeasibility.isShort && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300/90 space-y-2 animate-in fade-in">
+                        <div className="flex items-start gap-1.5 text-amber-950">
+                          <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                          <div className="text-[11px] font-bold leading-snug">
+                            <p className="font-extrabold text-amber-900">
+                              💡 この予算（¥{budgetAmount.toLocaleString()}）だと「{destination}」までの往復交通費・宿泊費が足りない可能性があります（目安: 約¥{budgetFeasibility.minTotalRequired.toLocaleString()}〜）
+                            </p>
+                            <p className="text-[10px] text-amber-800 mt-0.5">
+                              そのままでも「早割・LCC・ゲストハウス活用の節約プラン」を作成できますが、下のボタンからワンタップで調整もできます：
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setBudgetAmount(budgetFeasibility.recommendedBudget)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-extrabold shadow-2xs active:scale-95"
+                          >
+                            🪙 適正予算（¥{budgetFeasibility.recommendedBudget.toLocaleString()}）に合わせる
+                          </button>
+                          {budgetFeasibility.canSaveWithBus && (
+                            <button
+                              type="button"
+                              onClick={() => setTransportMethod('highway_bus')}
+                              className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold active:scale-95"
+                            >
+                              🚌 高速バスに変更して交通費を抑える
+                            </button>
+                          )}
+                          {budgetFeasibility.canSaveWithDayTrip && (
+                            <button
+                              type="button"
+                              onClick={() => setDays(1)}
+                              className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold active:scale-95"
+                            >
+                              ☀️ 日帰り（宿なし）に短縮する
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="pt-1 border-t border-amber-200/80">
+                          <span className="text-[10px] font-extrabold text-amber-900 block mb-1">
+                            🗾 または予算¥{budgetAmount.toLocaleString()}で行ける近場のおすすめ旅行先に変更：
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {budgetFeasibility.nearAlternatives.map(alt => (
+                              <button
+                                key={alt}
+                                type="button"
+                                onClick={() => {
+                                  setDestination(alt);
+                                  customAlert(`目的地を「${alt}」に変更しました！`);
+                                }}
+                                className="px-2 py-0.5 rounded-md bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold active:scale-95"
+                              >
+                                📍 {alt}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -13597,7 +13974,10 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               </div>
             </>
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar pr-0.5 space-y-3 pb-2">
+            <div
+              ref={plansResultScrollRef}
+              className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar pr-0.5 space-y-3 pb-2"
+            >
                 <div className="flex items-center justify-between gap-2 sticky top-0 bg-white/95 backdrop-blur-xs py-1.5 z-10 border-b border-stone-100">
                   <span className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center gap-1">
                     <Sparkles size={15} className="text-sky-500" /> 提案プラン ({generatedPlans.length}件)
@@ -14307,10 +14687,10 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[250] flex justify-center items-end sm:items-center p-0 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 z-[250] flex justify-center items-center p-2.5 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
       <div
         style={{ touchAction: 'pan-y' }}
-        className="bg-white w-full max-w-md rounded-t-[28px] sm:rounded-[28px] p-4 sm:p-5 shadow-2xl h-[88dvh] max-h-[88dvh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 pb-safe"
+        className="bg-white w-full max-w-md rounded-[28px] p-4 sm:p-5 shadow-2xl h-[88dvh] max-h-[88dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe"
         onClick={e => e.stopPropagation()}
       >
         {/* 最上段ヘッダー（残り回数は送信ボタンの中へ移動） */}
