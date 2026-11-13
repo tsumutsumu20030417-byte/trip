@@ -11,8 +11,13 @@ export default async function handler(req, res) {
 
   try {
     const { prompt, systemInstruction, responseMimeType } = req.body;
-    // 2026年最新の高速モデルから順にフォールバック
-    const models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"];
+    // Googleの公開モデル名は年次で変わるため、現時点で利用可能な安定モデルを順に試す
+    const models = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+    ];
     let lastError = null;
 
     for (const model of models) {
@@ -37,7 +42,12 @@ export default async function handler(req, res) {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        data = { error: "Invalid JSON response from Gemini API" };
+      }
 
       if (response.ok) {
         return res.status(200).json(data);

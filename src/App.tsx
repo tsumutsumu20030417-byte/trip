@@ -2951,8 +2951,7 @@ const setCachedAiResponse = (cacheKey, data) => {
   } catch (e) {}
 };
 
-// Google Gemini API 構造化出力呼び出し（APIキーは環境変数で管理し、コード内に秘密情報は置かない）
-
+// Google Gemini API 構造化出力呼び出し（環境変数で管理し、秘密情報はコード内に置かない）
 const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
   let envKey = "";
   try {
@@ -2976,8 +2975,8 @@ const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSc
 
   const modelsToTry = [
     "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
-    "gemini-3-flash-preview",
     "gemini-1.5-flash"
   ];
 
@@ -3000,7 +2999,11 @@ const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSc
         continue;
       }
       const result = await response.json();
-      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const text = result?.candidates
+        ?.flatMap(candidate => candidate?.content?.parts ?? [])
+        .map(part => part?.text ?? '')
+        .join('')
+        .trim();
       if (text) return JSON.parse(text);
     } catch (err) {
       lastError = err;
