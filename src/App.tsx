@@ -9097,6 +9097,7 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [copiedDrawerCode, setCopiedDrawerCode] = useState(false);
   const [copiedDrawerInviteMsg, setCopiedDrawerInviteMsg] = useState(false);
+  const [savedTripInfoBtn, setSavedTripInfoBtn] = useState(false);
 
   const handleSwipeStart = (clientX, clientY, target) => {
     if (target && target.closest('input, textarea, select, [data-no-swipe]')) return;
@@ -9188,6 +9189,8 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
     });
     setSelectedDate(editStartDate);
     setEditEndDate(validEnd);
+    setSavedTripInfoBtn(true);
+    setTimeout(() => setSavedTripInfoBtn(false), 3000);
     customAlert('旅の基本情報（名前・行き先・日程）を更新しました！');
   };
 
@@ -9629,9 +9632,14 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               <button
                 type="button"
                 onClick={handleSaveTripInfo}
-                className="w-full py-2.5 bg-[#7A9D8C] text-white font-bold rounded-xl shadow-2xs hover:bg-[#688a79] transition-colors text-xs flex items-center justify-center gap-1.5 active:scale-95"
+                className={`w-full py-2.5 font-extrabold rounded-xl shadow-2xs transition-all text-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer ${
+                  savedTripInfoBtn
+                    ? 'bg-emerald-600 text-white ring-2 ring-emerald-200'
+                    : 'bg-[#7A9D8C] text-white hover:bg-[#688a79]'
+                }`}
               >
-                <Check size={14} /> 基本情報の変更を保存
+                <Check size={14} strokeWidth={savedTripInfoBtn ? 3 : 2.5} />
+                <span>{savedTripInfoBtn ? '✓ 保存しました！' : '基本情報の変更を保存'}</span>
               </button>
             </div>
 
@@ -14635,25 +14643,25 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
               </div>
 
               {/* 予定タイトル：右端までフル幅を使い、自然な単語区切りでゆったり表示 */}
+              {/* 予定タイトル：スマホでも確実に左揃え（text-left）になり、不自然な空白ができないよう調整 */}
               <h4
                 onClick={() => { if (!isReadOnly) setIsEditingEvent(true); }}
-                style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}
-                className={`w-full font-extrabold text-sm text-stone-800 leading-snug ${!isReadOnly ? 'cursor-pointer hover:text-[#557465] transition-colors' : ''}`}
+                className={`w-full text-left font-extrabold text-sm text-stone-800 leading-snug break-words ${!isReadOnly ? 'cursor-pointer hover:text-[#557465] transition-colors' : ''}`}
                 title={!isReadOnly ? 'タップして予定を編集' : undefined}
               >
                 {event.title}
               </h4>
 
-              {/* 予定名の下：場所（ピン指定時は下線付きGoogleマップリンク） / 予算 ＋ ナビボタン */}
-              <div className="pt-0.5 flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-bold text-stone-600">
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
+              {/* 予定名の下：場所（長ければ「...」で省略） / 予算 ＋ ナビボタン（絶対に改行せず1行に収める） */}
+              <div className="pt-0.5 flex items-center justify-between gap-1.5 text-[11px] font-bold text-stone-600 flex-nowrap min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
                   {(displaySpotLocation || event.mapPinQuery) && (
                     <a
                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedMapDestination)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-0.5 text-stone-800 hover:text-[#4A6B5D] max-w-full truncate transition-colors"
+                      className="inline-flex items-center gap-0.5 text-stone-800 hover:text-[#4A6B5D] min-w-0 truncate transition-colors"
                       title={`Googleマップで「${displaySpotLocation}」を開く`}
                     >
                       <MapPin size={11} className="text-rose-500 fill-rose-500 shrink-0" />
@@ -14664,18 +14672,18 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
                   )}
 
                   {(displaySpotLocation || event.mapPinQuery) && Number(event.cost) > 0 && (
-                    <span className="text-stone-300 font-normal">/</span>
+                    <span className="text-stone-300 font-normal shrink-0">/</span>
                   )}
 
                   {Number(event.cost) > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-stone-700 font-extrabold">
+                    <span className="inline-flex items-center gap-0.5 text-stone-700 font-extrabold shrink-0 whitespace-nowrap">
                       <span>¥{Number(event.cost).toLocaleString()}</span>
                       {memberCount > 1 && <span className="text-[10px] text-[#557465]">(×{memberCount}人)</span>}
                     </span>
                   )}
                 </div>
 
-                {/* 現在地から目的地までの経路案内を起動する「ナビ」ボタン */}
+                {/* 現在地から目的地までの経路案内を起動する「ナビ」ボタン（常に右端に固定・改行落ち防止） */}
                 {(event.location || event.mapPinQuery || event.title) && (
                   <button
                     type="button"
@@ -14683,10 +14691,10 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
                       e.stopPropagation();
                       handleOpenNavigation();
                     }}
-                    className="ml-auto px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 border border-blue-200 transition-all active:scale-95 shrink-0 shadow-2xs cursor-pointer"
+                    className="ml-auto px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-[11px] font-extrabold inline-flex items-center gap-1 border border-blue-200 transition-all active:scale-95 shrink-0 shadow-2xs cursor-pointer whitespace-nowrap"
                     title="現在地から目的地までのGoogleマップ経路ナビを起動"
                   >
-                    <Navigation size={12} className="shrink-0" /> ナビ
+                    <Navigation size={11} className="shrink-0" /> ナビ
                   </button>
                 )}
               </div>
@@ -15967,14 +15975,17 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   const [destinationError, setDestinationError] = useState(false);
   const [destinationErrorMsg, setDestinationErrorMsg] = useState('');
   const destinationInputRef = useRef(null);
+  const transportSectionRef = useRef(null);
   const conditionScrollRef = useRef(null);
   const plansResultScrollRef = useRef(null);
   const chatListRef = useRef(null);
   const chatInputRef = useRef(null);
   const [startDate, setStartDate] = useState(getTodayString());
   const [days, setDays] = useState(2);
-  const [transportMethod, setTransportMethod] = useState('shinkansen_train');
-  const [localTransportMethod, setLocalTransportMethod] = useState('public_transit');
+  const [transportMethod, setTransportMethod] = useState('');
+  const [localTransportMethod, setLocalTransportMethod] = useState('');
+  const [transportError, setTransportError] = useState(false);
+  const [localTransportError, setLocalTransportError] = useState(false);
   const [budgetAmount, setBudgetAmount] = useState(35000);
   const [companion, setCompanion] = useState('カップル・夫婦（2名）');
   const [adultCount, setAdultCount] = useState(2);
@@ -16041,7 +16052,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
     if (!trimmedDest) {
       setDestinationError(true);
       setDestinationErrorMsg('行きたいエリア・目的地が未入力です。入力してください！');
-      customAlert('⚠️ 「行きたいエリア・目的地」を入力してください！');
       destinationInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setTimeout(() => destinationInputRef.current?.focus(), 60);
       return;
@@ -16060,6 +16070,18 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
     setDestinationError(false);
     setDestinationErrorMsg('');
+
+    // ★ ① 家から旅先までの移動手段 / ② 旅行中（現地）の移動手段 の必須チェック
+    const isTransMissing = !transportMethod;
+    const isLocalTransMissing = !localTransportMethod;
+    if (isTransMissing || isLocalTransMissing) {
+      setTransportError(isTransMissing);
+      setLocalTransportError(isLocalTransMissing);
+      transportSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setTransportError(false);
+    setLocalTransportError(false);
 
     const cacheKey = `cond_v2_${trimmedDest}_${days}_${budgetAmount}_${theme}_${transportMethod}_${localTransportMethod}`;
     const cached = getCachedAiResponse(cacheKey);
@@ -17040,21 +17062,40 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                 </div>
 
                 <div className="p-3 bg-gradient-to-br from-[#FFF9F5] via-[#F4FBF8] to-[#F0F7FF] border border-[#7A9D8C]/30 rounded-[22px] space-y-2.5 shadow-2xs overflow-hidden">
-                  <div className="bg-white/90 p-2.5 rounded-2xl border border-sky-200/80 shadow-2xs space-y-2">
+                  <div
+                    ref={transportSectionRef}
+                    className={`bg-white/90 p-2.5 rounded-2xl border shadow-2xs space-y-2 transition-all ${
+                      transportError || localTransportError
+                        ? 'border-2 border-rose-400 ring-2 ring-rose-100'
+                        : 'border-sky-200/80'
+                    }`}
+                  >
                     <div>
                       <label className="text-xs font-extrabold text-sky-900 flex items-center justify-between mb-1 pl-0.5">
                         <span className="flex items-center gap-1.5">
                           <span className="w-5 h-5 rounded-full bg-sky-100 flex items-center justify-center text-xs">🚆</span>
                           <span>① 家から旅先までの移動手段</span>
                         </span>
-                        <span className="text-[10px] font-bold text-sky-700">選択式 ▼</span>
+                        <span className="text-[10px] font-extrabold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                          必須 ▼
+                        </span>
                       </label>
                       <div className="relative">
                         <select
                           value={transportMethod}
-                          onChange={e => setTransportMethod(e.target.value)}
-                          className="w-full py-2 pl-2.5 pr-8 bg-sky-50/60 hover:bg-sky-50 border border-sky-200/70 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer appearance-none"
+                          onChange={e => {
+                            setTransportMethod(e.target.value);
+                            if (transportError && e.target.value) setTransportError(false);
+                          }}
+                          className={`w-full py-2 pl-2.5 pr-8 rounded-xl text-xs font-extrabold focus:outline-none focus:ring-2 cursor-pointer appearance-none transition-all ${
+                            transportError
+                              ? 'bg-rose-50 border-2 border-rose-400 text-rose-800 focus:ring-rose-400'
+                              : !transportMethod
+                              ? 'bg-sky-50/60 hover:bg-sky-50 border border-sky-200/70 text-stone-400 focus:ring-sky-400'
+                              : 'bg-sky-50/60 hover:bg-sky-50 border border-sky-200/70 text-stone-800 focus:ring-sky-400'
+                          }`}
                         >
+                          <option value="">移動手段を選択してください（必須）</option>
                           {TRANSPORT_METHODS.map(m => (
                             <option key={m.id} value={m.id}>{m.label}</option>
                           ))}
@@ -17063,6 +17104,12 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                           ▼
                         </span>
                       </div>
+                      {transportError && (
+                        <p className="mt-1 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5 animate-in fade-in">
+                          <AlertCircle size={12} className="shrink-0 text-rose-500" />
+                          <span>家から旅先までの移動手段を選択してください！</span>
+                        </p>
+                      )}
                     </div>
 
                     <div className="pt-1.5 border-t border-sky-100">
@@ -17071,14 +17118,26 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                           <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-xs">🚗</span>
                           <span>② 旅行中（現地）の移動手段</span>
                         </span>
-                        <span className="text-[10px] font-bold text-emerald-700">スポット間移動に反映 ▼</span>
+                        <span className="text-[10px] font-extrabold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                          必須 ▼
+                        </span>
                       </label>
                       <div className="relative">
                         <select
                           value={localTransportMethod}
-                          onChange={e => setLocalTransportMethod(e.target.value)}
-                          className="w-full py-2 pl-2.5 pr-8 bg-emerald-50/60 hover:bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] cursor-pointer appearance-none"
+                          onChange={e => {
+                            setLocalTransportMethod(e.target.value);
+                            if (localTransportError && e.target.value) setLocalTransportError(false);
+                          }}
+                          className={`w-full py-2 pl-2.5 pr-8 rounded-xl text-xs font-extrabold focus:outline-none focus:ring-2 cursor-pointer appearance-none transition-all ${
+                            localTransportError
+                              ? 'bg-rose-50 border-2 border-rose-400 text-rose-800 focus:ring-rose-400'
+                              : !localTransportMethod
+                              ? 'bg-emerald-50/60 hover:bg-emerald-50 border border-emerald-200/80 text-stone-400 focus:ring-[#7A9D8C]'
+                              : 'bg-emerald-50/60 hover:bg-emerald-50 border border-emerald-200/80 text-stone-800 focus:ring-[#7A9D8C]'
+                          }`}
                         >
+                          <option value="">現地の移動手段を選択してください（必須）</option>
                           {LOCAL_TRANSPORT_METHODS.map(m => (
                             <option key={m.id} value={m.id}>{m.label}</option>
                           ))}
@@ -17087,6 +17146,12 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                           ▼
                         </span>
                       </div>
+                      {localTransportError && (
+                        <p className="mt-1 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5 animate-in fade-in">
+                          <AlertCircle size={12} className="shrink-0 text-rose-500" />
+                          <span>旅行中（現地）の移動手段を選択してください！</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
