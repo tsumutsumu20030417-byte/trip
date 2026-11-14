@@ -399,10 +399,61 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, o
   const [selectedMuni, setSelectedMuni] = useState(null);
   const [apiPrefCityNames, setApiPrefCityNames] = useState([]);
 
-  const handleChangeSelectedMuni = (nextMuni) => {
+  const prefDetailCardRef = useRef(null);
+  const muniListScrollRef = useRef(null);
+  const muniButtonRefsMap = useRef({});
+
+  // 親のスクロールコンテナを基準に、対象要素を画面内の見やすい位置へスムーズにスクロールするヘルパー
+  const scrollElementIntoComfortableView = (targetEl, topOffset = 76) => {
+    if (!targetEl) return;
+    let parent = targetEl.parentElement;
+    while (parent && parent !== document.body) {
+      const style = window.getComputedStyle(parent);
+      if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+        const parentRect = parent.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+        const nextTop = parent.scrollTop + (targetRect.top - parentRect.top) - topOffset;
+        parent.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' });
+        return;
+      }
+      parent = parent.parentElement;
+    }
+    targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleChangeSelectedMuni = (nextMuni, options = {}) => {
+    const { fromMap = false } = options;
     setSelectedMuni(nextMuni);
     if (onSelectMuniChange) {
       onSelectMuniChange(nextMuni ? { pref: selectedPref, muni: nextMuni } : null);
+    }
+
+    if (nextMuni) {
+      setTimeout(() => {
+        // 1) 市区町村の地図をタップした時は、詳細カード＆下の一覧が画面内の見やすい位置に収まるよう自動スクロール
+        if (fromMap && prefDetailCardRef.current) {
+          scrollElementIntoComfortableView(prefDetailCardRef.current, 68);
+        }
+
+        // 2) 下の「市区町村一覧」ボックス内でも、選択された市町村ボタンの位置まで自動スクロール
+        const listContainer = muniListScrollRef.current;
+        const cleanTarget = nextMuni.replace(/（.*?）/g, '').trim();
+        let targetBtn = muniButtonRefsMap.current[nextMuni] || muniButtonRefsMap.current[cleanTarget];
+        if (!targetBtn) {
+          const matchedKey = Object.keys(muniButtonRefsMap.current).find(k => {
+            const cleanK = k.replace(/（.*?）/g, '').trim();
+            return cleanK === cleanTarget || k.includes(cleanTarget) || cleanTarget.includes(cleanK);
+          });
+          if (matchedKey) targetBtn = muniButtonRefsMap.current[matchedKey];
+        }
+        if (listContainer && targetBtn) {
+          const cRect = listContainer.getBoundingClientRect();
+          const bRect = targetBtn.getBoundingClientRect();
+          const desiredTop =
+            listContainer.scrollTop + (bRect.top - cRect.top) - listContainer.clientHeight / 2 + bRect.height / 2;
+          listContainer.scrollTo({ top: Math.max(0, desiredTop), behavior: 'smooth' });
+        }
+      }, 90);
     }
   };
   // 全国47都道府県の本物の海岸線・県境GeoJSONデータ（dataofjapan / Natural Earth）
@@ -423,15 +474,14 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, o
   const [prefPan, setPrefPan] = useState({ x: 0, y: 0 });
   const prefDragRef = useRef({ active: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0, pinchDist: null, startZoom: 1 });
 
-  const prefDetailCardRef = useRef(null);
-
   useEffect(() => {
     setPrefZoom(1);
     setPrefPan({ x: 0, y: 0 });
+    muniButtonRefsMap.current = {};
     if (selectedPref && prefDetailCardRef.current) {
       setTimeout(() => {
-        prefDetailCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 100);
+        scrollElementIntoComfortableView(prefDetailCardRef.current, 72);
+      }, 110);
     }
   }, [selectedPref]);
 
@@ -1583,7 +1633,7 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, o
                           d={mp.d}
                           onClick={() => {
                             if (prefDragRef.current.moved) return;
-                            handleChangeSelectedMuni(mp.name);
+                            handleChangeSelectedMuni(mp.name, { fromMap: true });
                           }}
                           fill={cellFill}
                           stroke={isMuniSelected ? '#047857' : isMuniVisited ? '#052E16' : '#1E293B'}
@@ -1680,7 +1730,7 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, o
                             d={cell.d}
                             onClick={() => {
                               if (prefDragRef.current.moved) return;
-                              handleChangeSelectedMuni(cell.name);
+                              handleChangeSelectedMuni(cell.name, { fromMap: true });
                             }}
                             fill={cellFill}
                             stroke={isMuniSelected ? '#047857' : '#1E293B'}
@@ -1761,18 +1811,28 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, o
               </div>
             </div>
 
-            <div className="max-h-52 overflow-y-auto no-scrollbar p-2 bg-stone-50 rounded-xl border border-stone-200/80 flex flex-wrap gap-1.5">
+            <div
+              ref={muniListScrollRef}
+              className="max-h-52 overflow-y-auto no-scrollbar p-2 bg-stone-50 rounded-xl border border-stone-200/80 flex flex-wrap gap-1.5"
+            >
               {filteredMuniList.map(muni => {
-                const isPicked = selectedMuni === muni;
                 const cleanM = muni.replace(/（.*?）/g, '').trim();
+                const cleanSel = (selectedMuni || '').replace(/（.*?）/g, '').trim();
+                const isPicked = Boolean(selectedMuni) && (selectedMuni === muni || cleanSel === cleanM);
                 const isEarned = (badgesByPref[selectedPref] || []).some(
                   b => b.municipality === muni || b.municipality === cleanM
                 );
                 return (
                   <button
                     key={muni}
+                    ref={el => {
+                      if (el) {
+                        muniButtonRefsMap.current[muni] = el;
+                        muniButtonRefsMap.current[cleanM] = el;
+                      }
+                    }}
                     type="button"
-                    onClick={() => handleChangeSelectedMuni(isPicked ? null : muni)}
+                    onClick={() => handleChangeSelectedMuni(isPicked ? null : muni, { fromMap: false })}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer active:scale-95 ${
                       isPicked
                         ? 'bg-[#A7F3D0] text-[#064E3B] border-[#059669] shadow-2xs ring-1 ring-[#5E8473]/30'
@@ -3181,10 +3241,59 @@ const syncSharedTripToCloud = async (trip) => {
   if (!enabled || !trip || trip.isSoloTrip) {
     return { ok: false, reason: !enabled ? 'ENV_MISSING' : 'SOLO_TRIP' };
   }
+  const cleanCode = normalizeInviteCode(trip.id);
+  const payload = stripTripPhotosForCloud({ ...trip, id: cleanCode });
+  const nowIso = new Date().toISOString();
+
+  // パターン1：万能テーブル（idがuuidで、code / invite_code / share_code / data / trip_data カラムがある場合）
   try {
-    const cleanCode = normalizeInviteCode(trip.id);
-    const payload = stripTripPhotosForCloud({ ...trip, id: cleanCode });
-    const res = await fetch(`${url}/rest/v1/shared_trips?on_conflict=id`, {
+    const resUniversal = await fetch(`${url}/rest/v1/shared_trips?on_conflict=code`, {
+      method: 'POST',
+      headers: buildSupabaseHeaders(key, {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      }),
+      body: JSON.stringify({
+        code: cleanCode,
+        invite_code: cleanCode,
+        share_code: cleanCode,
+        data: payload,
+        trip_data: payload,
+        trip: payload,
+        updated_at: nowIso
+      })
+    });
+    if (resUniversal.ok) {
+      return { ok: true };
+    }
+  } catch (e) {
+    // フォールバックへ進む
+  }
+
+  // パターン2：invite_code のみがあるテーブル構造の場合
+  try {
+    const resInvite = await fetch(`${url}/rest/v1/shared_trips?on_conflict=invite_code`, {
+      method: 'POST',
+      headers: buildSupabaseHeaders(key, {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      }),
+      body: JSON.stringify({
+        invite_code: cleanCode,
+        trip_data: payload,
+        updated_at: nowIso
+      })
+    });
+    if (resInvite.ok) {
+      return { ok: true };
+    }
+  } catch (e) {
+    // フォールバックへ進む
+  }
+
+  // パターン3：id カラムが text 型で主キーになっているテーブル構造の場合
+  try {
+    const resIdText = await fetch(`${url}/rest/v1/shared_trips?on_conflict=id`, {
       method: 'POST',
       headers: buildSupabaseHeaders(key, {
         'Content-Type': 'application/json',
@@ -3193,15 +3302,15 @@ const syncSharedTripToCloud = async (trip) => {
       body: JSON.stringify({
         id: cleanCode,
         data: payload,
-        updated_at: new Date().toISOString()
+        updated_at: nowIso
       })
     });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.error('Supabase sync error:', res.status, errText);
-      return { ok: false, status: res.status, error: errText };
+    if (resIdText.ok) {
+      return { ok: true };
     }
-    return { ok: true };
+    const errText = await resIdText.text().catch(() => '');
+    console.error('Supabase sync error:', resIdText.status, errText);
+    return { ok: false, status: resIdText.status, error: errText };
   } catch (e) {
     console.error('Supabase sync network error:', e);
     return { ok: false, error: e?.message || 'NETWORK_ERROR' };
@@ -3212,41 +3321,55 @@ const fetchSharedTripFromCloud = async (tripCode) => {
   const { url, key, enabled } = getSupabaseCredentials();
   const cleanCode = normalizeInviteCode(tripCode);
   if (!enabled || !cleanCode) return null;
-  try {
-    const res = await fetch(
-      `${url}/rest/v1/shared_trips?id=eq.${encodeURIComponent(cleanCode)}&select=id,data,updated_at`,
-      {
-        headers: buildSupabaseHeaders(key)
+
+  const extractTripDataFromRow = (row) => {
+    if (!row || typeof row !== 'object') return null;
+    return row.data || row.trip_data || row.trip || null;
+  };
+
+  // 1) まず code / invite_code / share_code カラムのいずれかで検索（idがuuid型でもエラーにならない安全なクエリ）
+  const candidateQueries = [
+    `code=eq.${encodeURIComponent(cleanCode)}`,
+    `invite_code=eq.${encodeURIComponent(cleanCode)}`,
+    `share_code=eq.${encodeURIComponent(cleanCode)}`,
+    `id=eq.${encodeURIComponent(cleanCode)}`
+  ];
+
+  for (const queryFilter of candidateQueries) {
+    try {
+      const res = await fetch(
+        `${url}/rest/v1/shared_trips?${queryFilter}&select=*&limit=1`,
+        {
+          headers: buildSupabaseHeaders(key)
+        }
+      );
+      if (!res.ok) continue;
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0) {
+        const extracted = extractTripDataFromRow(rows[0]);
+        if (extracted) return extracted;
       }
-    );
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.error('Supabase fetch error:', res.status, errText);
-      return null;
+    } catch (e) {
+      // 次のカラム候補を試す
     }
-    const rows = await res.json();
-    if (Array.isArray(rows) && rows.length > 0 && rows[0]?.data) {
-      return rows[0].data;
-    }
-    return null;
-  } catch (e) {
-    console.error('Supabase fetch network error:', e);
-    return null;
   }
+
+  return null;
 };
 
-// ★ 共有できない原因をその場で特定するためのクラウド接続診断関数
+// ★ 共有できない原因をその場で特定するためのクラウド接続診断関数（どんなカラム構成のshared_tripsでも正しくOK判定）
 const diagnoseSupabaseConnection = async () => {
   const { url, key, enabled } = getSupabaseCredentials();
   if (!enabled) {
     return {
       ok: false,
       code: 'ENV_MISSING',
-      message: '環境変数（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）が読み込まれていません。Vercelで登録後「Redeploy（再デプロイ）」を実行してください。'
+      message: '環境変数（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）が読み込まれていません。VercelやStackBlitzの環境変数設定を確認してください。'
     };
   }
   try {
-    const res = await fetch(`${url}/rest/v1/shared_trips?select=id&limit=1`, {
+    // 特定カラム名に依存しない select=* でテーブルの存在と権限を診断
+    const res = await fetch(`${url}/rest/v1/shared_trips?select=*&limit=1`, {
       headers: buildSupabaseHeaders(key)
     });
     if (res.ok) {
@@ -3257,14 +3380,14 @@ const diagnoseSupabaseConnection = async () => {
       };
     }
     const errText = await res.text().catch(() => '');
-    if (res.status === 404 || errText.includes('shared_trips')) {
+    if (res.status === 404 || errText.includes('PGRST205') || errText.includes('relation "public.shared_trips" does not exist')) {
       return {
         ok: false,
         code: 'TABLE_MISSING',
-        message: 'Supabase内に「shared_trips」テーブルが見つかりません。SupabaseのSQL Editorでテーブル作成SQLを実行してください。'
+        message: 'Supabase内に「shared_trips」テーブルが見つからないか、スキーマキャッシュが未更新です。SQL Editorで作成SQLを実行してください。'
       };
     }
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401 || res.status === 403 || errText.includes('JWT')) {
       return {
         ok: false,
         code: 'AUTH_OR_RLS_ERROR',
@@ -3274,7 +3397,7 @@ const diagnoseSupabaseConnection = async () => {
     return {
       ok: false,
       code: 'HTTP_ERROR',
-      message: `サーバー応答エラー（HTTP ${res.status}）: ${errText.slice(0, 80)}`
+      message: `サーバー応答エラー（HTTP ${res.status}）: ${errText.slice(0, 100)}`
     };
   } catch (e) {
     return {
