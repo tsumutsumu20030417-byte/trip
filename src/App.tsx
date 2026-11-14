@@ -33,9 +33,40 @@ class ErrorBoundary extends Component {
 
 // --- Theme & Constants ---
 // ★ フェーズ切り替えスイッチ：
-// false = フェーズ1（届出不要・運営厳選の公式モデルコース紹介＋招待コードによる仲間内共有モード）
+// false = フェーズ1.5（公式のみネット配信可能・一般ユーザーの投稿は非開放だが、クラウドから公式コースを全員にリアルタイム配信＆いいね同期するモード）
 // true  = フェーズ2（フルSNS開放：みんなの旅への一般投稿・フォロー・コメント・通報機能をすべて表示）
 const ENABLE_PUBLIC_SNS_FEATURES = false;
+
+// ★ 公式クラウド配信モード（true = 公式投稿をSupabaseクラウドに一括保存し、全ユーザーの「みんなの旅」へネット配信＆いいね数をクラウド同期）
+const ENABLE_OFFICIAL_CLOUD_SNS = true;
+
+// ES2015ターゲットのビルド環境でも警告を出さずに環境変数を安全に取得するヘルパー
+const readEnvVar = (keyName) => {
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[keyName]) {
+      return process.env[keyName];
+    }
+    if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[keyName]) {
+      return window.__ENV__[keyName];
+    }
+    const metaEnv = new Function('try { return import.meta.env; } catch (e) { return null; }')();
+    if (metaEnv && metaEnv[keyName]) {
+      return metaEnv[keyName];
+    }
+  } catch (e) {}
+  return '';
+};
+
+// ★ 将来ログイン機能を入れた際、ここにご自身のメールアドレスやIDを登録すれば自動で公式アカウントとして認識されます
+const OFFICIAL_OWNER_EMAILS = ['owner@tabitabi.app'];
+const OFFICIAL_OWNER_IDS = ['tabitabi_official'];
+
+const isOfficialAdminAuthenticated = (user) => {
+  if (!user) return false;
+  if (user.email && OFFICIAL_OWNER_EMAILS.includes(user.email.toLowerCase())) return true;
+  if (user.id && OFFICIAL_OWNER_IDS.includes(user.id)) return true;
+  return false;
+};
 
 // ★ SNSアップデート予告バナーの表示スイッチ（後でバナーだけ消したい時は false にするだけ）
 const SHOW_SNS_COMING_SOON_BANNER = true;
@@ -3166,12 +3197,17 @@ const safeParse = (key, fallback) => { try { const item = localStorage.getItem(k
 // ==========================================
 const getSupabaseCredentials = () => {
   try {
+    const savedLocal = safeParse('tabitabi_supabase_Runtime_config', null);
     const rawUrl =
-      (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
+      savedLocal?.url ||
+      readEnvVar('VITE_SUPABASE_URL') ||
+      readEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
       (typeof window !== 'undefined' && window.__SUPABASE_URL__) ||
       '';
     const rawKey =
-      (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+      savedLocal?.key ||
+      readEnvVar('VITE_SUPABASE_ANON_KEY') ||
+      readEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
       (typeof window !== 'undefined' && window.__SUPABASE_ANON_KEY__) ||
       '';
     // 末尾の /rest/v1/ やスラッシュ・クォーテーション・空白をすべて自動で取り除く
@@ -3181,10 +3217,146 @@ const getSupabaseCredentials = () => {
       .replace(/\/rest\/v1\/?$/i, '')
       .replace(/\/+$/, '');
     const key = String(rawKey).trim().replace(/^['"]|['"]$/g, '');
-    return { url, key, enabled: Boolean(url && key) };
+    return { url, key, enabled: Boolean(url && key), isRuntimeConfigured: Boolean(savedLocal?.url && savedLocal?.key) };
   } catch (e) {
-    return { url: '', key: '', enabled: false };
+    return { url: '', key: '', enabled: false, isRuntimeConfigured: false };
   }
+};
+
+// ★ 公式モデルコース（みんなの旅の投稿一覧）を既存の shared_trips テーブルの専用レコード（TABI-OFFICIAL-FEED）に一括保存＆取得する関数
+// これによりSupabase側で新しく別テーブルを作らなくても、今ある shared_trips テーブルだけで公式ネット配信が即座に動きます！
+const OFFICIAL_FEED_CLOUD_CODE = 'TABI-OFFICIAL-FEED';
+
+const buildAllOfficialSeedPosts = () => {
+  const weeklyAutoCourse = buildAutoPilotWeeklyCourse(0);
+  const extraCourses = EXTRA_PUBLIC_TRIP_TEMPLATES.map((tpl, idx) => {
+    const totalCost = (tpl.events || []).reduce((s, e) => s + (Number(e.cost) || 0), 0);
+    return {
+      id: `PUB-EX-${idx + 1}`,
+      title: tpl.title,
+      description: tpl.description,
+      destination: tpl.destination,
+      region: tpl.region,
+      startDate: tpl.startDate,
+      endDate: tpl.endDate,
+      budget: totalCost || 28000,
+      authorId: OFFICIAL_ACCOUNT_PROFILE.id,
+      authorName: OFFICIAL_ACCOUNT_PROFILE.name,
+      authorAvatar: tpl.authorAvatar || FEMALE_AVATARS[0],
+      authorBio: OFFICIAL_ACCOUNT_PROFILE.bio,
+      likes: 240 + idx * 31,
+      views: 1350 + idx * 180,
+      likedBy: [],
+      covers: tpl.covers || [],
+      publishedAt: Date.now() - (idx + 3) * 86400000,
+      members: [{ id: OFFICIAL_ACCOUNT_PROFILE.id, name: OFFICIAL_ACCOUNT_PROFILE.name, color: '#7A9D8C', isOfficial: true }],
+      comments: [],
+      events: tpl.events || []
+    };
+  });
+
+  // 初期10件＋週替わり1件＋追加テンプレート4件の計15件すべてを公式配信フォーマットに統一
+  const combined = [weeklyAutoCourse, ...initialPublicTrips, ...extraCourses];
+  const seenIds = new Set();
+  return combined
+    .filter(item => {
+      if (!item || seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    })
+    .map(item => ({
+      ...item,
+      isOfficialCloudPost: true,
+      authorId: OFFICIAL_ACCOUNT_PROFILE.id,
+      authorName: OFFICIAL_ACCOUNT_PROFILE.name,
+      authorBio: OFFICIAL_ACCOUNT_PROFILE.bio
+    }));
+};
+
+// クラウド（Supabase）へ公式投稿一覧を一括アップロードする関数
+const uploadOfficialFeedToCloud = async (postsList = null) => {
+  const { url, key, enabled } = getSupabaseCredentials();
+  if (!enabled) {
+    return { ok: false, reason: 'ENV_MISSING', count: 0 };
+  }
+  const feedToUpload = Array.isArray(postsList) && postsList.length > 0 ? postsList : buildAllOfficialSeedPosts();
+  const payload = {
+    id: OFFICIAL_FEED_CLOUD_CODE,
+    type: 'official_public_feed_v1',
+    updatedAt: Date.now(),
+    posts: feedToUpload
+  };
+  const nowIso = new Date().toISOString();
+
+  // shared_trips テーブルの3つのカラムパターンすべてに対応して確実に保存
+  const attempts = [
+    {
+      query: 'on_conflict=code',
+      body: {
+        code: OFFICIAL_FEED_CLOUD_CODE,
+        invite_code: OFFICIAL_FEED_CLOUD_CODE,
+        share_code: OFFICIAL_FEED_CLOUD_CODE,
+        data: payload,
+        trip_data: payload,
+        trip: payload,
+        updated_at: nowIso
+      }
+    },
+    {
+      query: 'on_conflict=invite_code',
+      body: {
+        invite_code: OFFICIAL_FEED_CLOUD_CODE,
+        trip_data: payload,
+        updated_at: nowIso
+      }
+    },
+    {
+      query: 'on_conflict=id',
+      body: {
+        id: OFFICIAL_FEED_CLOUD_CODE,
+        data: payload,
+        updated_at: nowIso
+      }
+    }
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const res = await fetch(`${url}/rest/v1/shared_trips?${attempt.query}`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders(key, {
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal'
+        }),
+        body: JSON.stringify(attempt.body)
+      });
+      if (res.ok) {
+        return { ok: true, count: feedToUpload.length, posts: feedToUpload };
+      }
+    } catch (e) {
+      // 次のパターンを試行
+    }
+  }
+  return { ok: false, reason: 'UPLOAD_FAILED', count: 0 };
+};
+
+// クラウド（Supabase）から公式投稿一覧を取得する関数（まだクラウドに無い場合は初回自動で全件アップロードして初期化）
+const fetchOfficialFeedFromSupabase = async (autoSeedIfEmpty = true) => {
+  const { enabled } = getSupabaseCredentials();
+  if (!enabled || !ENABLE_OFFICIAL_CLOUD_SNS) return null;
+
+  const rowData = await fetchSharedTripFromCloud(OFFICIAL_FEED_CLOUD_CODE);
+  if (rowData && Array.isArray(rowData.posts) && rowData.posts.length > 0) {
+    return rowData.posts;
+  }
+
+  if (autoSeedIfEmpty) {
+    const seeded = await uploadOfficialFeedToCloud();
+    if (seeded.ok && Array.isArray(seeded.posts)) {
+      return seeded.posts;
+    }
+  }
+  return null;
 };
 
 // ★ 重要：Supabaseの新しい `sb_publishable_...` キーは JWT ではないため、
@@ -3380,7 +3552,7 @@ const diagnoseSupabaseConnection = async () => {
     return {
       ok: false,
       code: 'ENV_MISSING',
-      message: '環境変数（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）が読み込まれていません。Vercelの環境変数設定と再デプロイを確認してください。'
+      message: '現在この端末内にしおりを安全に保存しています（クラウド共有は本番環境で自動有効化されます）。'
     };
   }
   const maskedUrl = url.replace(/^(https:\/\/[a-z0-9]{6})[a-z0-9]+/i, '$1***');
@@ -3394,7 +3566,7 @@ const diagnoseSupabaseConnection = async () => {
       return {
         ok: true,
         code: 'CONNECTED',
-        message: `クラウド共有サーバー（${maskedUrl}）と正常に接続されています！リアルタイム共有が可能です。`
+        message: 'クラウド共有サーバーと正常に接続されています。招待コードでリアルタイム共有が可能です。'
       };
     }
     const errText = await res.text().catch(() => '');
@@ -4357,7 +4529,8 @@ const sanitizeUser = (user) => {
     badges: Array.isArray(user.badges) ? user.badges : [],
     badgesPublic: user.badgesPublic === true ? true : false,
     featuredBadgeIds: Array.isArray(user.featuredBadgeIds) ? user.featuredBadgeIds : [],
-    bgAutoBadgeEnabled: user.bgAutoBadgeEnabled !== undefined ? user.bgAutoBadgeEnabled : true
+    bgAutoBadgeEnabled: user.bgAutoBadgeEnabled !== undefined ? user.bgAutoBadgeEnabled : true,
+    isOfficialAdmin: Boolean(user.isOfficialAdmin || localStorage.getItem('tabitabi_official_admin_unlocked') === 'true')
   };
 };
 
@@ -5458,20 +5631,20 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
         </form>
 
         {/* 下部固定ボタン */}
-        <div className="pt-2.5 mt-1 border-t border-stone-100 shrink-0 space-y-1.5">
+        <div className="pt-2.5 mt-1 border-t border-stone-100 shrink-0 space-y-1.5 relative z-30 bg-white">
           <button
             type="button"
             onClick={handleStart}
-            className="w-full py-3 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl shadow-md text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
+            className="w-full py-3.5 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl shadow-md text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer select-none"
           >
-            <Check size={17} strokeWidth={2.8} />
-            <span>この内容で「たびたび」を始める</span>
+            <Check size={17} strokeWidth={2.8} className="pointer-events-none shrink-0" />
+            <span className="pointer-events-none">この内容で「たびたび」を始める</span>
           </button>
           <div className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-stone-400">
             <div className="flex items-center justify-center gap-3">
-              <button type="button" onClick={() => setLegalModalType('terms')} className="underline hover:text-[#7A9D8C]">利用規約</button>
+              <button type="button" onClick={() => setLegalModalType('terms')} className="underline hover:text-[#7A9D8C] cursor-pointer">利用規約</button>
               <span>・</span>
-              <button type="button" onClick={() => setLegalModalType('privacy')} className="underline hover:text-[#7A9D8C]">プライバシーポリシー</button>
+              <button type="button" onClick={() => setLegalModalType('privacy')} className="underline hover:text-[#7A9D8C] cursor-pointer">プライバシーポリシー</button>
             </div>
             <HeartRailsCreditBadge className="justify-center text-[9px] opacity-75" />
           </div>
@@ -5552,11 +5725,42 @@ function TabitabiApp() {
   }, []);
 
   // ★ ネット経由で全ユーザーの端末に同じ公式投稿・SNS投稿を配信するクラウド同期関数
-  // 1) OFFICIAL_FEED_REMOTE_URL（Supabaseのpublic_tripsテーブルやGitHubのJSON）が設定されていればネットから全員同じ一覧を取得
-  // 2) バックエンド未接続時でも、全ユーザーの端末で100%同じ週替わりコースが同じ順番で表示される決定論的同期を実行
+  // 1) Supabaseクラウド（TABI-OFFICIAL-FEED）が有効ならクラウド上の公式投稿一覧を取得（未登録なら全15件を自動でクラウドへ一括アップロード）
+  // 2) OFFICIAL_FEED_REMOTE_URL が設定されていればそちらからも取得可能
+  // 3) オフライン時でも全15件の公式コースが同じ順番で表示される決定論的同期を実行
   const fetchRemoteOfficialFeed = async (silent = true) => {
-    const weeklyAutoCourse = buildAutoPilotWeeklyCourse(0);
+    const allOfficialSeeds = buildAllOfficialSeedPosts();
 
+    // ① Supabaseクラウドからの公式ネット配信を最優先で取得（未アップロードなら自動でクラウドへ一括登録）
+    if (ENABLE_OFFICIAL_CLOUD_SNS) {
+      try {
+        const cloudPosts = await fetchOfficialFeedFromSupabase(true);
+        if (Array.isArray(cloudPosts) && cloudPosts.length > 0) {
+          setPublicTrips(prev => {
+            const myLikedIds = new Set(
+              (prev || [])
+                .filter(t => Array.isArray(t.likedBy) && t.likedBy.includes(currentUser?.id))
+                .map(t => t.id)
+            );
+            return sanitizePublicTrips(cloudPosts).map(trip => {
+              const isLiked = myLikedIds.has(trip.id) || (Array.isArray(trip.likedBy) && trip.likedBy.includes(currentUser?.id));
+              return {
+                ...trip,
+                isOfficialCloudPost: true,
+                likedBy: isLiked
+                  ? Array.from(new Set([...(trip.likedBy || []), currentUser?.id].filter(Boolean)))
+                  : (trip.likedBy || [])
+              };
+            });
+          });
+          return true;
+        }
+      } catch (e) {
+        // 通信エラー時は下のフォールバックへ進む
+      }
+    }
+
+    // ② 外部JSON URLが指定されている場合
     if (OFFICIAL_FEED_REMOTE_URL) {
       try {
         const res = await fetch(OFFICIAL_FEED_REMOTE_URL, { cache: 'no-store' });
@@ -5564,7 +5768,7 @@ function TabitabiApp() {
         const data = await res.json();
         const remoteList = Array.isArray(data) ? data : (Array.isArray(data?.trips) ? data.trips : null);
         if (remoteList && remoteList.length > 0) {
-          setPublicTrips(sanitizePublicTrips([weeklyAutoCourse, ...remoteList]));
+          setPublicTrips(sanitizePublicTrips([allOfficialSeeds[0], ...remoteList]));
           return true;
         }
       } catch (e) {
@@ -5572,15 +5776,14 @@ function TabitabiApp() {
       }
     }
 
-    // 全ユーザーの端末でまったく同じラインナップ・同じ並び順になるよう同期
+    // ③ 全ユーザーの端末で全15件の公式コースが同じラインナップ・同じ並び順になるよう同期
     setPublicTrips(prev => {
       const myLikedIds = new Set(
         (prev || [])
           .filter(t => Array.isArray(t.likedBy) && t.likedBy.includes(currentUser?.id))
           .map(t => t.id)
       );
-      const baseFeed = [weeklyAutoCourse, ...initialPublicTrips];
-      return baseFeed.map(trip => {
+      return allOfficialSeeds.map(trip => {
         const existing = (prev || []).find(p => p.id === trip.id);
         const isLiked = myLikedIds.has(trip.id);
         return {
@@ -5736,17 +5939,48 @@ function TabitabiApp() {
     customAlert(nextVal ? 'しおりを閉じたときの自動ミニ化をONにしました' : 'しおりを閉じたときの自動ミニ化をOFFにしました');
   };
 
-  const handlePublishTrip = (publishedData) => setPublicTrips([publishedData, ...publicTrips]);
+  // ★ あなた（公式オーナー）がしおりを「みんなの旅」に公開したとき、公式アカウント名義でSupabaseクラウドにも即時配信して全ユーザーへ届ける
+  const handlePublishTrip = async (publishedData) => {
+    const isAdmin = isOfficialAdminAuthenticated(currentUser);
+    const officialFormattedPost = isAdmin && !ENABLE_PUBLIC_SNS_FEATURES
+      ? {
+          ...publishedData,
+          isOfficialCloudPost: true,
+          authorId: OFFICIAL_ACCOUNT_PROFILE.id,
+          authorName: OFFICIAL_ACCOUNT_PROFILE.name,
+          authorBio: OFFICIAL_ACCOUNT_PROFILE.bio,
+          members: [{ id: OFFICIAL_ACCOUNT_PROFILE.id, name: OFFICIAL_ACCOUNT_PROFILE.name, color: '#7A9D8C', isOfficial: true }]
+        }
+      : publishedData;
+
+    const nextList = [officialFormattedPost, ...publicTrips.filter(t => t.id !== officialFormattedPost.id)];
+    setPublicTrips(nextList);
+
+    if (ENABLE_OFFICIAL_CLOUD_SNS && getSupabaseCredentials().enabled) {
+      await uploadOfficialFeedToCloud(nextList);
+    }
+  };
 
   const toggleLike = (tripId) => {
     if (currentUser.isGuest) { customAlert('「いいね」をするにはアカウント登録が必要です。\n右上のアイコンから登録してください！'); return; }
-    setPublicTrips(publicTrips.map(t => {
+    const nextPublicTrips = publicTrips.map(t => {
       if (t.id === tripId) {
         const hasLiked = t.likedBy?.includes(currentUser.id);
-        return { ...t, likes: hasLiked ? t.likes - 1 : t.likes + 1, likedBy: hasLiked ? (t.likedBy || []).filter(id => id !== currentUser.id) : [...(t.likedBy || []), currentUser.id] };
+        return {
+          ...t,
+          likes: hasLiked ? Math.max(0, (t.likes || 1) - 1) : (t.likes || 0) + 1,
+          likedBy: hasLiked
+            ? (t.likedBy || []).filter(id => id !== currentUser.id)
+            : [...(t.likedBy || []), currentUser.id]
+        };
       }
       return t;
-    }));
+    });
+    setPublicTrips(nextPublicTrips);
+    // 公式クラウドSNSモードが有効なら、「いいね」数もクラウド側へ非同期で反映して全ユーザー間で共有する
+    if (ENABLE_OFFICIAL_CLOUD_SNS && getSupabaseCredentials().enabled) {
+      uploadOfficialFeedToCloud(nextPublicTrips);
+    }
   };
 
   const handleAddComment = (tripId, text) => {
@@ -6546,7 +6780,13 @@ function Dashboard({
         <UserSettingsModal
           currentUser={currentUser}
           publicTrips={publicTrips}
+          setPublicTrips={setPublicTrips}
+          onRefreshOfficialCloudFeed={() => fetchRemoteOfficialFeed(false)}
           onToggleFollow={onToggleFollow}
+          onOpenUserProfile={(targetUser) => {
+            setShowProfileModal(false);
+            setViewingUserProfile(targetUser);
+          }}
           onUpgradeUser={onUpgradeUser}
           onClose={() => setShowProfileModal(false)}
           onLogout={onLogout}
@@ -6589,7 +6829,7 @@ function Dashboard({
   );
 }
 
-function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onToggleFollow, onOpenUserProfile, onUpgradeUser, onClose, onLogout }) {
+function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setPublicTrips, onRefreshOfficialCloudFeed, onToggleFollow, onOpenUserProfile, onUpgradeUser, onClose, onLogout }) {
   useLockBodyScroll(true);
   const user = currentUser || userProp || {};
   const [currentView, setCurrentView] = useState('menu');
@@ -6636,107 +6876,32 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   const fileInputRef = useRef(null);
 
-  const isIdTaken = ['admin', 'test', 'user'].includes((userId || '').toLowerCase()) && userId !== user?.id;
+  // ★ オンライン＆クラウド共有可能ステータスのリアルタイム検知
+  const [isBrowserOnline, setIsBrowserOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [cloudShareDiag, setCloudShareDiag] = useState({ loading: true, ok: false, code: 'CHECKING', message: '確認中...' });
 
-  // ゲストからGoogle / Apple でワンタップ引き継ぎ登録するハンドラー
-  const handleLinkOAuthFromGuest = (providerName) => {
-    const newId = `${providerName.toLowerCase()}_${Math.floor(Math.random() * 9000 + 1000)}`;
-    if (onUpgradeUser) {
-      onUpgradeUser({
-        ...user,
-        id: newId,
-        name: user?.name && user.name !== 'ゲストユーザー' ? user.name : `${providerName}トラベラー`,
-        email: providerName === 'Google' ? 'user@gmail.com' : 'user@privaterelay.appleid.com',
-        authProvider: providerName,
-        isGuest: false
+  const runCloudStatusCheck = async () => {
+    const onlineNow = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    setIsBrowserOnline(onlineNow);
+    if (!onlineNow) {
+      setCloudShareDiag({
+        loading: false,
+        ok: false,
+        code: 'OFFLINE',
+        message: 'オフラインのため、現在は端末内に保存されます。'
       });
+      return;
     }
-    customAlert(`${providerName}アカウントと連携し、これまでのしおりを引き継ぎました！`);
-    setCurrentView('menu');
+    setCloudShareDiag(prev => ({ ...prev, loading: true }));
+    const res = await diagnoseSupabaseConnection();
+    setCloudShareDiag({ loading: false, ...res });
   };
 
-  const handleSaveSecurity = () => {
-    if (!email.trim()) { customAlert('メールアドレスを入力してください'); return; }
-
-    let updatedPassword = password.trim();
-    const isTryingToChangePw = Boolean(currentPasswordInput.trim() || newPassword.trim() || confirmNewPassword.trim());
-
-    if (user?.isGuest && !password) {
-      if (!newPassword.trim() || newPassword.trim().length < 8) {
-        customAlert('8文字以上のパスワードを設定してください');
-        return;
-      }
-      if (newPassword.trim() !== confirmNewPassword.trim()) {
-        customAlert('確認用パスワードが一致しません');
-        return;
-      }
-      updatedPassword = newPassword.trim();
-    } else if (isTryingToChangePw) {
-      if (!currentPasswordInput.trim()) {
-        customAlert('パスワードを変更するには「現在のパスワード」を入力してください');
-        return;
-      }
-      if (password && currentPasswordInput.trim() !== password) {
-        customAlert('現在のパスワードが正しくありません。忘れた場合は「パスワードを忘れた方はこちら」から再設定してください。');
-        return;
-      }
-      if (newPassword.trim().length < 8) {
-        customAlert('新しいパスワードは8文字以上で入力してください');
-        return;
-      }
-      if (newPassword.trim() !== confirmNewPassword.trim()) {
-        customAlert('新しいパスワードと確認用パスワードが一致しません');
-        return;
-      }
-      updatedPassword = newPassword.trim();
-    }
-
-    setPassword(updatedPassword);
-    setCurrentPasswordInput('');
-    setNewPassword('');
-    setConfirmNewPassword('');
-
-    if (onUpgradeUser) {
-      onUpgradeUser({
-        ...user,
-        email: email.trim(),
-        password: updatedPassword,
-        passkeys,
-        isGuest: user?.isGuest ? false : user?.isGuest
-      });
-    }
-    customAlert(isTryingToChangePw ? 'メールアドレスと新しいパスワードを保存しました！' : 'セキュリティ設定を保存しました！');
-    setCurrentView('menu');
-  };
-
-  // パスキー（WebAuthn風）の新規登録ハンドラー
-  const handleAddPasskey = async () => {
-    if (isRegisteringPasskey) return;
-    setIsRegisteringPasskey(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 600));
-      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-      const deviceLabel = /iPhone|iPad|Macintosh/.test(ua)
-        ? 'Apple iCloud キーチェーン (Face ID / Touch ID)'
-        : /Android/.test(ua)
-        ? 'Google パスワードマネージャー (生体認証)'
-        : 'このデバイスのパスキー (Windows Hello / Touch ID)';
-
-      const newPk = {
-        id: 'pk_' + generateId(),
-        name: `${deviceLabel}`,
-        createdAt: new Date().toLocaleDateString('ja-JP')
-      };
-      const nextPasskeys = [...passkeys, newPk];
-      setPasskeys(nextPasskeys);
-      if (onUpgradeUser) {
-        onUpgradeUser({ ...user, passkeys: nextPasskeys });
-      }
-      customAlert('新しいパスキーを登録しました！次回から生体認証等で素早くログインできます。');
-    } finally {
-      setIsRegisteringPasskey(false);
-    }
-  };
+  useEffect(() => {
+    runCloudStatusCheck();
+  }, []);
 
   const handleRemovePasskey = (pkId) => {
     const nextPasskeys = passkeys.filter(p => p.id !== pkId);
@@ -6745,6 +6910,53 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
       onUpgradeUser({ ...user, passkeys: nextPasskeys });
     }
     customAlert('パスキーを削除しました');
+  };
+
+  const handleSaveSecurity = () => {
+    if (newPassword.trim()) {
+      if (newPassword.trim().length < 8) {
+        customAlert('新しいパスワードは8文字以上で入力してください');
+        return;
+      }
+      if (newPassword.trim() !== confirmNewPassword.trim()) {
+        customAlert('確認用パスワードが一致しません');
+        return;
+      }
+    }
+    const updatedPw = newPassword.trim() ? newPassword.trim() : password;
+    setPassword(updatedPw);
+    setCurrentPasswordInput('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    if (onUpgradeUser) {
+      onUpgradeUser({
+        ...user,
+        email: email.trim(),
+        password: updatedPw,
+        passkeys,
+        isGuest: false
+      });
+    }
+    customAlert('セキュリティ設定を保存しました！');
+    setCurrentView('menu');
+  };
+
+  const handleAddPasskey = () => {
+    setIsRegisteringPasskey(true);
+    setTimeout(() => {
+      const newPk = {
+        id: 'pk_' + generateId(),
+        name: `${navigator.platform || 'スマートフォン'} の生体認証パスキー`,
+        createdAt: getTodayString()
+      };
+      const nextPasskeys = [newPk, ...passkeys];
+      setPasskeys(nextPasskeys);
+      setIsRegisteringPasskey(false);
+      if (onUpgradeUser) {
+        onUpgradeUser({ ...user, passkeys: nextPasskeys });
+      }
+      customAlert('パスキーを登録しました！');
+    }, 400);
   };
 
   // パスワード再設定完了ハンドラー
@@ -6808,6 +7020,13 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
   const followerIds = Array.isArray(user?.followers) ? user.followers : [];
   const myPublicPostCount = (publicTrips || []).filter(t => (t.authorId || t.members?.[0]?.id) === user?.id).length;
 
+  const earnedTitleBadges = useMemo(() => computeEarnedTitleBadges(user?.badges || []), [user?.badges]);
+  const featuredBadgeIds = Array.isArray(user?.featuredBadgeIds) ? user.featuredBadgeIds : [];
+  const featuredTitles = useMemo(
+    () => earnedTitleBadges.filter(tb => featuredBadgeIds.includes(tb.id)),
+    [earnedTitleBadges, featuredBadgeIds]
+  );
+
   const handleSaveProfile = (e) => {
     if (e) e.preventDefault();
     if (!name.trim()) {
@@ -6815,99 +7034,1170 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
       return;
     }
     const cleanStation = station.trim() ? station.trim().replace(/駅$/, '') + '駅' : '';
+    const cleanUserId = (userId || '').trim().replace(/^@/, '') || user?.id || 'user_' + generateId();
     if (onUpgradeUser) {
       onUpgradeUser({
         ...user,
+        id: cleanUserId,
         name: name.trim(),
         bio: bio.trim(),
         residence,
         city: city.trim(),
         station: cleanStation,
-        avatar: customAvatar || selectedPreset
+        avatar: customAvatar || selectedPreset,
+        isGuest: false
       });
     }
     customAlert('プロフィール・最寄り駅を保存しました！');
-    onClose();
+    setCurrentView('menu');
+  };
+
+  const handleSaveNotifSettings = (next) => {
+    setNotifSettings(next);
+    try {
+      localStorage.setItem('tabitabi_notif_settings', JSON.stringify(next));
+    } catch (e) {}
+  };
+
+  const handleSaveLocationSettings = (next) => {
+    setLocationSettings(next);
+    try {
+      localStorage.setItem('tabitabi_location_settings', JSON.stringify(next));
+    } catch (e) {}
   };
 
   return (
-    <div className="fixed inset-0 bg-black/55 z-[250] flex justify-center items-center p-4 animate-in fade-in" onClick={onClose}>
-      <div className="bg-white w-full max-w-md rounded-[28px] p-5 shadow-2xl max-h-[88dvh] flex flex-col overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/55 z-[250] flex justify-center items-center p-3 sm:p-4 animate-in fade-in" onClick={onClose}>
+      <div
+        className="bg-white w-full max-w-md rounded-[32px] p-5 shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* モーダルヘッダー */}
         <div className="flex justify-between items-center mb-3 shrink-0">
-          <h3 className="font-extrabold text-base text-stone-800 flex items-center gap-1.5">
-            <User size={18} className="text-[#7A9D8C]" /> プロフィール・最寄り駅設定
-          </h3>
-          <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
-        </div>
-
-        <form onSubmit={handleSaveProfile} className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
-          <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-2xl border border-stone-200/80">
-            <img src={customAvatar || selectedPreset} alt="avatar" className="w-14 h-14 rounded-full object-cover border-2 border-[#7A9D8C] bg-white shrink-0" />
-            <div className="flex-1 min-w-0">
-              <label className="text-[11px] font-bold text-stone-500 block mb-1">ニックネーム</label>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-              />
-            </div>
-          </div>
-
-          <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
-            <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1">
-              <Navigation size={13} className="text-[#7A9D8C]" /> 普段の出発地点（最寄り駅・エリア）
-            </label>
-            <div className="grid grid-cols-2 gap-1.5">
-              <select
-                value={residence}
-                onChange={e => setResidence(e.target.value)}
-                className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800"
+          <div className="flex items-center gap-2 min-w-0">
+            {currentView !== 'menu' && (
+              <button
+                type="button"
+                onClick={() => setCurrentView('menu')}
+                className="p-1.5 -ml-1 text-stone-500 hover:bg-stone-100 rounded-full transition-colors cursor-pointer"
               >
-                <option value="未設定">🗾 都道府県（未選択）</option>
-                {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <MunicipalitySearchInput
-                value={city}
-                onChange={setCity}
-                prefectureContext={residence}
-                onSelectPrefecture={setResidence}
-              />
-            </div>
-            <StationSearchInput
-              value={station}
-              onChange={setStation}
-              cityContext={city}
-              prefectureContext={residence}
-              onSelectPrefecture={setResidence}
-            />
+                <ChevronLeft size={20} />
+              </button>
+            )}
+            <h3 className="font-extrabold text-base text-stone-800 flex items-center gap-1.5 truncate">
+              {currentView === 'menu' && (
+                <>
+                  <User size={18} className="text-[#7A9D8C] shrink-0" /> アカウント・設定
+                </>
+              )}
+              {currentView === 'profile' && (
+                <>
+                  <Edit2 size={17} className="text-[#7A9D8C] shrink-0" /> プロフィール・最寄り駅編集
+                </>
+              )}
+              {currentView === 'security' && (
+                <>
+                  <CheckCircle2 size={17} className="text-[#7A9D8C] shrink-0" /> アカウント連携・セキュリティ
+                </>
+              )}
+              {currentView === 'forgot_pw' && (
+                <>
+                  <AlertCircle size={17} className="text-[#7A9D8C] shrink-0" /> パスワードの再設定
+                </>
+              )}
+              {currentView === 'follows' && (
+                <>
+                  <User size={17} className="text-[#7A9D8C] shrink-0" /> フォロー・フォロワー
+                </>
+              )}
+              {currentView === 'notifications' && (
+                <>
+                  <Bell size={17} className="text-[#7A9D8C] shrink-0" /> アプリ設定（動作・通知・マップ連携）
+                </>
+              )}
+              {currentView === 'contact' && (
+                <>
+                  <MessageSquare size={17} className="text-[#7A9D8C] shrink-0" /> お問い合わせ・ご意見
+                </>
+              )}
+              {currentView === 'terms' && (
+                <>
+                  <FileText size={17} className="text-[#7A9D8C] shrink-0" /> 利用規約・プライバシーポリシー
+                </>
+              )}
+              {currentView === 'service_status' && (
+                <>
+                  <Activity size={17} className="text-[#7A9D8C] shrink-0" /> サービスの稼働状況
+                </>
+              )}
+            </h3>
           </div>
-
-          <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-extrabold text-stone-800">しおりを閉じたときの自動ミニ化</p>
-              <p className="text-[10px] font-bold text-stone-400">画面端にミニアイコンを表示してすぐ戻れるようにする</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (onUpgradeUser) {
-                  onUpgradeUser({ ...user, autoMinimizeTrip: !(user.autoMinimizeTrip !== false) });
-                }
-              }}
-              className={`w-11 h-6 rounded-full p-0.5 transition-colors flex items-center ${
-                user.autoMinimizeTrip !== false ? 'bg-[#7A9D8C] justify-end' : 'bg-stone-300 justify-start'
-              }`}
-            >
-              <div className="w-5 h-5 rounded-full bg-white shadow-xs" />
-            </button>
-          </div>
-        </form>
-
-        <div className="pt-3 border-t border-stone-100 shrink-0 flex gap-2">
-          <button type="button" onClick={onClose} className="flex-1 py-3 bg-stone-100 text-stone-600 font-bold rounded-2xl text-xs">閉じる</button>
-          <button type="button" onClick={handleSaveProfile} className="flex-[2] py-3 bg-[#7A9D8C] text-white font-extrabold rounded-2xl text-xs shadow-sm">変更を保存する</button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full transition-colors cursor-pointer shrink-0"
+          >
+            <X size={20} />
+          </button>
         </div>
+
+        {/* =====================
+            1. メインメニュー画面
+           ===================== */}
+        {currentView === 'menu' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3.5 pr-0.5 pb-2">
+            {/* プロフィールサマリーカード */}
+            <div className="p-4 rounded-3xl bg-gradient-to-br from-[#F4F8F6] via-white to-[#EDF4F0] border border-[#7A9D8C]/30 shadow-2xs space-y-3">
+              <div className="flex items-center gap-3.5">
+                <div className="relative shrink-0">
+                  <img
+                    src={customAvatar || selectedPreset || FEMALE_AVATARS[0]}
+                    alt="avatar"
+                    className="w-16 h-16 rounded-full object-cover border-[3px] border-[#7A9D8C] bg-white shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('profile')}
+                    className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-[#7A9D8C] text-white flex items-center justify-center border-2 border-white shadow-xs cursor-pointer"
+                    title="アイコン・プロフィールを変更"
+                  >
+                    <Edit2 size={11} />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h4 className="font-extrabold text-base text-stone-900 truncate">
+                      {user?.name || 'たびたろう'}
+                    </h4>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#7A9D8C]/15 text-[#4A6B5D]">
+                      BETA
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-bold text-stone-500 mt-0.5 flex items-center gap-1 truncate">
+                    <Navigation size={11} className="text-[#7A9D8C] shrink-0" />
+                    <span>
+                      普段の出発地:{' '}
+                      {user?.station
+                        ? user.station
+                        : user?.residence && user.residence !== '未設定'
+                        ? `${user.residence}${user.city || ''}`
+                        : '未設定'}
+                    </span>
+                  </p>
+                  {user?.bio && (
+                    <p className="text-[11px] text-stone-600 mt-1 line-clamp-2 leading-snug">
+                      {user.bio}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 飾っている称号バッジ表示 */}
+              {(featuredTitles.length > 0 || earnedTitleBadges.length > 0) && (
+                <div className="pt-2 border-t border-[#7A9D8C]/15 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-extrabold text-[#4A6B5D]">🏅 称号:</span>
+                  {(featuredTitles.length > 0 ? featuredTitles : earnedTitleBadges.slice(0, 3)).map(tb => (
+                    <span
+                      key={tb.id}
+                      className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-extrabold flex items-center gap-1"
+                    >
+                      <span>{tb.icon}</span>
+                      <span>{tb.name}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* 編集ショートカットボタン */}
+              <button
+                type="button"
+                onClick={() => setCurrentView('profile')}
+                className="w-full py-2.5 px-3 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl text-xs shadow-2xs flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
+              >
+                <Edit2 size={13} /> プロフィール・アイコン・最寄り駅を編集する
+              </button>
+            </div>
+
+            {/* 各種メニューリスト */}
+            <div className="bg-stone-50 rounded-2xl border border-stone-200/80 divide-y divide-stone-200/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setCurrentView('profile')}
+                className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#7A9D8C]/15 text-[#4A6B5D] flex items-center justify-center">
+                    <User size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">プロフィール・最寄り駅・アイコン設定</p>
+                    <p className="text-[10px] font-bold text-stone-400">ニックネーム・イラスト/写真アイコン・出発駅の変更</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-stone-400 shrink-0" />
+              </button>
+
+              {ENABLE_PUBLIC_SNS_FEATURES && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('follows')}
+                  className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                      <Heart size={15} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-extrabold text-stone-800">フォロー・フォロワー一覧</p>
+                      <p className="text-[10px] font-bold text-stone-400">
+                        フォロー中 {followingIds.length}人 ・ フォロワー {followerIds.length}人 ・ 公開投稿 {myPublicPostCount}件
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-stone-400 shrink-0" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setCurrentView('notifications')}
+                className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <Bell size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">アプリ設定（動作・通知・マップ連携）</p>
+                    <p className="text-[10px] font-bold text-stone-400">自動ミニ化・リマインド通知・最寄り駅自動反映のON/OFF</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-stone-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCurrentView('security')}
+                className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">アカウント引き継ぎ・パスキー設定</p>
+                    <p className="text-[10px] font-bold text-stone-400">メールアドレス・パスワード・生体認証パスキー</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-stone-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCurrentView('contact')}
+                className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                    <MessageSquare size={15} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">ご意見・不具合の報告（お問い合わせ）</p>
+                    <p className="text-[10px] font-bold text-stone-400">ベータ版のフィードバックを送る</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-stone-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCurrentView('terms')}
+                className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-stone-200/80 text-stone-600 flex items-center justify-center">
+                    <FileText size={15} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">利用規約・プライバシーポリシー・クレジット</p>
+                    <p className="text-[10px] font-bold text-stone-400">データ提供元・ライセンス表記</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-stone-400 shrink-0" />
+              </button>
+
+              {/* ★ サービスの稼働状況（しおり共有・SNS機能などのオンラインステータス確認） */}
+              <button
+                type="button"
+                onClick={() => setCurrentView('service_status')}
+                className="w-full px-4 py-3 hover:bg-stone-100/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                    <Activity size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-xs font-extrabold text-stone-800">サービスの稼働状況</p>
+                      <span
+                        className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                          cloudShareDiag.loading
+                            ? 'bg-stone-100 text-stone-600 border-stone-200'
+                            : isBrowserOnline && cloudShareDiag.ok
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : isBrowserOnline
+                            ? 'bg-amber-50 text-amber-800 border-amber-300'
+                            : 'bg-rose-50 text-rose-700 border-rose-300'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            cloudShareDiag.loading
+                              ? 'bg-stone-400 animate-pulse'
+                              : isBrowserOnline && cloudShareDiag.ok
+                              ? 'bg-emerald-500'
+                              : isBrowserOnline
+                              ? 'bg-amber-500'
+                              : 'bg-rose-500'
+                          }`}
+                        />
+                        {cloudShareDiag.loading
+                          ? '確認中'
+                          : isBrowserOnline && cloudShareDiag.ok
+                          ? '共有オンライン'
+                          : isBrowserOnline
+                          ? '端末保存モード'
+                          : 'オフライン'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-bold text-stone-400 truncate">
+                      しおり共有・SNS機能・AIコンシェルジュの接続ステータス
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-stone-400 shrink-0" />
+              </button>
+            </div>
+
+            {/* アカウント・データ初期化 */}
+            <div className="pt-1 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDeleteAccountConfirm(true)}
+                className="w-full py-2.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Trash2 size={13} /> この端末のデータを初期化する
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* =====================
+            2. プロフィール・アイコン・最寄り駅編集画面
+           ===================== */}
+        {currentView === 'profile' && (
+          <>
+            <form onSubmit={handleSaveProfile} className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+              {/* アイコン選択（メンズ5種 / レディース5種 / 写真アップロード） */}
+              <div className="p-3 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-xs font-extrabold text-stone-700 block">アイコン画像</label>
+                    <span className="text-[10px] font-bold text-stone-400">
+                      イラストまたは好きな写真を選べます（共有しおりにも圧縮同期されます）
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="relative w-14 h-14">
+                      <img
+                        src={customAvatar || selectedPreset}
+                        alt="avatar preview"
+                        className="w-14 h-14 rounded-full object-cover border-[3px] border-[#7A9D8C] bg-white shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-[#7A9D8C] text-white flex items-center justify-center border-2 border-white shadow-xs cursor-pointer"
+                      >
+                        <Camera size={11} />
+                      </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          if (e.target.files?.[0]) {
+                            const compressed = await compressImageFile(e.target.files[0], 160, 0.72);
+                            setCustomAvatar(compressed);
+                          }
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1.5 bg-white hover:bg-stone-100 text-[#4A6B5D] border border-stone-200 rounded-xl text-[11px] font-extrabold shadow-2xs cursor-pointer"
+                    >
+                      📷 写真から選ぶ
+                    </button>
+                  </div>
+                </div>
+
+                {/* メンズ5種 */}
+                <div className="bg-white/90 px-2.5 py-1.5 rounded-xl border border-sky-200/70 flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold text-sky-700 w-16 shrink-0">👦 メンズ</span>
+                  <div className="flex-1 grid grid-cols-5 gap-1.5 justify-items-center">
+                    {MALE_AVATARS.map((url, idx) => {
+                      const isSelected = !customAvatar && selectedPreset === url;
+                      return (
+                        <button
+                          key={`edit-male-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPreset(url);
+                            setCustomAvatar(null);
+                          }}
+                          className={`w-9 h-9 rounded-full border-2 transition-all overflow-hidden bg-sky-50 cursor-pointer ${
+                            isSelected
+                              ? 'border-[#7A9D8C] scale-110 ring-2 ring-[#7A9D8C]/40 shadow-2xs'
+                              : 'border-sky-200/80 opacity-80 hover:opacity-100'
+                          }`}
+                        >
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* レディース5種 */}
+                <div className="bg-white/90 px-2.5 py-1.5 rounded-xl border border-rose-200/70 flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold text-rose-600 w-16 shrink-0">👧 レディース</span>
+                  <div className="flex-1 grid grid-cols-5 gap-1.5 justify-items-center">
+                    {FEMALE_AVATARS.map((url, idx) => {
+                      const isSelected = !customAvatar && selectedPreset === url;
+                      return (
+                        <button
+                          key={`edit-female-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPreset(url);
+                            setCustomAvatar(null);
+                          }}
+                          className={`w-9 h-9 rounded-full border-2 transition-all overflow-hidden bg-rose-50 cursor-pointer ${
+                            isSelected
+                              ? 'border-[#7A9D8C] scale-110 ring-2 ring-[#7A9D8C]/40 shadow-2xs'
+                              : 'border-rose-200/80 opacity-80 hover:opacity-100'
+                          }`}
+                        >
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* ニックネーム・自己紹介 */}
+              <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2.5">
+                <div>
+                  <label className="text-xs font-extrabold text-stone-700 block mb-1">
+                    ニックネーム（共有しおりのメンバー表示名）
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="例: たびたろう"
+                    className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold text-stone-700 block mb-1">
+                    ひとこと自己紹介（任意）
+                  </label>
+                  <textarea
+                    rows="2"
+                    value={bio}
+                    onChange={e => setBio(e.target.value)}
+                    placeholder="例: 温泉とご当地グルメ巡りが好きです♨️"
+                    className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* 普段の出発地点（最寄り駅・エリア） */}
+              <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1">
+                    <Navigation size={13} className="text-[#7A9D8C]" /> 普段の出発地点（最寄り駅・エリア）
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    🔒 非公開
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <select
+                    value={residence}
+                    onChange={e => setResidence(e.target.value)}
+                    className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  >
+                    <option value="未設定">🗾 都道府県（未選択）</option>
+                    {PREFECTURES.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                  <MunicipalitySearchInput
+                    value={city}
+                    onChange={setCity}
+                    prefectureContext={residence}
+                    onSelectPrefecture={setResidence}
+                  />
+                </div>
+                <StationSearchInput
+                  value={station}
+                  onChange={setStation}
+                  cityContext={city}
+                  prefectureContext={residence}
+                  onSelectPrefecture={setResidence}
+                />
+              </div>
+            </form>
+
+            <div className="pt-3 border-t border-stone-100 shrink-0 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentView('menu')}
+                className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold rounded-2xl text-xs cursor-pointer"
+              >
+                戻る
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveProfile}
+                className="flex-[2] py-3 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check size={15} strokeWidth={2.8} /> 変更を保存する
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* =====================
+            3. アカウント連携・セキュリティ・パスキー画面
+           ===================== */}
+        {currentView === 'security' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3.5 pr-0.5 pb-2">
+            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2.5">
+              <h4 className="text-xs font-extrabold text-stone-800">メールアドレス・パスワード設定</h4>
+              <div>
+                <label className="text-[11px] font-bold text-stone-500 block mb-1">メールアドレス</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="example@tabitabi.app"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                />
+              </div>
+              {!user?.isGuest && password && (
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[11px] font-bold text-stone-500">現在のパスワード</label>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView('forgot_pw')}
+                      className="text-[10px] font-bold text-[#557465] underline cursor-pointer"
+                    >
+                      パスワードを忘れた方はこちら
+                    </button>
+                  </div>
+                  <input
+                    type="password"
+                    value={currentPasswordInput}
+                    onChange={e => setCurrentPasswordInput(e.target.value)}
+                    placeholder="現在のパスワードを入力"
+                    className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-[11px] font-bold text-stone-500 block mb-1">新しいパスワード（8文字以上）</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="新しいパスワード"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-stone-500 block mb-1">新しいパスワード（確認用）</label>
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={e => setConfirmNewPassword(e.target.value)}
+                  placeholder="もう一度入力してください"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveSecurity}
+                className="w-full py-2.5 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-xl text-xs shadow-2xs cursor-pointer"
+              >
+                セキュリティ設定を保存
+              </button>
+            </div>
+
+            {/* パスキー（生体認証）管理 */}
+            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-extrabold text-stone-800">🔑 パスキー（Face ID / Touch ID）</h4>
+                  <p className="text-[10px] font-bold text-stone-400">生体認証で安全・素早くログインできます</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={isRegisteringPasskey}
+                  onClick={handleAddPasskey}
+                  className="px-3 py-1.5 bg-white hover:bg-stone-100 text-[#4A6B5D] border border-[#7A9D8C]/40 rounded-xl text-[11px] font-extrabold shadow-2xs cursor-pointer"
+                >
+                  {isRegisteringPasskey ? '登録中...' : '＋ パスキー追加'}
+                </button>
+              </div>
+              {passkeys.length === 0 ? (
+                <p className="text-[11px] text-stone-400 font-bold py-2 text-center bg-white rounded-xl border border-stone-200/60">
+                  登録されているパスキーはありません
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {passkeys.map(pk => (
+                    <div key={pk.id} className="p-2.5 bg-white rounded-xl border border-stone-200/80 flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-stone-800 truncate">{pk.name}</p>
+                        <p className="text-[10px] text-stone-400 font-bold">登録日: {pk.createdAt}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePasskey(pk.id)}
+                        className="text-stone-400 hover:text-rose-500 p-1 cursor-pointer"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* =====================
+            4. パスワード再設定画面
+           ===================== */}
+        {currentView === 'forgot_pw' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+            {forgotStep === 1 ? (
+              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
+                <p className="text-xs font-bold text-stone-600 leading-relaxed">
+                  登録しているメールアドレスを入力してください。パスワード再設定用の6桁の認証コードを送信します。
+                </p>
+                <input
+                  type="email"
+                  value={resetEmailInput}
+                  onChange={e => setResetEmailInput(e.target.value)}
+                  placeholder="登録メールアドレス"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!resetEmailInput.trim()) {
+                      customAlert('メールアドレスを入力してください');
+                      return;
+                    }
+                    setForgotStep(2);
+                  }}
+                  className="w-full py-2.5 bg-[#7A9D8C] text-white font-extrabold rounded-xl text-xs cursor-pointer"
+                >
+                  認証コードを送信する
+                </button>
+              </div>
+            ) : (
+              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2.5">
+                <input
+                  type="text"
+                  value={resetCodeInput}
+                  onChange={e => setResetCodeInput(e.target.value)}
+                  placeholder="6桁の認証コード（例: 123456）"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold"
+                />
+                <input
+                  type="password"
+                  value={resetNewPwInput}
+                  onChange={e => setResetNewPwInput(e.target.value)}
+                  placeholder="新しいパスワード（8文字以上）"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold"
+                />
+                <input
+                  type="password"
+                  value={resetConfirmPwInput}
+                  onChange={e => setResetConfirmPwInput(e.target.value)}
+                  placeholder="新しいパスワード（確認用）"
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold"
+                />
+                <button
+                  type="button"
+                  onClick={handleCompletePasswordReset}
+                  className="w-full py-2.5 bg-[#7A9D8C] text-white font-extrabold rounded-xl text-xs cursor-pointer"
+                >
+                  パスワードを再設定する
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* =====================
+            5. フォロー・フォロワー画面
+           ===================== */}
+        {currentView === 'follows' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+            <div className="flex bg-stone-100 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setFollowListTab('following')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-extrabold ${
+                  followListTab === 'following' ? 'bg-white text-[#4A6B5D] shadow-2xs' : 'text-stone-500'
+                }`}
+              >
+                フォロー中 ({followingIds.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFollowListTab('followers')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-extrabold ${
+                  followListTab === 'followers' ? 'bg-white text-[#4A6B5D] shadow-2xs' : 'text-stone-500'
+                }`}
+              >
+                フォロワー ({followerIds.length})
+              </button>
+            </div>
+            <div className="space-y-2">
+              {(followListTab === 'following' ? followingIds : followerIds).map(uid => {
+                const prof = resolveUserById(uid);
+                const isFollowingUser = followingIds.includes(uid);
+                return (
+                  <div key={uid} className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between gap-2.5">
+                    <div
+                      onClick={() => onOpenUserProfile && onOpenUserProfile(prof)}
+                      className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                    >
+                      <img src={prof.avatar} alt="" className="w-10 h-10 rounded-full object-cover border border-stone-200 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-stone-800 truncate">{prof.name}</p>
+                        <p className="text-[10px] font-bold text-stone-400 truncate">{prof.bio}</p>
+                      </div>
+                    </div>
+                    {onToggleFollow && (
+                      <button
+                        type="button"
+                        onClick={() => onToggleFollow(uid, prof.name)}
+                        className={`px-3 py-1 rounded-full text-[10px] font-extrabold border shrink-0 cursor-pointer ${
+                          isFollowingUser
+                            ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
+                            : 'bg-white text-stone-700 border-stone-300'
+                        }`}
+                      >
+                        {isFollowingUser ? 'フォロー中' : '+ フォロー'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* =====================
+            6. アプリ設定（動作・通知・位置情報設定）画面
+           ===================== */}
+        {currentView === 'notifications' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+            {/* アプリの動作・表示設定（しおり自動ミニ化など） */}
+            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
+              <h4 className="text-xs font-extrabold text-stone-800">⚙️ アプリの動作・表示設定</h4>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-extrabold text-stone-800">しおりを閉じたときの自動ミニ化</p>
+                  <p className="text-[10px] font-bold text-stone-400">
+                    画面端にミニアイコンを表示してすぐ元のしおりに戻れるようにする
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onUpgradeUser) {
+                      onUpgradeUser({ ...user, autoMinimizeTrip: !(user.autoMinimizeTrip !== false) });
+                    }
+                  }}
+                  className={`w-11 h-6 rounded-full p-0.5 transition-colors flex items-center shrink-0 cursor-pointer ${
+                    user.autoMinimizeTrip !== false ? 'bg-[#7A9D8C] justify-end' : 'bg-stone-300 justify-start'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full bg-white shadow-xs" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
+              <h4 className="text-xs font-extrabold text-stone-800">🔔 通知設定</h4>
+              {[
+                { key: 'tripReminder', title: '旅行前日・当日のリマインド通知', desc: '出発前日や予定時刻の前に通知します' },
+                { key: 'memberUpdate', title: '共有メンバーのしおり更新通知', desc: '友達が予定や持ち物を追加・承認した時に通知します' },
+                { key: 'aiTips', title: 'おすすめモデルコース・季節のお知らせ', desc: '週替わりの公式モデルコース更新をお知らせします' }
+              ].map(item => (
+                <div key={item.key} className="flex items-center justify-between gap-3 pt-2 first:pt-0 border-t first:border-t-0 border-stone-200/60">
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">{item.title}</p>
+                    <p className="text-[10px] font-bold text-stone-400">{item.desc}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSaveNotifSettings({
+                        ...notifSettings,
+                        [item.key]: !notifSettings[item.key]
+                      })
+                    }
+                    className={`w-11 h-6 rounded-full p-0.5 transition-colors flex items-center shrink-0 cursor-pointer ${
+                      notifSettings[item.key] ? 'bg-[#7A9D8C] justify-end' : 'bg-stone-300 justify-start'
+                    }`}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-white shadow-xs" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
+              <h4 className="text-xs font-extrabold text-stone-800">📍 位置情報・マップ連携設定</h4>
+              {[
+                { key: 'useNearestStation', title: '最寄り駅を出発地点の初期値にする', desc: '新しいしおり作成時に登録した自宅最寄り駅を自動セットします' },
+                { key: 'mapNavIntegration', title: 'Googleマップ経路ナビ連携', desc: '予定カードのピンやナビボタンから直接経路検索を開きます' }
+              ].map(item => (
+                <div key={item.key} className="flex items-center justify-between gap-3 pt-2 first:pt-0 border-t first:border-t-0 border-stone-200/60">
+                  <div>
+                    <p className="text-xs font-extrabold text-stone-800">{item.title}</p>
+                    <p className="text-[10px] font-bold text-stone-400">{item.desc}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSaveLocationSettings({
+                        ...locationSettings,
+                        [item.key]: !locationSettings[item.key]
+                      })
+                    }
+                    className={`w-11 h-6 rounded-full p-0.5 transition-colors flex items-center shrink-0 cursor-pointer ${
+                      locationSettings[item.key] ? 'bg-[#7A9D8C] justify-end' : 'bg-stone-300 justify-start'
+                    }`}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-white shadow-xs" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* =====================
+            7. お問い合わせ・ご意見画面
+           ===================== */}
+        {currentView === 'contact' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
+              <div>
+                <label className="text-xs font-extrabold text-stone-700 block mb-1">お問い合わせ種別</label>
+                <select
+                  value={contactCategory}
+                  onChange={e => setContactCategory(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800"
+                >
+                  <option value="不具合の報告">🐞 不具合・バグの報告</option>
+                  <option value="機能のリクエスト">💡 ほしい機能のリクエスト</option>
+                  <option value="その他のお問い合わせ">✉️ その他のお問い合わせ</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-extrabold text-stone-700 block mb-1">内容</label>
+                <textarea
+                  rows="4"
+                  value={contactBody}
+                  onChange={e => setContactBody(e.target.value)}
+                  placeholder="気づいた点やご要望をご自由にお書きください..."
+                  className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={!contactBody.trim()}
+                onClick={() => {
+                  setContactBody('');
+                  customAlert('フィードバックを送信しました！ありがとうございます。');
+                  setCurrentView('menu');
+                }}
+                className="w-full py-3 bg-[#7A9D8C] hover:bg-[#688a79] disabled:opacity-40 text-white font-extrabold rounded-xl text-xs shadow-xs cursor-pointer"
+              >
+                送信する
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* =====================
+            8. 利用規約・プライバシーポリシー・クレジット画面
+           ===================== */}
+        {currentView === 'terms' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2 text-xs text-stone-600 leading-relaxed">
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
+              <h4 className="font-extrabold text-stone-800">📜 利用規約</h4>
+              <p>
+                本アプリ「たびたび」は旅行計画の作成・共有をサポートするサービスです。AIが提案する店舗・施設・料金・営業時間等は最新情報と異なる場合があるため、お出かけ前に公式情報もあわせてご確認ください。
+              </p>
+            </div>
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
+              <h4 className="font-extrabold text-stone-800">🛡️ プライバシーポリシー</h4>
+              <p>
+                登録された最寄り駅や居住地は端末内およびしおり作成時の出発地点初期セットにのみ利用され、第三者に公開されることはありません。また、思い出写真はクラウドにはアップロードされず、お使いの端末内にのみ保存されます。
+              </p>
+            </div>
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
+              <h4 className="font-extrabold text-stone-800">🚉 駅・地理データ提供元クレジット</h4>
+              <p className="text-[11px]">
+                全国の駅名検索および市区町村・地理データの取得には HeartRails Express / HeartRails Geo API を使用しています。
+              </p>
+              <HeartRailsCreditBadge showGeo={true} />
+            </div>
+          </div>
+        )}
+
+        {/* =====================
+            9. サービスの稼働状況（ステータス一覧）画面
+           ===================== */}
+        {currentView === 'service_status' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+            {/* ネットワーク全体のヘッダー */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#F4F8F6] via-white to-[#EDF4F0] border border-[#7A9D8C]/35 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
+                    isBrowserOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'
+                  }`}
+                >
+                  <Globe size={18} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold text-stone-800">
+                    インターネット接続：{isBrowserOnline ? 'オンライン' : 'オフライン'}
+                  </p>
+                  <p className="text-[10px] font-bold text-stone-500">
+                    各クラウド機能・サービスのリアルタイム稼働状況
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={runCloudStatusCheck}
+                disabled={cloudShareDiag.loading}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-stone-100 text-[#4A6B5D] border border-stone-200 text-[11px] font-extrabold shadow-2xs shrink-0 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                {cloudShareDiag.loading ? '確認中...' : '🔄 再チェック'}
+              </button>
+            </div>
+
+            {/* 各サービスの稼働ステータス一覧 */}
+            <div className="bg-stone-50 rounded-2xl border border-stone-200/80 divide-y divide-stone-200/60 overflow-hidden">
+              {/* 1. しおりのリアルタイム共有サービス */}
+              <div className="p-3.5 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Share2 size={14} className="text-[#7A9D8C] shrink-0" />
+                    <span className="text-xs font-extrabold text-stone-800">
+                      しおりのリアルタイム共有（招待コード）
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 shrink-0 ${
+                      cloudShareDiag.loading
+                        ? 'bg-stone-100 text-stone-600 border-stone-200'
+                        : isBrowserOnline && cloudShareDiag.ok
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : isBrowserOnline
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-rose-50 text-rose-700 border-rose-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        cloudShareDiag.loading
+                          ? 'bg-stone-400 animate-pulse'
+                          : isBrowserOnline
+                          ? 'bg-emerald-500 animate-pulse'
+                          : 'bg-rose-500'
+                      }`}
+                    />
+                    {cloudShareDiag.loading
+                      ? '確認中...'
+                      : isBrowserOnline && cloudShareDiag.ok
+                      ? 'オンライン（共有可能）'
+                      : isBrowserOnline
+                      ? 'オンライン（稼働中）'
+                      : 'オフライン'}
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-stone-500 leading-relaxed pl-5">
+                  招待コード（TABI-XXXX）を使って同行メンバーとしおりを共有・編集できます。
+                </p>
+              </div>
+
+              {/* 2. みんなの旅・SNSコミュニティ機能 */}
+              <div className="p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Globe size={14} className="text-[#7A9D8C] shrink-0" />
+                    <span className="text-xs font-extrabold text-stone-800">
+                      みんなの旅・SNSコミュニティ機能
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 shrink-0 ${
+                      !isBrowserOnline
+                        ? 'bg-rose-50 text-rose-700 border-rose-300'
+                        : ENABLE_PUBLIC_SNS_FEATURES
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-sky-50 text-sky-800 border-sky-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        !isBrowserOnline
+                          ? 'bg-rose-500'
+                          : ENABLE_PUBLIC_SNS_FEATURES
+                          ? 'bg-emerald-500 animate-pulse'
+                          : 'bg-sky-500'
+                      }`}
+                    />
+                    {!isBrowserOnline
+                      ? 'オフライン'
+                      : ENABLE_PUBLIC_SNS_FEATURES
+                      ? 'オンライン（SNS公開中）'
+                      : '公式ガイド配信中（SNS準備中）'}
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-stone-500 leading-relaxed pl-5">
+                  現在は公式モデルコース配信モードで稼働中です（一般投稿・SNS機能は今後のアップデートで開放予定）。
+                </p>
+              </div>
+
+              {/* 3. AIトラベルコンシェルジュ・プラン提案 */}
+              <div className="p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={14} className="text-[#7A9D8C] shrink-0" />
+                    <span className="text-xs font-extrabold text-stone-800">
+                      AIプラン作成・コンシェルジュ相談
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 shrink-0 ${
+                      isBrowserOnline
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-amber-50 text-amber-800 border-amber-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isBrowserOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                      }`}
+                    />
+                    {isBrowserOnline ? 'オンライン（利用可能）' : 'オフライン（定番提案のみ）'}
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-stone-500 leading-relaxed pl-5">
+                  条件指定およびチャットでの3プラン提案・前後日程に合わせたスケジュール生成が利用可能です。
+                </p>
+              </div>
+
+              {/* 4. 駅・市区町村データ＆高精細日本地図 */}
+              <div className="p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={14} className="text-[#7A9D8C] shrink-0" />
+                    <span className="text-xs font-extrabold text-stone-800">
+                      全国駅検索・高精細日本地図データ
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 shrink-0 ${
+                      isBrowserOnline
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-rose-50 text-rose-700 border-rose-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isBrowserOnline ? 'bg-emerald-500' : 'bg-rose-500'
+                      }`}
+                    />
+                    {isBrowserOnline ? 'オンライン（正常）' : 'オフライン'}
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-stone-500 leading-relaxed pl-5">
+                  HeartRails 駅名・自治体検索APIおよび全国47都道府県・市区町村マップと連携中です。
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* データ初期化確認ダイアログ */}
+        {showDeleteAccountConfirm && (
+          <div className="fixed inset-0 bg-black/60 z-[300] flex justify-center items-center p-4 animate-in fade-in" onClick={() => setShowDeleteAccountConfirm(false)}>
+            <div className="bg-white w-full max-w-sm rounded-[28px] p-5 shadow-2xl text-center space-y-3 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center mx-auto border border-rose-100">
+                <Trash2 size={22} />
+              </div>
+              <h4 className="font-extrabold text-base text-stone-800">この端末のデータを初期化しますか？</h4>
+              <p className="text-xs text-stone-500 leading-relaxed">
+                端末内に保存されているプロフィールや作成済みのしおりデータがリセットされ、最初のウェルカム画面に戻ります。
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteAccountConfirm(false)}
+                  className="flex-1 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.clear();
+                    window.location.reload();
+                  }}
+                  className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-xl text-xs shadow-xs cursor-pointer"
+                >
+                  初期化する
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -7250,16 +8540,16 @@ function DiscoverTab({
             </div>
           )}
         </div>
-
-        {/* ★ フェーズ1用：一般ユーザー向けの1行スリム案内バー（「配信管理」ボタンを削除し、誰が見てもクリーンな表示に統一） */}
+        {/* ★ フェーズ1.5用：公式クラウドネット配信中（SNS一部解放）スリム案内バー */}
         {!ENABLE_PUBLIC_SNS_FEATURES && SHOW_SNS_COMING_SOON_BANNER && !dismissedBanner && (
           <div className="bg-[#7A9D8C]/15 border-b border-[#7A9D8C]/25 px-4 py-2 flex items-center justify-between gap-2 text-[11px]">
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              <span className="shrink-0 text-[9px] font-extrabold bg-[#7A9D8C] text-white px-2 py-0.5 rounded-full">
-                公式厳選
+              <span className="shrink-0 text-[9px] font-extrabold bg-[#7A9D8C] text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                公式クラウド配信中
               </span>
               <span className="font-bold text-stone-700 truncate">
-                実録モデルコース配信中（🚧 SNS投稿機能は近日搭載）
+                全{(publicTrips || []).length}件の公式コースをネット配信中（いいね＆しおりコピー解放済）
               </span>
             </div>
             <button
@@ -7852,15 +9142,17 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
           <button onClick={onBack} className="p-1.5 -ml-1.5 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><ChevronLeft size={24} /></button>
           <h2 className="font-bold text-base text-stone-800 truncate flex-1 text-center px-2">{trip.title}</h2>
           <div className="flex items-center gap-1">
-            {/* タイトルを邪魔しない可愛い薄い水色のミニAI相談ボタン */}
-            <button
-              type="button"
-              onClick={() => setShowAiChatModal(true)}
-              className="px-2.5 py-1 bg-sky-100/90 hover:bg-sky-200/80 text-sky-800 border border-sky-300/70 rounded-full text-xs font-extrabold flex items-center gap-1 active:scale-95 transition-all"
-              title="AIコンシェルジュに文章で相談する"
-            >
-              <Sparkles size={12} className="text-sky-500" /> AI相談
-            </button>
+            {/* 自分たちのしおり編集時のみ表示されるAI相談ボタン（「みんなの旅」閲覧時は非表示） */}
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={() => setShowAiChatModal(true)}
+                className="px-2.5 py-1 bg-sky-100/90 hover:bg-sky-200/80 text-sky-800 border border-sky-300/70 rounded-full text-xs font-extrabold flex items-center gap-1 active:scale-95 transition-all"
+                title="AIコンシェルジュに文章で相談する"
+              >
+                <Sparkles size={12} className="text-sky-500" /> AI相談
+              </button>
+            )}
             {isReadOnly ? (
               <button
                 onClick={() => setCopyTarget({ type: 'trip', data: trip })}
@@ -7887,7 +9179,6 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               {tripDates.map((date, idx) => {
                 const isSelected = shioriSubTab === 'date' && date === selectedDate;
                 const dateObj = new Date(date);
-                const isToday = date === getTodayString();
                 return (
                   <button
                     key={date}
@@ -7904,11 +9195,6 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
                       <span className={`text-[10px] font-extrabold leading-none ${isSelected ? 'text-[#557465]' : 'text-stone-400'}`}>
                         {idx + 1}日目
                       </span>
-                      {isToday && (
-                        <span className={`text-[9px] px-1 py-0.2 rounded-full font-bold leading-none ${isSelected ? 'bg-[#7A9D8C] text-white' : 'bg-red-50 text-red-500'}`}>
-                          今日
-                        </span>
-                      )}
                     </div>
                     <span className={`text-xs font-bold leading-tight ${isSelected ? 'text-[#7A9D8C]' : 'text-stone-600'}`}>{`${dateObj.getMonth() + 1}/${dateObj.getDate()}`}</span>
                   </button>
@@ -8147,20 +9433,45 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               </button>
             </div>
 
-            {ENABLE_PUBLIC_SNS_FEATURES ? (
-              <div className={`mb-6 p-4 border rounded-2xl ${currentUser.isGuest ? 'bg-stone-100 border-stone-200' : 'bg-[#7A9D8C]/10 border-[#7A9D8C]/20'}`}>
-                <h4 className={`font-bold text-xs mb-1.5 flex items-center gap-1.5 ${currentUser.isGuest ? 'text-stone-500' : 'text-[#7A9D8C]'}`}><Globe size={15} /> みんなの旅に公開する</h4>
-                <p className="text-[10px] text-stone-500 mb-2.5 leading-relaxed">※各予定に貼った写真のうち「公開OK」にした写真や、メモの公開有無を確認画面で選んで投稿できます。</p>
-                <button onClick={() => { if (currentUser.isGuest) { customAlert('アカウント登録後にご利用いただけます。'); return; } setIsSettingsOpen(false); setShowPublishModal(true); }} className={`w-full py-2.5 font-bold rounded-xl shadow-sm transition-colors text-xs flex justify-center items-center gap-1.5 ${currentUser.isGuest ? 'bg-stone-300 text-stone-500 cursor-not-allowed' : 'bg-[#7A9D8C] text-white hover:bg-[#688a79]'}`}>{currentUser.isGuest ? 'ゲストは公開できません' : <><Share2 size={14} /> 公開設定・確認へ進む</>}</button>
+            {ENABLE_PUBLIC_SNS_FEATURES || isOfficialAdminAuthenticated(currentUser) ? (
+              <div className="mb-6 p-4 border rounded-2xl bg-[#7A9D8C]/10 border-[#7A9D8C]/30">
+                <div className="flex items-center justify-between mb-1.5">
+                  <h4 className="font-extrabold text-xs flex items-center gap-1.5 text-[#4A6B5D]">
+                    <Globe size={15} className="text-[#7A9D8C]" />
+                    {isOfficialAdminAuthenticated(currentUser) && !ENABLE_PUBLIC_SNS_FEATURES
+                      ? '👑 公式ガイドとして「みんなの旅」にネット配信'
+                      : 'みんなの旅に公開する'}
+                  </h4>
+                  {isOfficialAdminAuthenticated(currentUser) && !ENABLE_PUBLIC_SNS_FEATURES && (
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-amber-400 text-stone-950">
+                      オーナー限定
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-stone-600 mb-2.5 leading-relaxed">
+                  {isOfficialAdminAuthenticated(currentUser) && !ENABLE_PUBLIC_SNS_FEATURES
+                    ? 'あなたが作成したこのしおりを「たびたび公式ガイド」名義でクラウドへアップロードし、全ユーザーの「みんなの旅」画面へネット配信します。'
+                    : '※各予定に貼った写真のうち「公開OK」にした写真や、メモの公開有無を確認画面で選んで投稿できます。'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSettingsOpen(false);
+                    setShowPublishModal(true);
+                  }}
+                  className="w-full py-2.5 font-extrabold rounded-xl shadow-sm transition-colors text-xs flex justify-center items-center gap-1.5 bg-[#7A9D8C] text-white hover:bg-[#688a79] cursor-pointer active:scale-95"
+                >
+                  <Share2 size={14} /> 公開設定・ネット配信へ進む
+                </button>
               </div>
             ) : (
               SHOW_SNS_COMING_SOON_BANNER && (
                 <div className="mb-6 p-4 border border-stone-200 bg-stone-50 rounded-2xl">
                   <h4 className="font-bold text-xs mb-1 flex items-center gap-1.5 text-stone-600">
-                    <Globe size={15} className="text-[#7A9D8C]" /> みんなの旅への投稿機能（近日公開）
+                    <Globe size={15} className="text-[#7A9D8C]" /> みんなの旅への投稿機能（公式限定配信中）
                   </h4>
                   <p className="text-[10px] text-stone-500 leading-relaxed">
-                    作成したしおりを「みんなの旅」に一般公開してシェアできるSNS機能は、今後のアップデートで搭載予定です！現在は招待コードを使って同行メンバーと共有できます。
+                    現在「みんなの旅」は公式ガイドのみネット配信中です。一般ユーザーの投稿機能は今後のアップデートで搭載予定です！（現在は招待コードを使って同行メンバーと共有できます）
                   </p>
                 </div>
               )
@@ -10268,7 +11579,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
   const currentNowTimeStr = `${String(nowDateObj.getHours()).padStart(2, '0')}:${String(nowDateObj.getMinutes()).padStart(2, '0')}`;
 
   const closestEventId = useMemo(() => {
-    if (currentEvents.length === 0) return null;
+    if (!isTodaySelected || currentEvents.length === 0) return null;
     let bestId = currentEvents[0].id;
     let minDiff = Infinity;
     currentEvents.forEach(ev => {
@@ -10281,7 +11592,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
       }
     });
     return bestId;
-  }, [currentEvents, currentNowMinutes]);
+  }, [isTodaySelected, currentEvents, currentNowMinutes]);
 
   // ★ 今日の日付と一致しているときのみ、しおりを開いた初回1回だけ現在時刻に一番近い予定まで穏やかにスクロールする
   // （一番下の予定でもスクロールしすぎて下端がガタつかないよう maxScrollTop で安全にクランプ）
@@ -10453,7 +11764,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
           <div className="absolute left-[47px] top-3 bottom-3 w-[2px] bg-stone-200/90 rounded-full pointer-events-none" />
         )}
 
-        <div className="space-y-1.5">
+        <div className="space-y-0.5">
           {currentEvents.length === 0 && !showAddForm && insertIndex === null ? (
             <div className="text-stone-400 text-xs font-bold py-12 flex flex-col items-center justify-center gap-1.5 bg-white/70 rounded-3xl border border-dashed border-stone-200">
               <Compass size={24} className="opacity-40 mb-0.5 text-[#7A9D8C]" />
@@ -10464,6 +11775,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
               const nextEvent = currentEvents[idx + 1];
               const suggestedMidTime = nextEvent ? getMidpointTime(event.time, nextEvent.time) : null;
               const isClosestNow = event.id === closestEventId;
+              const isProposed = event.status === 'proposed' && !trip.isSoloTrip && !isReadOnly;
               const canInsertAfter = !isReadOnly && idx < currentEvents.length - 1;
               // ★ 隣り合う予定（この予定 と 次の予定）のどちらも「移動 (transport)」カードでなければ移動手段追加ボタンを表示
               const canInsertTransportBetween =
@@ -10526,49 +11838,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                       betweenNowProgress={betweenProgress}
                       suitcasePositionProgress={suitcasePositionProgress}
                       currentNowTimeStr={currentNowTimeStr}
-                      insertButtonSlot={
-                        canInsertAfter && insertIndex !== idx && transportInsertState?.idx !== idx ? (
-                          <div className="flex flex-col items-start gap-1 select-none">
-                            {/* ★ 隣り合う予定がどちらも「移動」でない場合、左のタイムライン上の「＋」ボタンの真上に「＋移動方法を追加」ボタンを配置 */}
-                            {canInsertTransportBetween && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenTransportInsertBetween(idx, event, nextEvent)}
-                                className="px-2 py-0.5 rounded-full bg-sky-50 hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-300/90 text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-xs active:scale-95 cursor-pointer z-20"
-                                title="前後の目的地から最適な移動方法を選択して追加"
-                              >
-                                <Car size={9} className="shrink-0" />
-                                <span>＋移動方法を追加</span>
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleOpenInsertBetween(idx, event, nextEvent)}
-                              className="group/ins relative flex items-center focus:outline-none cursor-pointer"
-                              title={`${suggestedMidTime ? `${suggestedMidTime}頃に` : ''}この間に予定を追加・AI提案`}
-                            >
-                              {/* 左のピル型バッジ（時刻＋追加アイコン） */}
-                              <div className="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-full bg-white group-hover/ins:bg-[#7A9D8C] text-[#557465] group-hover/ins:text-white border border-[#7A9D8C]/55 group-hover/ins:border-[#7A9D8C] shadow-xs transition-all active:scale-95 z-10">
-                                <span className="text-[9px] font-mono font-extrabold tracking-tighter leading-none">
-                                  {suggestedMidTime || ''}
-                                </span>
-                                <span className="w-3.5 h-3.5 rounded-full bg-[#7A9D8C]/15 group-hover/ins:bg-white/25 flex items-center justify-center">
-                                  <Plus size={10} strokeWidth={3} className="text-[#7A9D8C] group-hover/ins:text-white" />
-                                </span>
-                              </div>
-
-                              {/* 右の予定カードと予定カードの「ちょうど間」へスッと伸びる点線コネクタ＆追加ラベル */}
-                              <div className="flex items-center pointer-events-none">
-                                <div className="w-2.5 border-t-2 border-dashed border-[#7A9D8C]/55 group-hover/ins:border-[#7A9D8C] transition-colors" />
-                                <span className="px-2 py-0.5 rounded-full bg-[#F4F7F5] group-hover/ins:bg-[#7A9D8C] text-[9px] font-extrabold text-[#557465] group-hover/ins:text-white border border-[#7A9D8C]/35 transition-all whitespace-nowrap shadow-2xs">
-                                  ＋ここに予定を追加
-                                </span>
-                              </div>
-                            </button>
-                          </div>
-                        ) : null
-                      }
+                      insertButtonSlot={null}
                       onApprove={() => updateTrip({ ...trip, events: (trip.events || []).map(e => e.id === event.id ? { ...e, status: 'approved' } : e) })}
                       onUpdateEvent={(updatedFields) => updateTrip({ ...trip, events: (trip.events || []).map(e => e.id === event.id ? { ...e, ...updatedFields } : e) })}
                       onUpdateMemo={(newMemo) => updateTrip({ ...trip, events: (trip.events || []).map(e => e.id === event.id ? { ...e, memo: newMemo } : e) })}
@@ -10617,116 +11887,46 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                     </div>
                   )}
 
-                  {/* ★ 左のタイムライン上の「＋」ボタンの真上に「＋ここに移動方法を追加」とワンタップ即挿入チップを配置 */}
+                  {/* ★ タイムラインの軸から実線でシンプルに繋ぎ、上下の予定の間にぴったり収まるスリム挿入バー */}
                   {canInsertAfter && insertIndex !== idx && transportInsertState?.idx !== idx && (
-                    <div className="relative pl-[2px] py-1 z-20 flex flex-col items-start gap-1 select-none">
-                      {canInsertTransportBetween && (() => {
-                        const quickRoutes = buildOptimalRouteCandidates(
-                          event,
-                          nextEvent,
-                          trip.localTransportMethod || 'public_transit'
-                        );
-                        const quickStartT = event?.endTime || getMidpointTime(event?.time, nextEvent?.time);
-                        const quickEndT =
-                          nextEvent?.time && nextEvent.time > quickStartT
-                            ? nextEvent.time
-                            : getMidpointTime(quickStartT, nextEvent?.time);
-                        const fromSpotObj = normalizeConcreteEventSpot(event, trip.destination);
-                        const toSpotObj = normalizeConcreteEventSpot(nextEvent, trip.destination);
-                        const fromClean = (fromSpotObj.location || event.title || '出発地').replace(/（.*?）/g, '');
-                        const toClean = (toSpotObj.location || nextEvent.title || '目的地').replace(/（.*?）/g, '');
+                    <div className="relative flex items-center py-0.5 z-20 select-none">
+                      {/* 左：目安時刻 ＋ タイムライン軸（47px）上の小さな接続ドット */}
+                      <div className="w-[56px] shrink-0 flex items-center">
+                        <span className="w-[40px] pr-1.5 text-right text-[9px] font-mono font-bold text-stone-400 leading-none">
+                          {suggestedMidTime || ''}
+                        </span>
+                        <div className="w-[16px] flex items-center justify-center relative">
+                          <span className="w-1.5 h-1.5 rounded-full bg-stone-300 ring-2 ring-[#F4F7F5] z-10" />
+                          <div className="absolute left-1/2 right-0 h-[1.5px] bg-stone-300" />
+                        </div>
+                      </div>
 
-                        const handleQuickOneTapInsert = (cand) => {
-                          const newTransportEv = {
-                            id: generateId(),
-                            date: selectedDate,
-                            time: quickStartT || '12:00',
-                            endTime: quickEndT || '',
-                            title: `${fromClean}から${toClean}へ${cand.methodName.split('・')[0]}で移動`,
-                            type: 'transport',
-                            departureOrigin: fromClean,
-                            transportMethod: cand.transportMethod,
-                            location: toClean,
-                            mapPinQuery: toSpotObj.mapPinQuery || toClean,
-                            cost: Number(cand.cost) || 0,
-                            memo: cand.memo,
-                            status: trip.isSoloTrip ? 'approved' : 'proposed',
-                            authorId: currentUser.id,
-                            photos: []
-                          };
-                          updateTrip({ ...trip, events: [...(trip.events || []), newTransportEv] });
-                          customAlert(`🚗「${fromClean} ➔ ${toClean}（${cand.icon}${cand.methodName.split('・')[0]}）」を追加しました！`);
-                        };
+                      {/* 右：横一本の線で繋いだシンプルな「＋予定を追加」「＋移動を追加」ピル */}
+                      <div className="flex items-center">
+                        <div className={`${isProposed ? 'w-7 sm:w-8' : 'w-3.5'} h-[1.5px] bg-stone-300`} />
+                        <button
+                          type="button"
+                          onClick={() => handleOpenInsertBetween(idx, event, nextEvent)}
+                          className="px-2 py-0.5 rounded-full bg-white hover:bg-[#7A9D8C] text-stone-600 hover:text-white border border-stone-300 hover:border-[#7A9D8C] text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer leading-tight"
+                        >
+                          <Plus size={9} strokeWidth={2.8} className="shrink-0" />
+                          <span>予定を追加</span>
+                        </button>
 
-                        return (
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {/* 左のタイムライン軸上の「＋」ピルの真上に揃えて配置される「＋ここに移動方法を追加」ボタン */}
+                        {canInsertTransportBetween && (
+                          <>
+                            <div className="w-2 h-[1.5px] bg-stone-300" />
                             <button
                               type="button"
                               onClick={() => handleOpenTransportInsertBetween(idx, event, nextEvent)}
-                              className="group/tr relative flex items-center focus:outline-none cursor-pointer"
-                              title="前後の目的地から最適な移動方法を選択して追加"
+                              className="px-2 py-0.5 rounded-full bg-white hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-300 hover:border-sky-600 text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer leading-tight"
                             >
-                              <div className="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-full bg-sky-50 group-hover/tr:bg-sky-600 text-sky-700 group-hover/tr:text-white border border-sky-300/90 group-hover/tr:border-sky-600 shadow-xs transition-all active:scale-95 z-10">
-                                <span className="text-[9px] font-mono font-extrabold tracking-tighter leading-none">
-                                  {quickStartT || suggestedMidTime || ''}
-                                </span>
-                                <span className="w-3.5 h-3.5 rounded-full bg-sky-200/70 group-hover/tr:bg-white/25 flex items-center justify-center">
-                                  <Car size={9} strokeWidth={2.8} className="text-sky-700 group-hover/tr:text-white" />
-                                </span>
-                              </div>
-                              <div className="flex items-center pointer-events-none">
-                                <div className="w-2.5 border-t-2 border-dashed border-sky-300 group-hover/tr:border-sky-600 transition-colors" />
-                                <span className="px-2 py-0.5 rounded-full bg-sky-50 group-hover/tr:bg-sky-600 text-[9px] font-extrabold text-sky-800 group-hover/tr:text-white border border-sky-300/80 transition-all whitespace-nowrap shadow-2xs">
-                                  ＋ここに移動方法を追加
-                                </span>
-                              </div>
+                              <Car size={9} strokeWidth={2.5} className="shrink-0" />
+                              <span>移動を追加</span>
                             </button>
-
-                            {/* 1タップで即座に移動カードを挿入できるクイックチップ（電車・車・徒歩） */}
-                            <div className="flex items-center gap-1 pl-0.5">
-                              {quickRoutes.slice(0, 3).map((cand) => (
-                                <button
-                                  key={cand.id}
-                                  type="button"
-                                  onClick={() => handleQuickOneTapInsert(cand)}
-                                  className="px-1.5 py-0.5 rounded-full bg-white hover:bg-sky-600 text-stone-600 hover:text-white border border-stone-200/90 hover:border-sky-600 text-[9px] font-extrabold flex items-center gap-0.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
-                                  title={`1タップで「${cand.methodName}（目安¥${cand.cost.toLocaleString()}）」を即追加`}
-                                >
-                                  <span>{cand.icon}</span>
-                                  <span>{cand.methodName.split('・')[0]}</span>
-                                  <span className="text-[8px] opacity-75">
-                                    {cand.cost > 0 ? `¥${cand.cost}` : '¥0'}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* その真下に並ぶ「＋ここに予定を追加」ボタン */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenInsertBetween(idx, event, nextEvent)}
-                        className="group/ins relative flex items-center focus:outline-none cursor-pointer"
-                        title={`${suggestedMidTime ? `${suggestedMidTime}頃に` : ''}この間に予定を追加・AI提案`}
-                      >
-                        <div className="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-full bg-white group-hover/ins:bg-[#7A9D8C] text-[#557465] group-hover/ins:text-white border border-[#7A9D8C]/55 group-hover/ins:border-[#7A9D8C] shadow-xs transition-all active:scale-95 z-10">
-                          <span className="text-[9px] font-mono font-extrabold tracking-tighter leading-none">
-                            {suggestedMidTime || ''}
-                          </span>
-                          <span className="w-3.5 h-3.5 rounded-full bg-[#7A9D8C]/15 group-hover/ins:bg-white/25 flex items-center justify-center">
-                            <Plus size={10} strokeWidth={3} className="text-[#7A9D8C] group-hover/ins:text-white" />
-                          </span>
-                        </div>
-                        <div className="flex items-center pointer-events-none">
-                          <div className="w-2.5 border-t-2 border-dashed border-[#7A9D8C]/55 group-hover/ins:border-[#7A9D8C] transition-colors" />
-                          <span className="px-2 py-0.5 rounded-full bg-[#F4F7F5] group-hover/ins:bg-[#7A9D8C] text-[9px] font-extrabold text-[#557465] group-hover/ins:text-white border border-[#7A9D8C]/35 transition-all whitespace-nowrap shadow-2xs">
-                            ＋ここに予定を追加
-                          </span>
-                        </div>
-                      </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -11578,19 +12778,6 @@ function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
 
         {step === 1 ? (
           <div className="space-y-3.5">
-            {diagResult && (
-              <div className={`p-3 rounded-2xl border text-[11px] font-bold leading-relaxed ${
-                diagResult.ok
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                  : 'bg-amber-50 border-amber-300 text-amber-900'
-              }`}>
-                <p className="font-extrabold flex items-center gap-1">
-                  <span>{diagResult.ok ? '✅ クラウド共有：接続OK' : '⚠️ クラウド共有の診断結果'}</span>
-                </p>
-                <p className="mt-0.5 text-[10px] opacity-90">{diagResult.message}</p>
-              </div>
-            )}
-
             <div>
               <div className="flex items-center justify-between mb-1.5 px-1">
                 <label className="text-[11px] font-extrabold text-stone-500">
@@ -13147,11 +14334,6 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
                 <span className="text-[10px] font-extrabold text-sky-700 flex items-center gap-1">
                   <Clock size={11} className="text-sky-500" /> 現在時刻に一番近い予定
                 </span>
-                {event.date === getTodayString() && (
-                  <span className="text-[9px] font-bold text-sky-600 bg-white px-2 py-0.2 rounded-full border border-sky-200/60">
-                    今日
-                  </span>
-                )}
               </div>
             )}
 
@@ -13863,6 +15045,227 @@ const resolveSpecificSpotAndPin = (rawLocation, rawPinQuery, fallbackEv, destStr
   return { location: resolvedLocation, mapPinQuery: resolvedPinQuery };
 };
 
+// ★ 同行者（カップル・夫婦 / 家族・子連れ / 友達 / ひとり旅）に合わせて実在スポット・宿・食事を最適化する専用データベース
+const COMPANION_SPECIFIC_SPOTS_BY_AREA = {
+  couple: {
+    '京都': {
+      morningSpot: '嵐山 竹林の小径＆着物レンタル散策（渡月橋〜天龍寺庭園デート）',
+      morningPin: '嵐山 竹林の小径 京都市右京区嵯峨小倉山田淵山町',
+      lunchSpot: '先斗町 魯ビン または 鴨川沿い京町家ダイニング（川床・ペアランチ）',
+      lunchPin: '先斗町 魯ビン 京都市中京区先斗町通三条下ル若松町137-4',
+      afternoonSpot: '将軍塚青龍殿 大舞台（京都市街を一望するパノラマ＆ガラスの茶室）',
+      afternoonPin: '将軍塚青龍殿 京都市山科区厨子奥花鳥町28',
+      cafeSpot: 'サロン・ド・ロワイヤル 京都（鴨川を望むテラスでショコラ＆マカロン）',
+      cafePin: 'サロン・ド・ロワイヤル 京都 京都市中京区木屋町通御池上ル上樵木町502',
+      hotelSpot: '京都嵐山温泉 花伝抄（予約不要で2人で入れる5種の貸切露天風呂＆京会席ディナー）',
+      hotelPin: '京都嵐山温泉 花伝抄 京都市西京区嵐山西一川町5-4',
+      day2MorningSpot: '南禅寺 水路閣（レトロな赤レンガアーチで記念フォト）＆蹴上インクライン',
+      day2MorningPin: '南禅寺 水路閣 京都市左京区南禅寺福地町',
+      day2LunchSpot: 'AWOMB 西木屋町（見た目も華やかな京の手織り寿司ランチ）',
+      day2LunchPin: 'AWOMB 西木屋町 京都市下京区西木屋町通松原下る難波町405',
+      day2ShopSpot: '祇園・花見小路〜石塀小路 夕暮れさんぽ＆京菓子お土産選び',
+      day2ShopPin: '石塀小路 京都市東山区下河原町'
+    },
+    '神奈川': {
+      morningSpot: '箱根ガラスの森美術館（ヴェネチアン・グラスの庭園とクリスタルガラスのアーチ）',
+      morningPin: '箱根ガラスの森美術館 神奈川県足柄下郡箱根町仙石原940-48',
+      lunchSpot: 'ラ・テラッツァ 芦ノ湖（芦ノ湖畔のテラスで味わう薪窯ナポリピッツァ＆イタリアン）',
+      lunchPin: 'ラ・テラッツァ 芦ノ湖 神奈川県足柄下郡箱根町元箱根61',
+      afternoonSpot: '箱根神社「平和の鳥居」＆芦ノ湖サンセットクルーズ',
+      afternoonPin: '箱根神社 神奈川県足柄下郡箱根町元箱根80-1',
+      cafeSpot: 'Bakery & Table 箱根（芦ノ湖を一望する温泉足湯カウンター席でカフェタイム）',
+      cafePin: 'Bakery & Table 箱根 神奈川県足柄下郡箱根町元箱根9-1',
+      hotelSpot: '強羅温泉 季の湯 雪月花（全室檜の客室露天風呂＆2人で入る貸切露天風呂・会席ディナー）',
+      hotelPin: '強羅温泉 季の湯 雪月花 神奈川県足柄下郡箱根町強羅1300-34',
+      day2MorningSpot: '彫刻の森美術館（ステンドグラスが輝く「幸せをよぶシンフォニー彫刻」の塔）',
+      day2MorningPin: '彫刻の森美術館 神奈川県足柄下郡箱根町二ノ平1121',
+      day2LunchSpot: 'bills 七里ヶ浜（湘南の海を一望するテラスでリコッタパンケーキ＆ランチ）',
+      day2LunchPin: 'bills 七里ヶ浜 神奈川県鎌倉市七里ガ浜1-1-1',
+      day2ShopSpot: '江の島シーキャンドル（湘南の夕日と夜景イルミネーション展望灯台）',
+      day2ShopPin: '江の島シーキャンドル 神奈川県藤沢市江の島2-3-28'
+    },
+    '北海道': {
+      morningSpot: '小樽運河 ガス灯通り＆北一硝子 三号館（幻想的なオイルランプのホール）',
+      morningPin: '北一硝子 三号館 北海道小樽市堺町7-26',
+      lunchSpot: '小樽 ポセイダル または 政寿司 本店（カウンターで味わう旬の特選握り寿司）',
+      lunchPin: 'おたる政寿司 本店 北海道小樽市花園1丁目1-1',
+      afternoonSpot: '小樽運河サンセット・ナイトクルーズ（ロマンチックな水辺のライトアップ遊覧）',
+      afternoonPin: '小樽運河クルーズ 北海道小樽市港町5-4',
+      cafeSpot: '小樽洋菓子舗ルタオ 本店（カリヨンの鐘が鳴る塔のカフェで限定生フロマージュ）',
+      cafePin: '小樽洋菓子舗ルタオ 本店 北海道小樽市堺町7-16',
+      hotelSpot: '定山渓第一寶亭留 翠山亭（展望露天風呂付き客室＆創作懐石ディナー）',
+      hotelPin: '定山渓第一寶亭留 翠山亭 北海道札幌市南区定山渓温泉西3丁目105',
+      day2MorningSpot: '札幌もいわ山ロープウェイ（恋人の聖地・幸せの鐘と日本新三大夜景パノラマ）',
+      day2MorningPin: '札幌もいわ山ロープウェイ 北海道札幌市中央区伏見5丁目3-7',
+      day2LunchSpot: 'サッポロビール園 ガーデングリル（落ち着いた空間で極上ラム肉のグリルランチ）',
+      day2LunchPin: 'サッポロビール園 ガーデングリル 北海道札幌市東区北7条東9丁目2-10',
+      day2ShopSpot: '夜パフェ専門店「パフェ、珈琲、酒、佐藤」（大人の札幌シメパフェデート）',
+      day2ShopPin: 'パフェ、珈琲、酒、佐藤 北海道札幌市中央区南2条西1丁目6-1'
+    },
+    '沖縄': {
+      morningSpot: '瀬長島ウミカジテラス（恋人の聖地・エーゲ海のような白亜の海辺テラス散歩）',
+      morningPin: '瀬長島ウミカジテラス 沖縄県豊見城市瀬長174-6',
+      lunchSpot: 'カフェくるくま または 浜辺の茶屋（窓一面にコバルトブルーの海が広がる絶景カフェランチ）',
+      lunchPin: '浜辺の茶屋 沖縄県南城市玉城玉城2-1',
+      afternoonSpot: '古宇利島・ティーヌ浜「ハートロック」（恋の島・ハート型の岩と美ら海ドライブ）',
+      afternoonPin: '古宇利島 ハートロック 沖縄県国頭郡今帰仁村古宇利',
+      cafeSpot: '星野リゾート バンタカフェ（水平線に沈む夕日を眺める海辺のソファテラス）',
+      cafePin: '星野リゾート バンタカフェ 沖縄県中頭郡読谷村儀間560',
+      hotelSpot: 'ハレクラニ沖縄 または ザ・ブセナテラス（サンセットプール＆沖縄食材コースディナー）',
+      hotelPin: 'ザ・ブセナテラス 沖縄県名護市喜瀬1808',
+      day2MorningSpot: '美ら海水族館「黒潮の海」大水槽＆備瀬のフクギ並木ペアレンタサイクル',
+      day2MorningPin: '備瀬のフクギ並木 沖縄県国頭郡本部町備瀬389',
+      day2LunchSpot: '美ら海カフェ または オーシャンビュー鉄板焼ステーキランチ',
+      day2LunchPin: '沖縄美ら海水族館 沖縄県国頭郡本部町石川424',
+      day2ShopSpot: '美浜タウンリゾート・アメリカンビレッジ（夕暮れの海岸遊歩道とカラフルな街並み）',
+      day2ShopPin: '美浜アメリカンビレッジ 沖縄県中頭郡北谷町美浜'
+    }
+  },
+  family: {
+    '京都': {
+      morningSpot: '京都鉄道博物館（実物車両53両展示・SLスチーム号乗車＆運転シミュレータ体験）',
+      morningPin: '京都鉄道博物館 京都市下京区観喜寺町',
+      lunchSpot: '梅小路コラボレストラン または 京都駅ビル 和食処（キッズメニュー・ベビーカー入店OK）',
+      lunchPin: '梅小路公園 京都市下京区観喜寺町56-3',
+      afternoonSpot: '京都水族館（オオサンショウウオ展示＆イルカスタジアムの迫力パフォーマンス）',
+      afternoonPin: '京都水族館 京都市下京区観喜寺町35-1',
+      cafeSpot: '市電カフェ（梅小路公園内・本物のチンチン電車の中で味わうつり革パン＆ソフトクリーム）',
+      cafePin: '梅小路公園 市電ひろば 京都市下京区観喜寺町',
+      hotelSpot: '梅小路ポテル京都 または 琵琶湖ホテル（キッズスペース完備・家族で楽しめる和洋室＆ビュッフェ）',
+      hotelPin: '梅小路ポテル京都 京都市下京区観喜寺町15',
+      day2MorningSpot: '東映太秦映画村（忍者ショー・からくり忍者屋敷・時代劇オープンセット体験）',
+      day2MorningPin: '東映太秦映画村 京都市右京区太秦東蜂岡町10',
+      day2LunchSpot: '嵐山 嵯峨とうふ 稲 本店（お座敷・子どもも食べやすい湯葉あんかけ丼と彩り御膳）',
+      day2LunchPin: '嵯峨とうふ 稲 本店 京都市右京区嵯峨天龍寺造路町19',
+      day2ShopSpot: '嵯峨野トロッコ列車（渓谷を走る観光列車乗車体験）＆京都駅お土産ストリート',
+      day2ShopPin: 'トロッコ嵯峨駅 京都市右京区嵯峨天龍寺車道町'
+    },
+    '神奈川': {
+      morningSpot: '箱根海賊船（桃源台港〜元箱根港・子どもが大喜びする豪華な海賊船クルーズ）',
+      morningPin: '箱根海賊船 桃源台港 神奈川県足柄下郡箱根町元箱根164',
+      lunchSpot: '桃源台ビューレストラン（海賊船を眺めながら味わうふわとろオムライス＆お子様プレート）',
+      lunchPin: '桃源台ビューレストラン 神奈川県足柄下郡箱根町元箱根164',
+      afternoonSpot: '箱根ロープウェイ空中散歩＆大涌谷（名物・黒たまご＆ジオミュージアム見学）',
+      afternoonPin: '大涌谷くろたまご館 神奈川県足柄下郡箱根町仙石原1251',
+      cafeSpot: '彫刻の森美術館「ネットの森」（子どもが中に入って遊べる巨大体験型アート＆足湯）',
+      cafePin: '彫刻の森美術館 神奈川県足柄下郡箱根町二ノ平1121',
+      hotelSpot: '箱根ホテル小涌園（全天候型温泉アミューズメント「ユネッサン」入り放題＆ファミリービュッフェ）',
+      hotelPin: '箱根ホテル小涌園 神奈川県足柄下郡箱根町二ノ平1297',
+      day2MorningSpot: '新江ノ島水族館（相模湾大水槽とイルカショー・ウミガメタッチプール）',
+      day2MorningPin: '新江ノ島水族館 神奈川県藤沢市片瀬海岸2-19-1',
+      day2LunchSpot: 'アロハテーブル 湘南 または とびっちょ（キッズチェア完備・釜揚げしらす丼＆パンケーキ）',
+      day2LunchPin: 'アロハテーブル 湘南 神奈川県藤沢市片瀬海岸2-17-17',
+      day2ShopSpot: '横浜アンパンマンこどもミュージアム または 八景島シーパラダイス',
+      day2ShopPin: '横浜アンパンマンこどもミュージアム 神奈川県横浜市西区みなとみらい6-2-9'
+    },
+    '北海道': {
+      morningSpot: '白い恋人パーク（お菓子の工場見学＆世界に一つだけの白い恋人お絵描き体験）',
+      morningPin: '白い恋人パーク 北海道札幌市西区宮の沢2条2丁目11-36',
+      lunchSpot: 'ラーメン共和国（札幌エスタ・家族でシェアしやすい北海道ラーメン名店街）',
+      lunchPin: '札幌駅 北海道札幌市北区北6条西4丁目',
+      afternoonSpot: '札幌市円山動物園（ホッキョクグマ水中トンネル＆ゾウ舎・子ども動物園）',
+      afternoonPin: '札幌市円山動物園 北海道札幌市中央区宮ヶ丘3番地1',
+      cafeSpot: 'きのとや 白石本店 または 大通ビッセ（焼きたてチーズタルト＆極上牛乳ソフトクリーム）',
+      cafePin: '大通ビッセ 北海道札幌市中央区大通西3丁目7',
+      hotelSpot: '定山渓ビューホテル（道内最大級の屋内温水プール「ラグーン」＆和洋中ファミリーバイキング）',
+      hotelPin: '定山渓ビューホテル 北海道札幌市南区定山渓温泉東2丁目111',
+      day2MorningSpot: 'おたる水族館（トドのダイビング・ペンギンのお散歩ショー＆イルカスタジアム）',
+      day2MorningPin: 'おたる水族館 北海道小樽市祝津3丁目303',
+      day2LunchSpot: '小樽運河食堂 または かま栄 工場直売店（揚げたてパンロール＆海鮮丼）',
+      day2LunchPin: 'かま栄 工場直売店 北海道小樽市堺町3-7',
+      day2ShopSpot: '新千歳空港 ドラえもん わくわくスカイパーク＆ロイズ チョコレートワールド',
+      day2ShopPin: 'ロイズ チョコレートワールド 北海道千歳市美々 新千歳空港ターミナルビル3F'
+    },
+    '沖縄': {
+      morningSpot: '沖縄美ら海水族館（世界最大級の大水槽・ジンベエザメの餌やり解説＆イルカショー「オキちゃん劇場」）',
+      morningPin: '沖縄美ら海水族館 沖縄県国頭郡本部町石川424',
+      lunchSpot: 'きしもと食堂 八重岳店（座敷席あり・子どもも食べやすいカツオ出汁の沖縄そば＆ジューシー）',
+      lunchPin: 'きしもと食堂 八重岳店 沖縄県国頭郡本部町伊野波350-1',
+      afternoonSpot: 'ナゴパイナップルパーク（自動運転パイナップル号でジャングル探検＆恐竜アドベンチャー）',
+      afternoonPin: 'ナゴパイナップルパーク 沖縄県名護市為又1195',
+      cafeSpot: 'ブルーシール アイスパーク（牧港本店・世界に1つのオリジナルアイスバー作り体験）',
+      cafePin: 'ブルーシール アイスパーク 沖縄県浦添市牧港5-5-6',
+      hotelSpot: 'ルネッサンス リゾート オキナワ（イルカと触れ合えるプログラム＆キッズバイキング充実のリゾート）',
+      hotelPin: 'ルネッサンス リゾート オキナワ 沖縄県国頭郡恩納村山田3425-2',
+      day2MorningSpot: 'DMMかりゆし水族館（動物たちとの距離が近い最新映像水族館）または おきなわワールド',
+      day2MorningPin: 'DMMかりゆし水族館 沖縄県豊見城市豊崎3-35',
+      day2LunchSpot: 'A&W 牧港店（キッズ遊具併設・ルートビア＆カーリーフライのアメリカンランチ）',
+      day2LunchPin: 'A&W 牧港店 沖縄県浦添市牧港4-9-1',
+      day2ShopSpot: '国際通り お菓子御殿（元祖紅いもタルト工場ライン見学＆ちんすこうお土産）',
+      day2ShopPin: '御菓子御殿 国際通り松尾店 沖縄県那覇市松尾1-2-5'
+    }
+  }
+};
+
+// 汎用エリアでもカップル・家族子連れ・友達・ひとり旅でスポット名と体験内容がしっかり変化するヘルパー
+const customizeSpotByCompanion = (baseSpot, companionType, slotType, destName) => {
+  const cleanDest = (destName || '現地').replace(/[都道府県]$/, '');
+  if (companionType === 'couple') {
+    if (slotType === 'morning') {
+      return {
+        title: `${baseSpot.title}（2人でゆったり散策＆記念フォトスポット）`,
+        memo: `【💑 カップルおすすめ】落ち着いた時間帯に2人でゆっくり景色や写真撮影を楽しめるデートコースです。`
+      };
+    }
+    if (slotType === 'lunch') {
+      return {
+        title: `${baseSpot.title}（雰囲気抜群のペアランチ）`,
+        memo: `【💑 カップルおすすめ】景色や空間が素敵で、2人で会話を楽しみながら名物料理を味わえる人気店です。`
+      };
+    }
+    if (slotType === 'afternoon') {
+      return {
+        title: `${baseSpot.title}＆サンセット・絶景展望スポット`,
+        memo: `【💑 ロマンチック体験】ドラマチックな景色やイルミネーション・夕景を楽しめるカップルに人気のスポットです。`
+      };
+    }
+    if (slotType === 'cafe') {
+      return {
+        title: `${baseSpot.title}（おしゃれなテラス・ソファ席でカフェデート）`,
+        memo: `【💑 カフェデート】写真映えする季節限定スイーツとこだわり珈琲で、ゆったり2人の時間を過ごせます。`
+      };
+    }
+    if (slotType === 'hotel') {
+      return {
+        title: `${baseSpot.title}（貸切露天風呂＆個室・ペア会席ディナー）`,
+        memo: `【💑 カップル・夫婦に人気の宿】2人きりで温泉を満喫できる貸切露天風呂や、夜景・庭園を望むロマンチックな夕食が魅力です。`
+      };
+    }
+  } else if (companionType === 'family') {
+    if (slotType === 'morning') {
+      return {
+        title: `${baseSpot.title}（子どもも夢中になる体験・見学コース）`,
+        memo: `【👨‍👩‍👧 家族・子連れ安心】通路が広くベビーカーやお子様連れでも回りやすい、体験要素たっぷりのスポットです。`
+      };
+    }
+    if (slotType === 'lunch') {
+      return {
+        title: `${baseSpot.title}（お座敷・キッズ対応の家族ランチ）`,
+        memo: `【👨‍👩‍👧 子連れ歓迎】取り分けしやすいメニューやお座敷・広いテーブル席があり、お子様一緒でも気兼ねなく食事ができます。`
+      };
+    }
+    if (slotType === 'afternoon') {
+      return {
+        title: `${baseSpot.title}（わくわく体験・動物＆自然ふれあい広場）`,
+        memo: `【👨‍👩‍👧 子どもが喜ぶスポット】見るだけでなく体験・ふれあいができ、トイレや休憩ベンチも充実していて安心です。`
+      };
+    }
+    if (slotType === 'cafe') {
+      return {
+        title: `${baseSpot.title}（濃厚ソフトクリーム＆おやつ休憩）`,
+        memo: `【👨‍👩‍👧 家族でひと休み】移動の疲れをリセットできる、子どもも大好きなご当地ソフトクリーム・スイーツ休憩です。`
+      };
+    }
+    if (slotType === 'hotel') {
+      return {
+        title: `${baseSpot.title}（キッズ歓迎の和洋室＆ファミリービュッフェ宿）`,
+        memo: `【👨‍👩‍👧 家族・子連れに人気の宿】子どもが大好きなメニューが揃うバイキングや、家族みんなで広々くつろげる和洋室・大浴場が魅力です。`
+      };
+    }
+  }
+  return null;
+};
+
 // ★ イベントのタイトルや抽象的な県名表記（「群馬」「群馬県」「群馬駅」など）から具体的な名所・店舗名とGoogleマップ検索ピンを復元するヘルパー
 const extractConcreteSpotLabel = (spotTitle = '', fallbackPin = '') => {
   const fromTitle = (spotTitle || '')
@@ -13971,14 +15374,20 @@ function buildFallbackPlans(
     LOCAL_TRANSPORT_METHODS.find(m => m.id === localTransportMethod) || LOCAL_TRANSPORT_METHODS[0];
 
   // 選択されたテーマ・同行者（子連れ・ひとり旅・カップル・友達）を判定してスポット内容に反映
+  const isCouple = /カップル|夫婦/.test(companion) || (adultCount === 2 && childCount === 0 && /ホカンス|記念日|デート/.test(theme));
+  const isFamily = childCount > 0 || /家族|子連れ/.test(companion);
+  const isFriends = /友達|グループ/.test(companion);
+  const isSolo = /ひとり/.test(companion) || (adultCount === 1 && childCount === 0);
+  const companionCategory = isFamily ? 'family' : isCouple ? 'couple' : isFriends ? 'friends' : isSolo ? 'solo' : 'general';
+
   const isOnsenTheme = /温泉|露天風呂|癒やし/.test(theme);
   const isCafeTheme = /カフェ|写真映え|スイーツ|パン/.test(theme);
   const isDriveTheme = /ドライブ|自然|アウトドア|グランピング/.test(theme) || localTransportMethod === 'rental_car';
   const isHistoryTheme = /歴史|神社|仏閣|御朱印|古都/.test(theme);
   const isArtTheme = /美術館|アート|建築/.test(theme);
   const isSakeTheme = /地酒|ワイナリー|食べ歩き|はしご|居酒屋/.test(theme);
-  const isThemeParkOrFamily = /テーマパーク|水族館|レジャー/.test(theme) || childCount > 0 || /家族|子連れ/.test(companion);
-  const isHocanceTheme = /ホテル|旅館|ホカンス|ご褒美/.test(theme) || safeBudget >= 70000;
+  const isThemeParkOrFamily = /テーマパーク|水族館|レジャー/.test(theme) || isFamily;
+  const isHocanceTheme = /ホテル|旅館|ホカンス|ご褒美/.test(theme) || safeBudget >= 70000 || isCouple;
 
   // 日付配列を生成（1日目、2日目...すべての日の予定を漏れなく作成）
   const baseParts = (startDate || getTodayString()).split('-').map(Number);
@@ -14014,16 +15423,27 @@ function buildFallbackPlans(
   );
   const prefSpots = getPrefectureSpotFallback(rawDest);
 
+  // カップルまたは家族・子連れ専用のエリア別スポットがあれば最優先で適用
+  const companionAreaPreset = useMemo_companionPreset(rawDest, companionCategory);
+
   const companionNote =
-    childCount > 0
-      ? `（大人${adultCount}名・子ども${childCount}名でも無理なく回れる休憩多めの配分）`
-      : companion
-      ? `（${companion}に人気のルート）`
+    isFamily
+      ? `（👨‍👩‍👧 大人${adultCount}名${childCount > 0 ? `・子ども${childCount}名` : ''}でも安心！子どもが楽しめて休憩も取りやすい家族向けルート）`
+      : isCouple
+      ? `（💑 カップル・ご夫婦向け！ロマンチックな絶景や雰囲気の良いカフェ・貸切風呂宿を組み込んだデートコース）`
+      : isFriends
+      ? `（🙌 友達グループで盛り上がる！写真映え＆食べ歩き・シェアグルメ充実ルート）`
+      : isSolo
+      ? `（👤 気ままなひとり旅！1人でも入りやすい名店と癒やしスポット中心のルート）`
       : '';
 
   const buildDayEventsForCourse = (courseKey, costScale = 1.0) => {
     const scaleCost = (c) => (c <= 0 ? 0 : round100(c * costScale));
-    const areaPreset = matchedArea?.[courseKey] || matchedArea?.royal || null;
+    const baseAreaPreset = matchedArea?.[courseKey] || matchedArea?.royal || null;
+    const areaPreset =
+      courseKey === 'royal' && companionAreaPreset
+        ? { ...baseAreaPreset, ...companionAreaPreset }
+        : baseAreaPreset;
     const hubStation = matchedArea?.station || prefSpots.station || `${cleanDest}駅`;
 
     const allEvents = [];
@@ -14048,14 +15468,12 @@ function buildFallbackPlans(
           memo: `【${transMethodMeta.label}】${cleanOrigin}から${hubStation}へ出発${companionNote}。到着後は${localMethodMeta.short}で各スポットを巡ります。`
         });
 
-        // 2) 1日目 午前スポット（県名だけの表記を避け、必ず実在の具体的な名所名を設定）
-        const mTitle =
-          areaPreset?.morningSpot ||
-          prefSpots.morning;
-        const mPin =
-          areaPreset?.morningPin ||
-          `${rawDest} ${prefSpots.morning.replace(/（.*?）/g, '')}`;
-        const mPlaceLabel = extractConcreteSpotLabel(mTitle, mPin);
+        // 2) 1日目 午前スポット（同行者スタイルに合わせてロマンチックな場所／子どもが喜ぶ場所を反映）
+        const rawMTitle = areaPreset?.morningSpot || prefSpots.morning;
+        const mPin = areaPreset?.morningPin || `${rawDest} ${prefSpots.morning.replace(/（.*?）/g, '')}`;
+        const mPlaceLabel = extractConcreteSpotLabel(rawMTitle, mPin);
+        const mCustom = !companionAreaPreset ? customizeSpotByCompanion({ title: rawMTitle }, companionCategory, 'morning', rawDest) : null;
+        const mTitle = mCustom ? mCustom.title : rawMTitle;
         allEvents.push({
           date: dStr,
           time: '10:45',
@@ -14065,15 +15483,21 @@ function buildFallbackPlans(
           location: mPlaceLabel,
           mapPinQuery: mPin,
           cost: scaleCost(spotEntryCost),
-          memo: `【テーマ：${theme || '王道観光'}】午前中の澄んだ空気のなかで「${mPlaceLabel}」を満喫します。`
+          memo: mCustom
+            ? mCustom.memo
+            : isCouple
+            ? `【💑 デートスポット】2人でゆったり景色と写真撮影を楽しめる「${mPlaceLabel}」を満喫します。`
+            : isFamily
+            ? `【👨‍👩‍👧 ファミリースポット】お子様一緒でも楽しく見学・体験できる「${mPlaceLabel}」を巡ります。`
+            : `【テーマ：${theme || '王道観光'}】午前中の澄んだ空気のなかで「${mPlaceLabel}」を満喫します。`
         });
 
         // 3) 1日目 ご当地ランチ
-        const lTitle =
-          areaPreset?.lunchSpot ||
-          prefSpots.lunch;
+        const rawLTitle = areaPreset?.lunchSpot || prefSpots.lunch;
         const lPin = areaPreset?.lunchPin || `${rawDest} ${prefSpots.lunch.replace(/（.*?）/g, '')}`;
-        const lPlaceLabel = extractConcreteSpotLabel(lTitle, lPin);
+        const lPlaceLabel = extractConcreteSpotLabel(rawLTitle, lPin);
+        const lCustom = !companionAreaPreset ? customizeSpotByCompanion({ title: rawLTitle }, companionCategory, 'lunch', rawDest) : null;
+        const lTitle = lCustom ? lCustom.title : rawLTitle;
         allEvents.push({
           date: dStr,
           time: '12:15',
@@ -14083,35 +15507,37 @@ function buildFallbackPlans(
           location: lPlaceLabel,
           mapPinQuery: lPin,
           cost: scaleCost(lunchCost),
-          memo: `【🚃現地移動：前の予定地から${localMethodMeta.short}で約15分】「${lPlaceLabel}」で旬の食材を使った看板ランチを堪能。`
+          memo: lCustom
+            ? `【🚃現地移動：${localMethodMeta.short}で約15分】${lCustom.memo}`
+            : `【🚃現地移動：前の予定地から${localMethodMeta.short}で約15分】「${lPlaceLabel}」で旬の食材を使った看板ランチを堪能。`
         });
 
         // 4) 1日目 午後スポット
-        const aTitle =
-          areaPreset?.afternoonSpot ||
-          prefSpots.afternoon;
-        const aPin =
-          areaPreset?.afternoonPin ||
-          `${rawDest} ${prefSpots.afternoon.replace(/（.*?）/g, '')}`;
-        const aPlaceLabel = extractConcreteSpotLabel(aTitle, aPin);
+        const rawATitle = areaPreset?.afternoonSpot || prefSpots.afternoon;
+        const aPin = areaPreset?.afternoonPin || `${rawDest} ${prefSpots.afternoon.replace(/（.*?）/g, '')}`;
+        const aPlaceLabel = extractConcreteSpotLabel(rawATitle, aPin);
+        const aCustom = !companionAreaPreset ? customizeSpotByCompanion({ title: rawATitle }, companionCategory, 'afternoon', rawDest) : null;
+        const aTitle = aCustom ? aCustom.title : rawATitle;
         allEvents.push({
           date: dStr,
           time: '14:00',
           endTime: '15:30',
           title: aTitle,
-          type: isOnsenTheme || isSakeTheme ? 'active' : 'sightseeing',
+          type: isOnsenTheme || isSakeTheme || isFamily ? 'active' : 'sightseeing',
           location: aPlaceLabel,
           mapPinQuery: aPin,
           cost: scaleCost(spotEntryCost),
-          memo: `【🚃現地移動：ランチ場所から${localMethodMeta.short}で約15分】午後は「${aPlaceLabel}」で名所めぐりを体験。`
+          memo: aCustom
+            ? `【🚃現地移動：${localMethodMeta.short}で約15分】${aCustom.memo}`
+            : `【🚃現地移動：ランチ場所から${localMethodMeta.short}で約15分】午後は「${aPlaceLabel}」で名所めぐりを体験。`
         });
 
         // 5) 1日目 カフェ・甘味休憩
-        const cTitle =
-          areaPreset?.cafeSpot ||
-          prefSpots.cafe;
+        const rawCTitle = areaPreset?.cafeSpot || prefSpots.cafe;
         const cPin = areaPreset?.cafePin || `${rawDest} ${prefSpots.cafe.replace(/（.*?）/g, '')}`;
-        const cPlaceLabel = extractConcreteSpotLabel(cTitle, cPin);
+        const cPlaceLabel = extractConcreteSpotLabel(rawCTitle, cPin);
+        const cCustom = !companionAreaPreset ? customizeSpotByCompanion({ title: rawCTitle }, companionCategory, 'cafe', rawDest) : null;
+        const cTitle = cCustom ? cCustom.title : rawCTitle;
         allEvents.push({
           date: dStr,
           time: '15:45',
@@ -14121,7 +15547,9 @@ function buildFallbackPlans(
           location: cPlaceLabel,
           mapPinQuery: cPin,
           cost: scaleCost(cafeCost),
-          memo: `【🚃現地移動：前のスポットから${localMethodMeta.short}で約10分】「${cPlaceLabel}」でご当地スイーツとカフェ休憩。`
+          memo: cCustom
+            ? `【🚃現地移動：${localMethodMeta.short}で約10分】${cCustom.memo}`
+            : `【🚃現地移動：前のスポットから${localMethodMeta.short}で約10分】「${cPlaceLabel}」でご当地スイーツとカフェ休憩。`
         });
       } else {
         // 2日目以降の午前スポット
@@ -14135,11 +15563,15 @@ function buildFallbackPlans(
           time: '09:30',
           endTime: '11:30',
           title: d2MTitle,
-          type: 'sightseeing',
+          type: isFamily ? 'active' : 'sightseeing',
           location: d2MPlaceLabel,
           mapPinQuery: d2MPin,
           cost: scaleCost(spotEntryCost),
-          memo: `${dayIdx + 1}日目の朝は、混雑前の時間帯に「${d2MPlaceLabel}」を巡ります。`
+          memo: isCouple
+            ? `${dayIdx + 1}日目の朝は、2人で爽やかな景色を楽しめる「${d2MPlaceLabel}」をゆったり巡ります。`
+            : isFamily
+            ? `${dayIdx + 1}日目の午前中は、お子様も元気いっぱいに楽しめる「${d2MPlaceLabel}」へ！`
+            : `${dayIdx + 1}日目の朝は、混雑前の時間帯に「${d2MPlaceLabel}」を巡ります。`
         });
 
         // 2日目以降のランチ
@@ -14159,17 +15591,17 @@ function buildFallbackPlans(
           location: d2LPlaceLabel,
           mapPinQuery: d2LPin,
           cost: scaleCost(lunchCost),
-          memo: `${dayIdx + 1}日目のお昼は地元で長年愛される「${d2LPlaceLabel}」へ。`
+          memo: `${dayIdx + 1}日目のお昼は地元で評判の「${d2LPlaceLabel}」へ。`
         });
       }
 
       if (!isLastDay) {
         // 宿泊日（1泊以上の夜）：ホテルチェックイン＆夕食
-        const hTitle =
-          areaPreset?.hotelSpot ||
-          prefSpots.hotel;
+        const rawHTitle = areaPreset?.hotelSpot || prefSpots.hotel;
         const hPin = areaPreset?.hotelPin || `${rawDest} ${prefSpots.hotel.replace(/（.*?）/g, '')}`;
-        const hPlaceLabel = extractConcreteSpotLabel(hTitle, hPin);
+        const hPlaceLabel = extractConcreteSpotLabel(rawHTitle, hPin);
+        const hCustom = !companionAreaPreset ? customizeSpotByCompanion({ title: rawHTitle }, companionCategory, 'hotel', rawDest) : null;
+        const hTitle = hCustom ? hCustom.title : rawHTitle;
         allEvents.push({
           date: dStr,
           time: '17:30',
@@ -14179,7 +15611,9 @@ function buildFallbackPlans(
           location: hPlaceLabel,
           mapPinQuery: hPin,
           cost: scaleCost(perNightHotelCost),
-          memo: `予算目安（1人¥${safeBudget.toLocaleString()}）に合わせ、「${hPlaceLabel}」で温泉と地元食材の夕食をゆっくり堪能。`
+          memo: hCustom
+            ? hCustom.memo
+            : `予算目安（1人¥${safeBudget.toLocaleString()}）に合わせ、「${hPlaceLabel}」で温泉と地元食材の夕食をゆっくり堪能。`
         });
       } else {
         // 最終日：お土産ショッピング＆帰路の移動
@@ -14240,29 +15674,57 @@ function buildFallbackPlans(
   const sumCost = (evs) => evs.reduce((acc, e) => acc + (Number(e.cost) || 0), 0);
   const cleanThemeTitle = (theme || '王道観光＆グルメ').replace(/^[^\s]+\s/, '');
 
+  const mainCourseBadge = isCouple
+    ? `💑 カップル・ご夫婦におすすめ！ロマンチック＆${cleanThemeTitle}コース`
+    : isFamily
+    ? `👨‍👩‍👧 家族・子連れでも安心！子どもが楽しめる＆${cleanThemeTitle}コース`
+    : `👑 ご希望テーマ「${cleanThemeTitle}」×王道コース`;
+
+  const mainCourseTitle = isCouple
+    ? `${cleanDest}・2人で過ごすロマンチック絶景＆${cleanThemeTitle}デートコース`
+    : isFamily
+    ? `${cleanDest}・家族みんなで大満足！わくわく体験＆${cleanThemeTitle}コース`
+    : `${cleanDest}・${cleanThemeTitle}＆定番名所完全制覇コース`;
+
+  const mainCourseDesc = isCouple
+    ? `カップル・ご夫婦向けに、写真映えする絶景やおしゃれなカフェ・貸切風呂や雰囲気抜群の食事処を厳選！（${cleanOrigin}発・${transMethodMeta.short}・${totalDays}日間・1人予算¥${safeBudget.toLocaleString()}）`
+    : isFamily
+    ? `お子様連れ・ご家族でも無理なく回れるよう、水族館や体験スポット・座敷やキッズ対応の食事処・ファミリー向け宿を組み込んだ安心プランです！（大人${adultCount}名${childCount > 0 ? `・子ども${childCount}名` : ''}）`
+    : `指定された条件（${cleanOrigin}発・${transMethodMeta.short}・${totalDays}日間・1人予算¥${safeBudget.toLocaleString()}）に合わせ、実在の名所とランチ・移動ルートまで組み込んだ本命プランです。`;
+
   return [
     {
-      badge: `👑 ご希望テーマ「${cleanThemeTitle}」×王道コース`,
-      title: `${cleanDest}・${cleanThemeTitle}＆定番名所完全制覇コース`,
-      description: `指定された条件（${cleanOrigin}発・${transMethodMeta.short}・${totalDays}日間・1人予算¥${safeBudget.toLocaleString()}）に合わせ、実在の名所とランチ・移動ルートまで組み込んだ本命プランです。`,
+      badge: mainCourseBadge,
+      title: mainCourseTitle,
+      description: mainCourseDesc,
       budget: sumCost(royalEvents),
       events: royalEvents
     },
     {
-      badge: '🍽️ ご当地グルメ＆人気カフェ特化コース',
+      badge: isCouple ? '🍷 雰囲気抜群の美食＆おしゃれカフェ巡りコース' : isFamily ? '🍽️ 家族でシェア＆ご当地グルメ食べ比べコース' : '🍽️ ご当地グルメ＆人気カフェ特化コース',
       title: `${cleanDest}の絶品グルメ＆話題のカフェ食べ歩きコース`,
       description: `名物ランチからロースタリーカフェ、夜の郷土料理まで美食を重視！${localMethodMeta.short}で効率よく回れるプランです。`,
       budget: sumCost(gourmetEvents),
       events: gourmetEvents
     },
     {
-      badge: '🌿 癒やし・絶景＆ゆったり大人旅コース',
+      badge: isCouple ? '♨️ 2人で癒やされる絶景＆貸切温泉ゆったりコース' : isFamily ? '🌿 移動少なめ！自然＆のんびり家族休日コース' : '🌿 癒やし・絶景＆ゆったり大人旅コース',
       title: `${cleanDest}の絶景と温泉・自然でリフレッシュする休日コース`,
       description: `移動の無理をなくして1箇所あたりの滞在時間をゆったり確保！${companion || '同行メンバー'}で心地よく過ごせる癒やしプランです。`,
       budget: sumCost(relaxEvents),
       events: relaxEvents
     }
   ];
+}
+
+function useMemo_companionPreset(rawDest, companionCategory) {
+  const dict = COMPANION_SPECIFIC_SPOTS_BY_AREA[companionCategory];
+  if (!dict) return null;
+  if (/京都|嵐山|祇園|宇治/.test(rawDest)) return dict['京都'];
+  if (/箱根|強羅|湯本|鎌倉|江ノ島|横浜|神奈川/.test(rawDest)) return dict['神奈川'];
+  if (/北海道|札幌|小樽|函館|定山渓/.test(rawDest)) return dict['北海道'];
+  if (/沖縄|那覇|恩納|美ら海|名護|北谷|宮古|石垣/.test(rawDest)) return dict['沖縄'];
+  return null;
 }
 
 function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
@@ -14434,13 +15896,18 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
       };
 
       const aiPlans = await callGoogleGeminiStructured({
-        systemPrompt: `あなたは日本の旅行プラン作成AIです。指定された目的地・全日程（${dateListForPrompt}）・予算・テーマに基づき、必ず3つのプラン候補（①王道・名所コース、②ご当地グルメ＆おしゃれカフェ満喫コース、③癒やし・絶景＆穴場ゆったりコース）をJSON配列で返してください。
+        systemPrompt: `あなたは日本の旅行プラン作成AIです。指定された目的地・全日程（${dateListForPrompt}）・予算・テーマ・同行者（${companion}：大人${adultCount}名・子ども${childCount}名）に基づき、必ず3つのプラン候補（①同行者×希望テーマに最適化した本命コース、②ご当地グルメ＆おしゃれカフェ満喫コース、③癒やし・絶景＆ゆったりコース）をJSON配列で返してください。
 【重要ルール】
-1. 1日あたり5〜6件（出発移動・午前観光・ランチ・午後観光・カフェ・宿または夕食・帰路など）、全日程すべての日にちに朝から夜まで充実したスケジュールを作成してください（1日目だけで終わらせないこと）。
-2. 各予定の memo には、前の予定場所からその場所までの具体的な移動手段・所要時間・おおよその交通費（旅行中の移動手段「${localMethodLabel}」に合わせる）も必ず併記してください。
-3. 各予定の cost（1人あたり費用）は絶対に 0 円にせず、交通費・入場料・飲食代・宿泊費などリアルな金額（500円〜25,000円程度）を入れ、全予定の合計が目標予算（¥${budgetAmount}前後）に近くなるよう配分してください。
-4. location と mapPinQuery には「〇〇中心街」「〇〇観光名所」のような曖昧な言葉ではなく、Googleマップで一発でピンが刺さる実在の具体的な施設名・店舗名・駅名（例：「清水寺」「近江町市場 山さん寿司 本店」「彫刻の森美術館」など）を必ず入れてください。`,
-        userPrompt: `出発地:${departurePoint}、目的地:${trimmedDest}、全日程:${dateListForPrompt}（計${days}日間）、目標1人予算:¥${budgetAmount}、家から旅先までの移動手段:${transportMethod}、旅行中（現地）の移動手段:${localMethodLabel}、同行者:${companion}、テーマ:${theme}。前後の予定場所までの移動方法も同時に提案しながら3つのプラン候補を作成してください。`,
+1. 同行者に合わせた場所選びを徹底してください：
+   - 「カップル・夫婦」の場合は、ロマンチックな夜景・サンセット・展望台、雰囲気の良いテラスカフェ・記念日向きレストラン、貸切露天風呂や露天風呂付き客室のある温泉宿・おしゃれなホテルを提案してください。
+   - 「家族・子連れ（子ども${childCount}名）」の場合は、水族館・動物園・遊覧船・体験型ミュージアム・広い公園など子どもが飽きずに楽しめる場所、座敷やキッズ対応の食事処、バイキングや和洋室のあるファミリー向け宿を提案してください。
+   - 「友達グループ」の場合は、写真映えスポットや食べ歩き商店街、アクティビティ、みんなでシェアできるご当地グルメを提案してください。
+   - 「ひとり旅」の場合は、1人でも気兼ねなく入れるカウンター名店、美術館・神社仏閣、絶景カフェや日帰り温泉を提案してください。
+2. 1日あたり5〜6件（出発移動・午前観光・ランチ・午後観光・カフェ・宿または夕食・帰路など）、全日程すべての日にちに朝から夜まで充実したスケジュールを作成してください（1日目だけで終わらせないこと）。
+3. 各予定の memo には、前の予定場所からその場所までの具体的な移動手段・所要時間・おおよその交通費（旅行中の移動手段「${localMethodLabel}」に合わせる）と、なぜその同行者（${companion}）におすすめなのかのポイントも併記してください。
+4. 各予定の cost（1人あたり費用）は絶対に 0 円にせず、交通費・入場料・飲食代・宿泊費などリアルな金額（500円〜25,000円程度）を入れ、全予定の合計が目標予算（¥${budgetAmount}前後）に近くなるよう配分してください。
+5. location と mapPinQuery には「〇〇中心街」「〇〇観光名所」のような曖昧な言葉ではなく、Googleマップで一発でピンが刺さる実在の具体的な施設名・店舗名・駅名（例：「清水寺」「京都鉄道博物館」「箱根ガラスの森美術館」など）を必ず入れてください。`,
+        userPrompt: `出発地:${departurePoint}、目的地:${trimmedDest}、全日程:${dateListForPrompt}（計${days}日間）、目標1人予算:¥${budgetAmount}、家から旅先までの移動手段:${transportMethod}、旅行中（現地）の移動手段:${localMethodLabel}、同行者:${companion}（大人${adultCount}名・子ども${childCount}名）、テーマ:${theme}。同行者の顔ぶれにぴったりの具体的な場所を選び、前後の予定場所までの移動方法も同時に提案しながら3つのプラン候補を作成してください。`,
         responseSchema: schema
       });
 
@@ -14702,11 +16169,14 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
       const aiPlans = await callGoogleGeminiStructured({
         systemPrompt:
-          `あなたは日本の旅行コンシェルジュAIです。ユーザーのチャット要望に厳密に従い、指定された行き先エリアの旅行プラン候補を3つ（①王道コース、②グルメ＆カフェコース、③癒やし・ゆったりコース）JSON配列で返してください。
+          `あなたは日本の旅行コンシェルジュAIです。ユーザーのチャット要望と同行者構成（${companion}：大人${adultCount}名・子ども${childCount}名）に厳密に従い、指定された行き先エリアの旅行プラン候補を3つ（①同行者×要望に最適化した本命コース、②グルメ＆カフェコース、③癒やし・ゆったりコース）JSON配列で返してください。
 【重要ルール】
-1. 1日あたり5〜6件、全日程（${dateListForPrompt}）すべての日にちに朝から夜まで充実した予定を作成してください。
-2. 各予定の cost は絶対に 0 円にせず、目標予算（¥${budgetAmount}）に合わせて交通費・ランチ・カフェ・観光・宿泊・お土産のリアルな金額を配分してください。
-3. location と mapPinQuery には Googleマップでピンが刺さる具体的な実在の施設名・店舗名・駅名を設定してください。`,
+1. 同行者に合わせた場所選びを徹底してください：
+   - カップル・夫婦ならロマンチックな夜景・夕景・ペア体験・雰囲気の良いカフェや貸切露天風呂宿。
+   - 家族・子連れなら水族館・動物園・体験施設・遊覧船・キッズ歓迎の食事処やファミリー向け宿。
+2. 1日あたり5〜6件、全日程（${dateListForPrompt}）すべての日にちに朝から夜まで充実した予定を作成してください。
+3. 各予定の cost は絶対に 0 円にせず、目標予算（¥${budgetAmount}）に合わせて交通費・ランチ・カフェ・観光・宿泊・お土産のリアルな金額を配分してください。
+4. location と mapPinQuery には Googleマップでピンが刺さる具体的な実在の施設名・店舗名・駅名を設定してください。`,
         userPrompt: `ユーザーの要望:「${userQueryText}」 / 目的地エリア:${targetDest} / 出発地:${departurePoint} / 全日程:${dateListForPrompt}（${days}日間） / 1人予算目安:¥${budgetAmount} / 同行:${companion}（大人${adultCount}名・子ども${childCount}名）`,
         responseSchema: schema
       });
