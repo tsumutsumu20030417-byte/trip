@@ -3174,7 +3174,12 @@ const getSupabaseCredentials = () => {
       (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
       (typeof window !== 'undefined' && window.__SUPABASE_ANON_KEY__) ||
       '';
-    const url = String(rawUrl).trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '');
+    // 末尾の /rest/v1/ やスラッシュ・クォーテーション・空白をすべて自動で取り除く
+    const url = String(rawUrl)
+      .trim()
+      .replace(/^['"]|['"]$/g, '')
+      .replace(/\/rest\/v1\/?$/i, '')
+      .replace(/\/+$/, '');
     const key = String(rawKey).trim().replace(/^['"]|['"]$/g, '');
     return { url, key, enabled: Boolean(url && key) };
   } catch (e) {
@@ -3375,46 +3380,34 @@ const diagnoseSupabaseConnection = async () => {
     return {
       ok: false,
       code: 'ENV_MISSING',
-      message: '環境変数（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）が読み込まれていません。VercelやStackBlitzの環境変数設定を確認してください。'
+      message: '環境変数（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）が読み込まれていません。Vercelの環境変数設定と再デプロイを確認してください。'
     };
   }
+  const maskedUrl = url.replace(/^(https:\/\/[a-z0-9]{6})[a-z0-9]+/i, '$1***');
+  const keyPrefix = key ? `${key.slice(0, 12)}... (長さ:${key.length})` : '未設定';
   try {
-    // 特定カラム名に依存しない select=* でテーブルの存在と権限を診断
-    const res = await fetch(`${url}/rest/v1/shared_trips?select=*&limit=1`, {
+    const targetEndpoint = `${url}/rest/v1/shared_trips?select=*&limit=1`;
+    const res = await fetch(targetEndpoint, {
       headers: buildSupabaseHeaders(key)
     });
     if (res.ok) {
       return {
         ok: true,
         code: 'CONNECTED',
-        message: 'クラウド共有サーバー（Supabase）と正常に接続されています！リアルタイム共有が可能です。'
+        message: `クラウド共有サーバー（${maskedUrl}）と正常に接続されています！リアルタイム共有が可能です。`
       };
     }
     const errText = await res.text().catch(() => '');
-    if (res.status === 404 || errText.includes('PGRST205') || errText.includes('relation "public.shared_trips" does not exist')) {
-      return {
-        ok: false,
-        code: 'TABLE_MISSING',
-        message: 'Supabase内に「shared_trips」テーブルが見つからないか、スキーマキャッシュが未更新です。SQL Editorで作成SQLを実行してください。'
-      };
-    }
-    if (res.status === 401 || res.status === 403 || errText.includes('JWT')) {
-      return {
-        ok: false,
-        code: 'AUTH_OR_RLS_ERROR',
-        message: `認証または権限エラー（HTTP ${res.status}）です。APIキーの値、またはRLSポリシー作成SQLが実行済みか確認してください。`
-      };
-    }
     return {
       ok: false,
-      code: 'HTTP_ERROR',
-      message: `サーバー応答エラー（HTTP ${res.status}）: ${errText.slice(0, 100)}`
+      code: `HTTP_${res.status}`,
+      message: `接続先: ${maskedUrl}\nキー: ${keyPrefix}\nエラー(HTTP ${res.status}): ${errText.slice(0, 140) || '応答なし'}`
     };
   } catch (e) {
     return {
       ok: false,
       code: 'NETWORK_ERROR',
-      message: 'Supabase URLへの通信に失敗しました。VITE_SUPABASE_URLが「https://〇〇.supabase.co」の形式か確認してください。'
+      message: `通信エラー (${maskedUrl}): ${e?.message || 'ネットワーク接続失敗'}`
     };
   }
 };
