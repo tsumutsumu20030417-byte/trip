@@ -394,7 +394,7 @@ const FULL_MUNICIPALITIES_BY_PREF = {
 };
 
 // ★ 添付画像の47都道府県・白地図デザイン＋都道府県タップで国土地理院ベースの県シルエット＆市町村区画マップを表示するコンポーネント
-function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, onSelectMuniChange }) {
+function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, onSelectMuniChange, onOpenMapRules }) {
   const [muniSearch, setMuniSearch] = useState('');
   const [selectedMuni, setSelectedMuni] = useState(null);
   const [apiPrefCityNames, setApiPrefCityNames] = useState([]);
@@ -1311,9 +1311,20 @@ function RealisticJapanMapSvg({ selectedPref, onSelectPref, badgesByPref = {}, o
               <span className="w-1.5 h-1.5 rounded-xs bg-[#A7F3D0] border border-[#059669] inline-block" /> 選択中
             </span>
           </div>
-          <span className="text-stone-400 text-[8px] whitespace-nowrap shrink-0">
-            🔒現地GPS認証 / 1回タップで詳細
-          </span>
+          {onOpenMapRules ? (
+            <button
+              type="button"
+              onClick={onOpenMapRules}
+              className="px-1.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-emerald-200 border border-white/15 text-[8px] font-extrabold flex items-center gap-0.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+            >
+              <Info size={9} className="shrink-0" />
+              <span>地図の記録ルール</span>
+            </button>
+          ) : (
+            <span className="text-stone-400 text-[8px] whitespace-nowrap shrink-0">
+              🔒現地GPS認証 / 1回タップで詳細
+            </span>
+          )}
         </div>
 
         {/* 全国マップの拡大・縮小コントロールボタン */}
@@ -4437,6 +4448,146 @@ const generateSuggests = (baseName, emailBase) => {
   return [`${romaji}_${Math.floor(Math.random()*1000)}`, `${romaji}_travel`, `tabi_${romaji}`];
 };
 
+// ==========================================
+// ★ 目的地・地名の実在チェック＆不正文字列ブロックエンジン
+// 「ふぁえsf」「あああ」「asdf」などの意味不明な入力を弾き、実在する日本の地名・観光地のみを通す
+// ==========================================
+const KNOWN_TOURIST_KEYWORDS = [
+  '北海道', '東北', '関東', '中部', '北陸', '甲信越', '東海', '関西', '近畿', '中国', '山陰', '山陽', '四国', '九州', '沖縄',
+  '道東', '道央', '道南', '道北', '知床', '富良野', '美瑛', 'ニセコ', '登別', '洞爺湖', '定山渓', '層雲峡', '阿寒湖', '摩周湖', 'サロマ湖', '積丹', '利尻', '礼文', '奥尻', 'ススキノ', 'すすきの',
+  '十和田', '奥入瀬', '八甲田', '白神山地', '津軽', '下北', '恐山', '弘前', '三陸', '平泉', '花巻', '遠野', '八幡平', '松島', '秋保', '作並', '鳴子', '蔵王', '角館', '田沢湖', '乳頭温泉', '男鹿', '鳥海山', '銀山温泉', '出羽三山', '庄内', '会津', '大内宿', '磐梯', '裏磐梯', '猪苗代', '東山温泉', 'スパリゾートハワイアンズ',
+  '那須', '塩原', '日光', '鬼怒川', '中禅寺湖', '益子', '草津', '伊香保', '万座', '四万', '水上', 'みなかみ', '尾瀬', '赤城', '榛名', '富岡', '大洗', 'ひたちなか', '筑波山', '袋田の滝',
+  '秩父', '長瀞', '川越', '房総', '南房総', '九十九里', '成田', '舞浜', 'ディズニー', 'TDL', 'TDS', 'お台場', '浅草', '上野', '銀座', '新宿', '渋谷', '原宿', '表参道', '六本木', '秋葉原', '吉祥寺', '下北沢', '高尾山', '奥多摩', '伊豆大島', '八丈島', '新島', '式根島', '神津島', '三宅島', '小笠原',
+  '横浜', 'みなとみらい', '中華街', '元町', '鎌倉', '江ノ島', '江の島', '湘南', '逗子', '葉山', '三浦', '城ヶ島', '箱根', '強羅', '仙石原', '芦ノ湖', '大涌谷', '湯本', '宮ノ下', '湯河原', '丹沢',
+  '富士山', '富士五湖', '河口湖', '山中湖', '本栖湖', '西湖', '精進湖', '忍野八海', '富士急', '勝沼', '石和', '清里', '小淵沢', '八ヶ岳', '昇仙峡',
+  '軽井沢', '旧軽井沢', '星野エリア', '上高地', '乗鞍', '白馬', '安曇野', '黒部', '立山', 'アルペンルート', '善光寺', '戸隠', '小布施', '野沢温泉', '志賀高原', '渋温泉', '湯田中', '別所温泉', '美ヶ原', '霧ヶ峰', '蓼科', '白樺湖', '諏訪湖', '木曽', '妻籠', '馬籠', '阿智', '昼神温泉',
+  '越後湯沢', '苗場', '清津峡', '佐渡', '佐渡島', '弥彦', '月岡温泉', '瀬波温泉', '宇奈月', '黒部峡谷', '氷見', '雨晴', '五箇山',
+  '金沢', '兼六園', '近江町', 'ひがし茶屋街', '能登', '和倉温泉', '輪島', '加賀温泉', '山代温泉', '山中温泉', '片山津温泉', '千里浜',
+  '東尋坊', '永平寺', '芦原温泉', 'あわら温泉', '恐竜博物館', '若狭', '三方五湖',
+  '伊豆', '熱海', '伊東', '伊豆高原', '東伊豆', '河津', '下田', '南伊豆', '西伊豆', '堂ヶ島', '修善寺', '寸又峡', '大井川', '御殿場', '日本平', '三保の松原', '浜名湖', '舘山寺',
+  '飛騨', '高山', '飛騨高山', '白川郷', '下呂', '下呂温泉', '奥飛騨', '平湯', '新穂高', '郡上八幡', '美濃', '養老', '付知峡',
+  '名古屋', '栄', '大須', '犬山', 'ジブリパーク', '常滑', '知多', '日間賀島', '篠島', '佐久島', '蒲郡', '竹島', 'ラグーナ', '渥美半島', '伊良湖', '香嵐渓',
+  '伊勢', '伊勢神宮', 'おかげ横丁', 'おはらい町', '鳥羽', '志摩', '伊勢志摩', '賢島', '英虞湾', '長島', 'ナガシマ', 'なばなの里', '湯の山温泉', '御在所', '赤目四十八滝', '伊賀', '熊野', '熊野古道',
+  '琵琶湖', '大津', '比叡山', '彦根', '長浜', '黒壁スクエア', '竹生島', '近江八幡', 'ラコリーナ', '信楽', 'マキノ', 'メタセコイア',
+  '京都', '嵐山', '嵯峨野', '祇園', '東山', '清水', '河原町', '先斗町', '錦市場', '伏見', '伏見稲荷', '宇治', '貴船', '鞍馬', '大原', '高雄', '天橋立', '伊根', '美山', '丹後', '夕日ヶ浦',
+  '大阪', '梅田', '難波', 'なんば', '道頓堀', '心斎橋', '新世界', '通天閣', '天王寺', '阿倍野', 'USJ', 'ユニバ', 'ユニバーサル', '天保山', '万博公園', '箕面', 'りんくう',
+  '神戸', '三宮', '元町', '北野', '南京町', 'ハーバーランド', '六甲', '摩耶', '有馬', '有馬温泉', '宝塚', '明石', '姫路', '赤穂', '竹田城', '城崎', '城崎温泉', '出石', '湯村温泉', '香住', '淡路', '淡路島', '洲本',
+  '奈良', '奈良公園', '東大寺', '春日大社', 'ならまち', '法隆寺', '斑鳩', '明日香', '飛鳥', '吉野', '長谷寺', '室生寺', '曽爾高原', '天川', '洞川温泉', '十津川', '谷瀬の吊り橋',
+  '高野山', '白浜', '南紀白浜', 'アドベンチャーワールド', '千畳敷', '三段壁', '串本', '那智', '那智の滝', '勝浦', '那智勝浦', '熊野本宮', '湯の峰温泉', '川湯温泉', '龍神温泉', '友ヶ島', '加太', '和歌山マリーナシティ',
+  '鳥取砂丘', '浦富海岸', '皆生温泉', '三朝温泉', 'はわい温泉', '大山', '境港', '水木しげるロード', '倉吉',
+  '松江', '宍道湖', '玉造温泉', '出雲', '出雲大社', '日御碕', '足立美術館', '石見銀山', '温泉津', '津和野', '隠岐', '隠岐の島',
+  '岡山', '後楽園', '倉敷', '美観地区', '児島', '鷲羽山', '瀬戸大橋', '牛窓', '備前', '備中松山城', '蒜山', '蒜山高原', '湯原温泉', '湯郷温泉', '美作',
+  '広島', '宮島', '厳島神社', '原爆ドーム', '平和記念公園', '呉', '大和ミュージアム', '江田島', '竹原', '大久野島', 'うさぎ島', '尾道', '千光寺', 'しまなみ海道', '生口島', '因島', '向島', '鞆の浦', '福山', '帝釈峡', '西条',
+  '岩国', '錦帯橋', '周防大島', '山口', '湯田温泉', '秋吉台', '秋芳洞', '萩', '長門', '長門湯本', '元乃隅神社', '青海島', '角島', '角島大橋', '下関', '唐戸市場', '門司',
+  '徳島', '鳴門', '渦潮', '大塚国際美術館', '大歩危', '小歩危', '祖谷', 'かずら橋', 'うだつの町並み', '阿波おどり',
+  '高松', '栗林公園', '屋島', '金刀比羅宮', 'こんぴら', '琴平', '父母ヶ浜', '天空の鳥居', '高屋神社', '丸亀', '小豆島', '直島', '豊島', '男木島', '女木島', '瀬戸内国際芸術祭',
+  '松山', '道後', '道後温泉', '松山城', '下灘', '下灘駅', '内子', '大洲', '今治', '大三島', '伯方島', '大島', '佐田岬', '宇和島', '四国カルスト',
+  '高知', '桂浜', 'ひろめ市場', '仁淀川', '仁淀ブルー', '四万十', '四万十川', '足摺岬', '柏島', '室戸岬', 'モネの庭', '龍河洞',
+  '福岡', '博多', '天神', '中洲', '百道', '太宰府', '糸島', '二見ヶ浦', '宗像', '福津', '宮地嶽神社', '北九州', '小倉', '門司港', '門司港レトロ', '皿倉山', '柳川', 'うきは', '秋月', '原鶴温泉', '八女',
+  '佐賀', '吉野ヶ里', '唐津', '呼子', '虹の松原', '伊万里', '有田', '武雄', '武雄温泉', '御船山楽園', '嬉野', '嬉野温泉', '鹿島', '祐徳稲荷', '太良',
+  '長崎', 'グラバー園', '稲佐山', '中華街', '出島', '軍艦島', '佐世保', '九十九島', 'ハウステンボス', '平戸', '島原', '雲仙', '雲仙温泉', '小浜温泉', '五島', '五島列島', '福江島', '壱岐', '対馬',
+  '熊本', '熊本城', '水前寺', '阿蘇', '草千里', '大観峰', '黒川温泉', '杖立温泉', 'わいた温泉', '南阿蘇', '高千穂峡', '天草', '﨑津', '人吉', '菊池', '山鹿',
+  '大分', '別府', '別府温泉', '鉄輪', '地獄めぐり', '由布院', '湯布院', '金鱗湖', '湯平', 'くじゅう', '九重', '長湯温泉', '竹田', '日田', '豆田町', '天ヶ瀬', '杵築', '国東', '宇佐', '宇佐神宮', '臼杵',
+  '宮崎', '青島', '日南', '鵜戸神宮', 'サンメッセ日南', '都井岬', '高千穂', '高千穂峡', '天岩戸', 'えびの高原', '都城', '綾', '西都原',
+  '鹿児島', '天文館', '桜島', '仙巌園', '城山', '指宿', '砂むし', '開聞岳', '長崎鼻', '知覧', '枕崎', '霧島', '霧島温泉', '霧島神宮', '大隅', '佐多岬', '種子島', '屋久島', '縄文杉', '奄美', '奄美大島', '加計呂麻島', '喜界島', '徳之島', '沖永良部島', '与論島', 'ヨロン島',
+  '那覇', '国際通り', '首里', '首里城', '瀬長島', 'ウミカジテラス', '北谷', 'アメリカンビレッジ', '読谷', '残波岬', '恩納', '恩納村', '万座毛', '青の洞窟', '名護', '本部', '美ら海', '美ら海水族館', '備瀬', '今帰仁', '古宇利島', '辺戸岬', 'やんばる', 'うるま', '海中道路', '浜比嘉島', '斎場御獄', '知念岬', 'ひめゆり', '糸満', '慶良間', '渡嘉敷島', '座間味島', '阿嘉島', '久米島', '宮古', '宮古島', '伊良部島', '下地島', '来間島', '池間島', '石垣', '石垣島', '川平湾', '竹富島', '小浜島', '黒島', '西表島', '由布島', '鳩間島', '波照間島', '与那国島', '八重山'
+];
+
+const validateDestinationInput = async (rawInput) => {
+  const trimmed = (rawInput || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      reason: 'empty',
+      message: '目的地・エリアが未入力です。行き先を入力してください！'
+    };
+  }
+
+  // 1. 明らかなデタラメ文字列・意味不明な英数字混在・記号のみ・同一文字連打を即座にブロック
+  const allowedAlphaTerms = /^(usj|tdl|tds|tokyo|kyoto|osaka|okinawa|hokkaido|hakone|kanazawa|fukuoka|sapporo|naha|kobe|nara|nagoya|hiroshima|sendai|kamakura|nikko|atami|izu|karuizawa|beppu|yufuin)$/i;
+  const hasInvalidMix =
+    (/[a-zA-Z]/.test(trimmed) && /[ぁ-んァ-ヶ一-龠]/.test(trimmed) && !/USJ|TDL|TDS/i.test(trimmed)) || // 「ふぁえsf」のような日本語＋無意味なアルファベット混在
+    (/^[a-zA-Z0-9\s!-/:-@[-`{-~]+$/.test(trimmed) && !allowedAlphaTerms.test(trimmed)) || // 英数字・記号のみ（許可リスト以外）
+    /^[0-9０-９\s!-/:-@[-`{-~！？、。・]+$/.test(trimmed) || // 数字や記号のみ
+    /^(.)\1+$/.test(trimmed) || // 「あああ」「www」など同じ文字の繰り返し
+    /^[ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮんンー]/.test(trimmed) || // 小文字や「ん」から始まる不自然な文字列
+    /[ぁぃぅぇぉ]{2,}|[っッ]{2,}|[ー]{3,}/.test(trimmed) || // 小文字の連続（例：「ふぁえ」「ぁぃ」など）
+    (/^[ぁ-ん]{1,8}$/.test(trimmed) && /(ふぁ|ふぃ|ふぇ|ふぉ|てゃ|てぃ|てゅ|でゃ|でゅ|ゔ)/.test(trimmed)) || // ひらがなで外来音小文字を含むデタラメ入力
+    trimmed.length > 35;
+
+  if (hasInvalidMix || trimmed.length < 2) {
+    return {
+      valid: false,
+      reason: 'gibberish',
+      message: `「${trimmed}」に該当する日本の地名・観光地が見つかりませんでした。実在する都道府県・市区町村・観光地名を入力してください！`
+    };
+  }
+
+  // 2. 内蔵の全国47都道府県・全1,741市区町村・主要観光地リストとの照合
+  const normalizedInput = trimmed
+    .replace(/\s+/g, '')
+    .replace(/(旅行|観光|ツアー|の旅|周辺|エリア|方面|地方|めぐり|巡り|温泉郷)$/g, '');
+
+  // 都道府県名（フルネームおよび「東京」「京都」「北海道」などの略称）チェック
+  const matchedPref = PREFECTURES.some(pref => {
+    const shortPref = pref.replace(/[都道府県]$/, '');
+    return (
+      normalizedInput.includes(pref) ||
+      normalizedInput.includes(shortPref) ||
+      pref.includes(normalizedInput)
+    );
+  });
+  if (matchedPref) return { valid: true };
+
+  // 主要観光地・温泉地・地域名キーワードチェック
+  const matchedTourist = KNOWN_TOURIST_KEYWORDS.some(
+    kw => normalizedInput.includes(kw) || (normalizedInput.length >= 2 && kw.includes(normalizedInput))
+  );
+  if (matchedTourist) return { valid: true };
+
+  // 全国1,741市区町村マスター（FULL_MUNICIPALITIES_BY_PREF）との照合
+  for (const pref of PREFECTURES) {
+    const munis = FULL_MUNICIPALITIES_BY_PREF[pref] || [];
+    for (const rawMuni of munis) {
+      const cleanMuni = rawMuni.replace(/（.*?）/g, '').trim();
+      const baseMuni = cleanMuni.replace(/[市区町村]$/, '');
+      if (
+        normalizedInput.includes(cleanMuni) ||
+        cleanMuni.includes(normalizedInput) ||
+        (baseMuni.length >= 2 && normalizedInput.includes(baseMuni))
+      ) {
+        return { valid: true };
+      }
+    }
+  }
+
+  // 3. 静止リストにない場合でも、実在する駅名・町名かどうかを HeartRails API でリアルタイム照合
+  try {
+    const searchWord = normalizedInput.replace(/駅$/, '');
+    const [stationRes, geoRes] = await Promise.allSettled([
+      fetch(`https://express.heartrails.com/api/json?method=getStations&name=${encodeURIComponent(searchWord)}`).then(r => r.json()),
+      fetch(`https://geoapi.heartrails.com/api/json?method=Suggest&matching=like&keyword=${encodeURIComponent(searchWord)}`).then(r => r.json())
+    ]);
+
+    const stations = stationRes.status === 'fulfilled' ? stationRes.value?.response?.station : null;
+    if (Array.isArray(stations) && stations.length > 0) {
+      return { valid: true };
+    }
+    const geoLocations = geoRes.status === 'fulfilled' ? geoRes.value?.response?.location : null;
+    if (Array.isArray(geoLocations) && geoLocations.length > 0) {
+      return { valid: true };
+    }
+  } catch (e) {
+    // 通信失敗時は下の判定へ進む
+  }
+
+  return {
+    valid: false,
+    reason: 'not_found',
+    message: `「${trimmed}」に該当する地名・観光地が見つかりませんでした。実在する都道府県・市区町村・観光地名を入力してください！`
+  };
+};
+
 // ★ HeartRails Express / HeartRails Geo API 公式クレジット表記コンポーネント（利用規約準拠・リンク付き）
 function HeartRailsCreditBadge({ className = '', showGeo = true }) {
   return (
@@ -5843,6 +5994,8 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
   const [saveOriginForNext, setSaveOriginForNext] = useState(false);
   const [destination, setDestination] = useState('');
   const [destinationError, setDestinationError] = useState(false);
+  const [destinationErrorMsg, setDestinationErrorMsg] = useState('');
+  const [isValidatingDest, setIsValidatingDest] = useState(false);
   const destinationInputRef = useRef(null);
   const [startDate, setStartDate] = useState(getTodayString());
   const [endDate, setEndDate] = useState(getTodayString());
@@ -5851,17 +6004,33 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
   const [myColor, setMyColor] = useState(PRESET_COLORS[0]);
   const [showAiModal, setShowAiModal] = useState(false);
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
     if (e) e.preventDefault();
+    if (isValidatingDest) return;
     const trimmedDest = (destination || '').trim();
     if (!trimmedDest) {
       setDestinationError(true);
+      setDestinationErrorMsg('目的地・エリアが未入力です。行き先を入力してください！');
       customAlert('⚠️ 「目的地・エリア」を入力してください！');
       destinationInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setTimeout(() => destinationInputRef.current?.focus(), 80);
       return;
     }
+
+    setIsValidatingDest(true);
+    const checkResult = await validateDestinationInput(trimmedDest);
+    setIsValidatingDest(false);
+
+    if (!checkResult.valid) {
+      setDestinationError(true);
+      setDestinationErrorMsg(checkResult.message);
+      destinationInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => destinationInputRef.current?.focus(), 80);
+      return;
+    }
+
     setDestinationError(false);
+    setDestinationErrorMsg('');
 
     if (saveOriginForNext && departurePoint.trim()) {
       addSavedDeparturePoint(departurePoint.trim());
@@ -5951,7 +6120,10 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 value={destination}
                 onChange={e => {
                   setDestination(e.target.value);
-                  if (destinationError && e.target.value.trim()) setDestinationError(false);
+                  if (destinationError && e.target.value.trim()) {
+                    setDestinationError(false);
+                    setDestinationErrorMsg('');
+                  }
                 }}
                 placeholder="例: 京都府 / 箱根 / 沖縄（必須）"
                 className={`w-full p-2.5 rounded-xl text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 transition-all ${
@@ -5961,9 +6133,9 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
                 }`}
               />
               {destinationError && (
-                <p className="mt-1.5 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5 animate-in fade-in">
-                  <AlertCircle size={13} className="shrink-0 text-rose-500" />
-                  <span>目的地・エリアが未入力です。行き先を入力してください！</span>
+                <p className="mt-1.5 text-[11px] font-extrabold text-rose-600 flex items-start gap-1 pl-0.5 leading-snug animate-in fade-in">
+                  <AlertCircle size={13} className="shrink-0 text-rose-500 mt-0.5" />
+                  <span>{destinationErrorMsg || '目的地・エリアが未入力です。行き先を入力してください！'}</span>
                 </p>
               )}
             </div>
@@ -6052,11 +6224,14 @@ function CreateTripWizard({ currentUser, onClose, onComplete }) {
         <div className="pt-2.5 mt-1 border-t border-stone-100 shrink-0 relative z-20 bg-white">
           <button
             type="button"
+            disabled={isValidatingDest}
             onClick={handleCreate}
-            className="w-full py-3.5 px-4 bg-[#7A9D8C] hover:bg-[#688a79] active:scale-[0.99] text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none"
+            className="w-full py-3.5 px-4 bg-[#7A9D8C] hover:bg-[#688a79] disabled:opacity-60 active:scale-[0.99] text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none"
           >
             <Check size={16} strokeWidth={2.8} className="pointer-events-none shrink-0" />
-            <span className="pointer-events-none">この内容でしおりを作成する</span>
+            <span className="pointer-events-none">
+              {isValidatingDest ? '目的地を確認中...' : 'この内容でしおりを作成する'}
+            </span>
           </button>
         </div>
 
@@ -7830,21 +8005,27 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
         <AiConciergeChatModal
           trip={trip}
           selectedDate={selectedDate}
+          tripDates={tripDates}
           isReadOnly={isReadOnly}
           currentUser={currentUser}
           onClose={() => setShowAiChatModal(false)}
           onAddSuggestedEvent={(evData) => {
+            const targetDate = evData.date || selectedDate;
             if (isReadOnly) {
               setShowAiChatModal(false);
               setCopyTarget({
                 type: 'event',
                 data: {
                   id: generateId(),
-                  date: selectedDate,
+                  date: targetDate,
                   time: evData.time || '14:00',
+                  endTime: evData.endTime || '',
                   title: evData.title,
                   type: evData.type || 'sightseeing',
+                  departureOrigin: evData.departureOrigin || '',
+                  transportMethod: evData.transportMethod || '',
                   location: evData.location || trip.destination,
+                  mapPinQuery: evData.mapPinQuery || evData.location || trip.destination,
                   cost: Number(evData.cost) || 0,
                   memo: evData.memo || '',
                   status: 'approved',
@@ -7855,11 +8036,15 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
             } else {
               const newEv = {
                 id: generateId(),
-                date: selectedDate,
+                date: targetDate,
                 time: evData.time || '14:00',
+                endTime: evData.endTime || '',
                 title: evData.title,
                 type: evData.type || 'sightseeing',
+                departureOrigin: evData.departureOrigin || '',
+                transportMethod: evData.transportMethod || '',
                 location: evData.location || trip.destination,
+                mapPinQuery: evData.mapPinQuery || evData.location || trip.destination,
                 cost: Number(evData.cost) || 0,
                 memo: evData.memo || '',
                 status: trip.isSoloTrip ? 'approved' : 'proposed',
@@ -7868,6 +8053,53 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               };
               updateTrip({ ...trip, events: [...(trip.events || []), newEv] });
               customAlert(`「${newEv.title}」をしおりに追加しました！`);
+            }
+          }}
+          onApplySuggestedSchedule={(eventsList, mode = 'append', targetDateOverride = null) => {
+            if (!Array.isArray(eventsList) || eventsList.length === 0) return;
+            const resolvedDate = targetDateOverride || selectedDate;
+            const formattedNewEvents = eventsList.map((ev) => ({
+              id: generateId(),
+              date: ev.date || resolvedDate,
+              time: ev.time || '10:00',
+              endTime: ev.endTime || '',
+              title: ev.title || 'おすすめスポット',
+              type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type)
+                ? ev.type
+                : 'sightseeing',
+              departureOrigin: ev.departureOrigin || '',
+              transportMethod: ev.transportMethod || '',
+              location: ev.location || trip.destination,
+              mapPinQuery: ev.mapPinQuery || ev.location || trip.destination,
+              cost: Number(ev.cost) || 0,
+              memo: ev.memo || '',
+              status: trip.isSoloTrip ? 'approved' : 'proposed',
+              authorId: currentUser.id,
+              photos: []
+            }));
+
+            if (isReadOnly) {
+              setShowAiChatModal(false);
+              setCopyTarget({
+                type: 'day',
+                data: formattedNewEvents
+              });
+              return;
+            }
+
+            if (mode === 'replace_day') {
+              const otherDaysEvents = (trip.events || []).filter((e) => e.date !== resolvedDate);
+              updateTrip({
+                ...trip,
+                events: [...otherDaysEvents, ...formattedNewEvents]
+              });
+              customAlert(`🗓️ この日の予定（全${formattedNewEvents.length}件）をまるごと反映しました！`);
+            } else {
+              updateTrip({
+                ...trip,
+                events: [...(trip.events || []), ...formattedNewEvents]
+              });
+              customAlert(`✨ 提案された${formattedNewEvents.length}件の予定をしおりに追加しました！`);
             }
           }}
         />
@@ -8086,6 +8318,110 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
             setCopyTarget(null);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------
+// 思い出アルバム画面 (AlbumView)
+// ------------------------------------------
+function AlbumView({ trip, currentUser, updateTrip, isReadOnly, onEnlargeImage }) {
+  const fileInputRef = useRef(null);
+  const allPhotos = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    (trip.events || []).forEach(ev => {
+      (ev.photos || []).forEach(p => {
+        if (p?.url && !seen.has(p.id || p.url)) {
+          seen.add(p.id || p.url);
+          list.push({ ...p, eventTitle: ev.title, eventDate: ev.date });
+        }
+      });
+    });
+    (trip.photos || []).forEach(p => {
+      if (p?.url && !seen.has(p.id || p.url)) {
+        seen.add(p.id || p.url);
+        list.push(p);
+      }
+    });
+    return list;
+  }, [trip.events, trip.photos]);
+
+  const handleUploadAlbumPhotos = async (e) => {
+    if (!e.target.files || isReadOnly) return;
+    const files = Array.from(e.target.files);
+    const compressedList = await Promise.all(files.map(f => compressImageFile(f, 1200, 0.82)));
+    const newPhotos = compressedList.filter(Boolean).map(url => ({
+      id: generateId(),
+      url,
+      createdAt: getTodayString(),
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      isPublic: true
+    }));
+    if (newPhotos.length > 0) {
+      updateTrip({ ...trip, photos: [...newPhotos, ...(trip.photos || [])] });
+      customAlert('思い出アルバムに写真を追加しました！');
+    }
+    e.target.value = '';
+  };
+
+  return (
+    <div className="p-5 pb-28 space-y-4 animate-in fade-in duration-200">
+      <div className="bg-white p-5 rounded-3xl shadow-xs border border-stone-100 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-sm text-stone-800 flex items-center gap-1.5">
+            <ImageIcon size={16} className="text-[#7A9D8C]" /> 思い出写真アルバム ({allPhotos.length}枚)
+          </h3>
+          <p className="text-[11px] text-stone-400 font-bold mt-0.5">
+            各予定に貼った写真やアルバム写真がここに集まります
+          </p>
+        </div>
+        {!isReadOnly && (
+          <>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3.5 py-2 bg-[#7A9D8C] hover:bg-[#688a79] text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shrink-0 shadow-2xs active:scale-95"
+            >
+              <Camera size={14} /> 写真を追加
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={handleUploadAlbumPhotos}
+            />
+          </>
+        )}
+      </div>
+
+      {allPhotos.length === 0 ? (
+        <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-stone-200">
+          <Camera size={32} className="text-stone-300 mx-auto mb-2" />
+          <p className="text-xs font-bold text-stone-500">まだ思い出写真がありません</p>
+          <p className="text-[11px] text-stone-400 mt-0.5">しおりの各予定カードにある「写真を追加」から登録できます</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          {allPhotos.map((p, idx) => (
+            <div
+              key={p.id || idx}
+              onClick={() => onEnlargeImage && onEnlargeImage(p.url)}
+              className="aspect-square rounded-2xl overflow-hidden bg-stone-100 border border-stone-200/80 relative group cursor-pointer shadow-2xs"
+            >
+              <img src={p.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+              {p.eventTitle && (
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/35 to-transparent p-2">
+                  <p className="text-[10px] font-bold text-white truncate">{p.eventTitle}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -9939,7 +10275,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
   const currentNowTimeStr = `${String(nowDateObj.getHours()).padStart(2, '0')}:${String(nowDateObj.getMinutes()).padStart(2, '0')}`;
 
   const closestEventId = useMemo(() => {
-    if (!isTodaySelected || currentEvents.length === 0) return null;
+    if (currentEvents.length === 0) return null;
     let bestId = currentEvents[0].id;
     let minDiff = Infinity;
     currentEvents.forEach(ev => {
@@ -9952,7 +10288,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
       }
     });
     return bestId;
-  }, [currentEvents, selectedDate, isTodaySelected, currentNowMinutes]);
+  }, [currentEvents, currentNowMinutes]);
 
   // ★ 今日の日付と一致しているときのみ、しおりを開いた初回1回だけ現在時刻に一番近い予定まで穏やかにスクロールする
   // （一番下の予定でもスクロールしすぎて下端がガタつかないよう maxScrollTop で安全にクランプ）
@@ -10143,40 +10479,40 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
               // Yahoo!乗換案内風：現在時刻がこの予定と次の予定の間の区間に位置しているか判定（0.0〜1.0の進行度）
               const evMin = timeToMinutes(event.time);
               const nextMin = nextEvent ? timeToMinutes(nextEvent.time) : null;
-              const isPassedEvent = isTodaySelected && evMin !== null && currentNowMinutes > evMin;
+              const isPassedEvent = evMin !== null && currentNowMinutes > evMin;
               const isBetweenThisAndNext =
-                isTodaySelected &&
                 evMin !== null &&
                 nextMin !== null &&
                 nextMin > evMin &&
                 currentNowMinutes > evMin &&
                 currentNowMinutes < nextMin;
               const betweenProgress = isBetweenThisAndNext
-                ? Math.min(0.86, Math.max(0.18, (currentNowMinutes - evMin) / (nextMin - evMin)))
+                ? Math.min(0.86, Math.max(0.22, (currentNowMinutes - evMin) / (nextMin - evMin)))
                 : null;
 
-              // ★ 予定の点（ピコンピコン）とは別に、現在時刻のタイムライン位置に置くキャリーケース（🧳）の位置判定
+              // ★ 予定の点（ピコンピコン）とは別に、現在時刻のタイムライン位置に置く丸枠なしキャリーケース（🧳）の位置判定
               const firstMin = timeToMinutes(currentEvents[0]?.time);
               const lastMin = timeToMinutes(currentEvents[currentEvents.length - 1]?.time);
               const showSuitcaseAtTop =
-                isTodaySelected && idx === 0 && firstMin !== null && currentNowMinutes <= firstMin;
+                idx === 0 && firstMin !== null && currentNowMinutes <= firstMin;
               const showSuitcaseOnCardTime =
-                isTodaySelected && evMin !== null && currentNowMinutes === evMin && idx > 0;
+                evMin !== null && currentNowMinutes === evMin && idx > 0;
               const showSuitcaseAtBottom =
-                isTodaySelected &&
                 idx === currentEvents.length - 1 &&
                 lastMin !== null &&
                 currentNowMinutes > lastMin;
 
               const suitcasePositionProgress = showSuitcaseAtTop
-                ? 0.04
+                ? 0.02
                 : showSuitcaseOnCardTime
-                ? 0.14
+                ? 0.35
                 : betweenProgress !== null
                 ? betweenProgress
                 : showSuitcaseAtBottom
-                ? 0.9
+                ? 0.88
                 : null;
+
+              const prevEvent = idx > 0 ? currentEvents[idx - 1] : null;
 
               return (
                 <React.Fragment key={event.id}>
@@ -10187,6 +10523,8 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                   >
                     <EventCard
                       event={event}
+                      prevEvent={prevEvent}
+                      nextEvent={nextEvent}
                       trip={trip}
                       isReadOnly={isReadOnly}
                       currentUser={currentUser}
@@ -10197,7 +10535,20 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                       currentNowTimeStr={currentNowTimeStr}
                       insertButtonSlot={
                         canInsertAfter && insertIndex !== idx && transportInsertState?.idx !== idx ? (
-                          <div className="flex items-center gap-1.5 select-none">
+                          <div className="flex flex-col items-start gap-1 select-none">
+                            {/* ★ 隣り合う予定がどちらも「移動」でない場合、左のタイムライン上の「＋」ボタンの真上に「＋移動方法を追加」ボタンを配置 */}
+                            {canInsertTransportBetween && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTransportInsertBetween(idx, event, nextEvent)}
+                                className="px-2 py-0.5 rounded-full bg-sky-50 hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-300/90 text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-xs active:scale-95 cursor-pointer z-20"
+                                title="前後の目的地から最適な移動方法を選択して追加"
+                              >
+                                <Car size={9} className="shrink-0" />
+                                <span>＋移動方法を追加</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => handleOpenInsertBetween(idx, event, nextEvent)}
@@ -10222,19 +10573,6 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                                 </span>
                               </div>
                             </button>
-
-                            {/* ★ 隣り合う予定がどちらも「移動」でない場合に隣に表示される「＋移動手段を追加」ボタン */}
-                            {canInsertTransportBetween && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenTransportInsertBetween(idx, event, nextEvent)}
-                                className="px-2.5 py-0.5 rounded-full bg-sky-50 hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-300/90 text-[9px] font-extrabold flex items-center gap-1 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer z-10"
-                                title="前後の目的地から最適な移動手段を選択して追加"
-                              >
-                                <Car size={10} className="shrink-0" />
-                                <span>＋移動手段を追加</span>
-                              </button>
-                            )}
                           </div>
                         ) : null
                       }
@@ -10286,7 +10624,120 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                     </div>
                   )}
 
-                  {/* ★「＋移動手段を追加」ボタンを押した時に前後の目的地から最適な交通手段＆おおよその金額候補を選べるインラインパネル */}
+                  {/* ★ 左のタイムライン上の「＋」ボタンの真上に「＋ここに移動方法を追加」とワンタップ即挿入チップを配置 */}
+                  {canInsertAfter && insertIndex !== idx && transportInsertState?.idx !== idx && (
+                    <div className="relative pl-[2px] py-1 z-20 flex flex-col items-start gap-1 select-none">
+                      {canInsertTransportBetween && (() => {
+                        const quickRoutes = buildOptimalRouteCandidates(
+                          event,
+                          nextEvent,
+                          trip.localTransportMethod || 'public_transit'
+                        );
+                        const quickStartT = event?.endTime || getMidpointTime(event?.time, nextEvent?.time);
+                        const quickEndT =
+                          nextEvent?.time && nextEvent.time > quickStartT
+                            ? nextEvent.time
+                            : getMidpointTime(quickStartT, nextEvent?.time);
+                        const fromSpotObj = normalizeConcreteEventSpot(event, trip.destination);
+                        const toSpotObj = normalizeConcreteEventSpot(nextEvent, trip.destination);
+                        const fromClean = (fromSpotObj.location || event.title || '出発地').replace(/（.*?）/g, '');
+                        const toClean = (toSpotObj.location || nextEvent.title || '目的地').replace(/（.*?）/g, '');
+
+                        const handleQuickOneTapInsert = (cand) => {
+                          const newTransportEv = {
+                            id: generateId(),
+                            date: selectedDate,
+                            time: quickStartT || '12:00',
+                            endTime: quickEndT || '',
+                            title: `${fromClean}から${toClean}へ${cand.methodName.split('・')[0]}で移動`,
+                            type: 'transport',
+                            departureOrigin: fromClean,
+                            transportMethod: cand.transportMethod,
+                            location: toClean,
+                            mapPinQuery: toSpotObj.mapPinQuery || toClean,
+                            cost: Number(cand.cost) || 0,
+                            memo: cand.memo,
+                            status: trip.isSoloTrip ? 'approved' : 'proposed',
+                            authorId: currentUser.id,
+                            photos: []
+                          };
+                          updateTrip({ ...trip, events: [...(trip.events || []), newTransportEv] });
+                          customAlert(`🚗「${fromClean} ➔ ${toClean}（${cand.icon}${cand.methodName.split('・')[0]}）」を追加しました！`);
+                        };
+
+                        return (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {/* 左のタイムライン軸上の「＋」ピルの真上に揃えて配置される「＋ここに移動方法を追加」ボタン */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTransportInsertBetween(idx, event, nextEvent)}
+                              className="group/tr relative flex items-center focus:outline-none cursor-pointer"
+                              title="前後の目的地から最適な移動方法を選択して追加"
+                            >
+                              <div className="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-full bg-sky-50 group-hover/tr:bg-sky-600 text-sky-700 group-hover/tr:text-white border border-sky-300/90 group-hover/tr:border-sky-600 shadow-xs transition-all active:scale-95 z-10">
+                                <span className="text-[9px] font-mono font-extrabold tracking-tighter leading-none">
+                                  {quickStartT || suggestedMidTime || ''}
+                                </span>
+                                <span className="w-3.5 h-3.5 rounded-full bg-sky-200/70 group-hover/tr:bg-white/25 flex items-center justify-center">
+                                  <Car size={9} strokeWidth={2.8} className="text-sky-700 group-hover/tr:text-white" />
+                                </span>
+                              </div>
+                              <div className="flex items-center pointer-events-none">
+                                <div className="w-2.5 border-t-2 border-dashed border-sky-300 group-hover/tr:border-sky-600 transition-colors" />
+                                <span className="px-2 py-0.5 rounded-full bg-sky-50 group-hover/tr:bg-sky-600 text-[9px] font-extrabold text-sky-800 group-hover/tr:text-white border border-sky-300/80 transition-all whitespace-nowrap shadow-2xs">
+                                  ＋ここに移動方法を追加
+                                </span>
+                              </div>
+                            </button>
+
+                            {/* 1タップで即座に移動カードを挿入できるクイックチップ（電車・車・徒歩） */}
+                            <div className="flex items-center gap-1 pl-0.5">
+                              {quickRoutes.slice(0, 3).map((cand) => (
+                                <button
+                                  key={cand.id}
+                                  type="button"
+                                  onClick={() => handleQuickOneTapInsert(cand)}
+                                  className="px-1.5 py-0.5 rounded-full bg-white hover:bg-sky-600 text-stone-600 hover:text-white border border-stone-200/90 hover:border-sky-600 text-[9px] font-extrabold flex items-center gap-0.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                  title={`1タップで「${cand.methodName}（目安¥${cand.cost.toLocaleString()}）」を即追加`}
+                                >
+                                  <span>{cand.icon}</span>
+                                  <span>{cand.methodName.split('・')[0]}</span>
+                                  <span className="text-[8px] opacity-75">
+                                    {cand.cost > 0 ? `¥${cand.cost}` : '¥0'}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* その真下に並ぶ「＋ここに予定を追加」ボタン */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenInsertBetween(idx, event, nextEvent)}
+                        className="group/ins relative flex items-center focus:outline-none cursor-pointer"
+                        title={`${suggestedMidTime ? `${suggestedMidTime}頃に` : ''}この間に予定を追加・AI提案`}
+                      >
+                        <div className="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-full bg-white group-hover/ins:bg-[#7A9D8C] text-[#557465] group-hover/ins:text-white border border-[#7A9D8C]/55 group-hover/ins:border-[#7A9D8C] shadow-xs transition-all active:scale-95 z-10">
+                          <span className="text-[9px] font-mono font-extrabold tracking-tighter leading-none">
+                            {suggestedMidTime || ''}
+                          </span>
+                          <span className="w-3.5 h-3.5 rounded-full bg-[#7A9D8C]/15 group-hover/ins:bg-white/25 flex items-center justify-center">
+                            <Plus size={10} strokeWidth={3} className="text-[#7A9D8C] group-hover/ins:text-white" />
+                          </span>
+                        </div>
+                        <div className="flex items-center pointer-events-none">
+                          <div className="w-2.5 border-t-2 border-dashed border-[#7A9D8C]/55 group-hover/ins:border-[#7A9D8C] transition-colors" />
+                          <span className="px-2 py-0.5 rounded-full bg-[#F4F7F5] group-hover/ins:bg-[#7A9D8C] text-[9px] font-extrabold text-[#557465] group-hover/ins:text-white border border-[#7A9D8C]/35 transition-all whitespace-nowrap shadow-2xs">
+                            ＋ここに予定を追加
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ★「＋ここに移動方法を追加」ボタンを押した時に前後の目的地から最適な交通手段＆おおよその金額候補を選べるインラインパネル */}
                   {canInsertTransportBetween && transportInsertState?.idx === idx && (() => {
                     const routeCandidates = buildOptimalRouteCandidates(
                       event,
@@ -10296,8 +10747,10 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                     const selectedRoute =
                       routeCandidates.find(c => c.id === transportInsertState.selectedOptionId) ||
                       routeCandidates[0];
-                    const fromName = (event.location || event.title || '出発地').replace(/（.*?）/g, '');
-                    const toName = (nextEvent.location || nextEvent.title || '目的地').replace(/（.*?）/g, '');
+                    const fromSpot = normalizeConcreteEventSpot(event, trip.destination);
+                    const toSpot = normalizeConcreteEventSpot(nextEvent, trip.destination);
+                    const fromName = (fromSpot.location || event.title || '出発地').replace(/（.*?）/g, '');
+                    const toName = (toSpot.location || nextEvent.title || '目的地').replace(/（.*?）/g, '');
 
                     return (
                       <div className="pl-0 sm:pl-[56px] py-1.5 relative z-20 animate-in fade-in slide-in-from-top-2">
@@ -12027,7 +12480,7 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
 // ------------------------------------------
 // タイムラインの各予定カード (EventCard)
 // ------------------------------------------
-function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false, isPassedEvent = false, betweenNowProgress = null, suitcasePositionProgress = null, currentNowTimeStr = '', insertButtonSlot = null, onApprove, onUpdateEvent, onUpdateMemo, onDelete, onCopy, onAddPhoto, onTogglePhotoPublic, onRequestDeletePhoto, canDeletePhoto, onEnlargeImage }) {
+function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly, currentUser, isClosestNow = false, isPassedEvent = false, betweenNowProgress = null, suitcasePositionProgress = null, currentNowTimeStr = '', insertButtonSlot = null, onApprove, onUpdateEvent, onUpdateMemo, onDelete, onCopy, onAddPhoto, onTogglePhotoPublic, onRequestDeletePhoto, canDeletePhoto, onEnlargeImage }) {
   const defaultOrigin = useMemo(() => getHomeDepartureLabel(currentUser), [currentUser]);
   const addMinutesToTime = (tStr, minsToAdd = 60) => {
     if (!tStr || !tStr.includes(':')) return '13:00';
@@ -12119,18 +12572,27 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
     transport: 'bg-sky-50 text-sky-600 border-sky-200',
     meal: 'bg-orange-50 text-orange-500 border-orange-100',
     sightseeing: 'bg-emerald-50 text-[#557465] border-emerald-100',
-    active: 'bg-purple-50 text-purple-600 border-purple-100',
-    hotel: 'bg-indigo-50 text-indigo-600 border-indigo-100'
+    active: 'bg-amber-50 text-amber-600 border-amber-100',
+    hotel: 'bg-indigo-50 text-indigo-500 border-indigo-100'
   };
   const iconBadgeStyle = tagStyleMap[event.type] || tagStyleMap.sightseeing;
 
   const handleSaveMemo = () => {
-    if (onUpdateMemo) onUpdateMemo(memoText.trim());
+    if (onUpdateMemo) onUpdateMemo(memoText);
     setIsEditingMemo(false);
+    setIsMemoOpen(Boolean(memoText.trim()));
     customAlert('メモを保存しました');
   };
 
-  const resolvedMapDestination = parsePinQuery(event.mapPinQuery || event.location || event.title);
+  // ★「群馬」「群馬県」などの県名のみの表記を具体的な場所名（草津温泉 湯畑・元祖 水沢うどん 大澤屋・伊香保温泉 石段街など）に自動変換し、Googleマップリンクを維持
+  const concreteSpot = useMemo(
+    () => normalizeConcreteEventSpot(event, trip?.destination),
+    [event, trip?.destination]
+  );
+  const displaySpotLocation = concreteSpot.location;
+  const resolvedMapDestination = parsePinQuery(
+    concreteSpot.mapPinQuery || displaySpotLocation || event.title
+  );
 
   const handleOpenNavigation = () => {
     const dest = encodeURIComponent(resolvedMapDestination);
@@ -12203,14 +12665,14 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
           </div>
         </div>
 
-        {/* 予定の点とは別に、現在時刻のタイムライン位置に配置される丸枠なしのキャリーケース（🧳） */}
+        {/* 予定の点とは別に、現在時刻のタイムライン軸上に直接配置される丸枠なしのキャリーケース（🧳） */}
         {suitcasePositionProgress !== null && (
           <div
-            className="absolute left-[48px] -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none select-none"
+            className="absolute left-[48px] -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none select-none flex items-center"
             style={{ top: `${Math.round(suitcasePositionProgress * 100)}%` }}
             title={`現在時刻 (${currentNowTimeStr})`}
           >
-            <span className="text-[14px] leading-none drop-shadow-xs block">🧳</span>
+            <span className="text-[17px] leading-none block">🧳</span>
           </div>
         )}
 
@@ -12221,9 +12683,11 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
         )}
       </div>
 
-      {/* ③ 右側：予定カード本体（「移動」予定は他のカードより小さいスリムバー表示、通常の予定はタイトル横幅をフル確保） */}
+      {/* ③ 右側：予定カード本体（未承認「💡提案中の予定」カードは少し右側にずらして配置し、確定予定と一目で区別できるようにする） */}
       <div
         className={`flex-1 min-w-0 rounded-2xl shadow-xs border transition-all ${
+          isProposed && !isEditingEvent ? 'ml-3.5 sm:ml-5' : ''
+        } ${
           isEditingEvent
             ? 'bg-white p-3 border-2 border-[#7A9D8C] shadow-md'
             : isTransportEvent
@@ -12498,17 +12962,17 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
             </div>
           </form>
         ) : isTransportEvent ? (
-          /* ★ 移動専用のスリム＆シンプル表示（どこからどこまで・何で移動するかを1ブロックに凝縮） */
+          /* ★ 移動専用のスリム＆シンプル表示（どこから ➔ どこまで・何で移動するかが一目でわかるルートバー） */
           (() => {
             const methodMeta =
               TRANSPORT_METHODS.find(m => m.id === event.transportMethod) ||
-              (/飛行機|空港|LCC/.test(event.title || '')
+              (/飛行機|空港|LCC|フライト/.test(event.title || '')
                 ? TRANSPORT_METHODS[2]
                 : /バス/.test(event.title || '')
                 ? TRANSPORT_METHODS[3]
                 : /フェリー|船/.test(event.title || '')
                 ? TRANSPORT_METHODS[4]
-                : /徒歩|自転車|散策/.test(event.title || '')
+                : /徒歩|自転車|散策|歩き/.test(event.title || '')
                 ? TRANSPORT_METHODS[5]
                 : /車|レンタカー|タクシー|ドライブ/.test(event.title || '')
                 ? TRANSPORT_METHODS[1]
@@ -12516,51 +12980,93 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
             const methodEmoji = methodMeta.label.split(' ')[0] || '🚆';
             const methodShort = methodMeta.short || '移動';
 
-            // タイトルや出発地・到着地から「出発 ➔ 到着」をシンプルに抽出
-            const titleRouteMatch = (event.title || '').match(/^(.+?)から(.+?)へ/);
-            const rawFrom = (event.departureOrigin || (titleRouteMatch ? titleRouteMatch[1] : '') || '')
-              .replace(/（.*?）/g, '')
-              .trim();
-            const rawTo = (event.location || (titleRouteMatch ? titleRouteMatch[2] : '') || '')
-              .replace(/（.*?）/g, '')
-              .trim();
-            const hasDistinctRoute = rawFrom && rawTo && rawFrom !== rawTo;
+            // 1) タイトル（「AからBへ」「A→B」「A〜B」）や前後の予定から「出発地」と「到着地」をきれいに抽出
+            const cleanPlaceName = (str) =>
+              (str || '')
+                .replace(/（.*?）/g, '')
+                .replace(/\(.*?\)/g, '')
+                .replace(/(へ|まで)?(新幹線|電車|JR|特急|飛行機|バス|高速バス|夜行バス|車|レンタカー|タクシー|フェリー|船|徒歩|自転車|ドライブ|移動).*$/, '')
+                .replace(/到着.*$/, '')
+                .trim();
+
+            const titleRouteMatch =
+              (event.title || '').match(/^(.+?)から(.+?)(?:へ|まで|$)/) ||
+              (event.title || '').match(/^(.+?)\s*(?:→|➔|⇒|〜|~|-)\s*(.+)$/);
+
+            const fallbackPrevPlace =
+              prevEvent?.location ||
+              prevEvent?.title ||
+              trip.departurePoint ||
+              defaultOrigin;
+            const fallbackNextPlace =
+              nextEvent?.location ||
+              nextEvent?.title ||
+              trip.destination ||
+              '目的地';
+
+            const fromPlace =
+              cleanPlaceName(event.departureOrigin) ||
+              (titleRouteMatch ? cleanPlaceName(titleRouteMatch[1]) : '') ||
+              cleanPlaceName(fallbackPrevPlace) ||
+              '出発地';
+
+            const toPlace =
+              cleanPlaceName(event.location) ||
+              (titleRouteMatch ? cleanPlaceName(titleRouteMatch[2]) : '') ||
+              cleanPlaceName(fallbackNextPlace) ||
+              '目的地';
+
+            const handleOpenRouteNav = (e) => {
+              e.stopPropagation();
+              const travelMode =
+                methodMeta.id === 'car'
+                  ? '&travelmode=driving'
+                  : methodMeta.id === 'bicycle_walk'
+                  ? '&travelmode=walking'
+                  : '&travelmode=transit';
+              const navUrl =
+                fromPlace && toPlace && fromPlace !== toPlace
+                  ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(fromPlace)}&destination=${encodeURIComponent(toPlace)}${travelMode}`
+                  : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(toPlace || resolvedMapDestination)}${travelMode}`;
+              window.open(navUrl, '_blank', 'noopener,noreferrer');
+            };
 
             return (
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-1.5">
-                  {/* 左：移動手段バッジ ＋ どこからどこまで（またはタイトル） */}
+                  {/* 左：交通手段ピル ＋ 「出発地 ➔ 目的地」のシンプルルート表示 */}
                   <div
                     onClick={() => { if (!isReadOnly) setIsEditingEvent(true); }}
                     className={`flex items-center gap-1.5 min-w-0 flex-1 flex-wrap ${!isReadOnly ? 'cursor-pointer hover:opacity-85' : ''}`}
-                    title={!isReadOnly ? 'タップして移動予定を編集' : undefined}
+                    title={!isReadOnly ? 'タップして移動区間・手段を編集' : undefined}
                   >
+                    {/* 何で移動するか */}
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-sky-600 text-white text-[10px] font-extrabold shrink-0 shadow-2xs">
                       <span>{methodEmoji}</span>
                       <span>{methodShort}</span>
                     </span>
 
-                    {hasDistinctRoute ? (
-                      <div className="flex items-center gap-1 text-xs font-extrabold text-stone-800 min-w-0 flex-wrap leading-snug">
-                        <span className="truncate max-w-[115px] sm:max-w-[150px]">{rawFrom}</span>
-                        <span className="text-sky-600 font-black shrink-0">➔</span>
-                        <span className="truncate max-w-[115px] sm:max-w-[150px]">{rawTo}</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs font-extrabold text-stone-800 truncate">
-                        {rawTo ? `${rawTo}へ移動` : event.title}
+                    {/* どこから ➔ どこまで */}
+                    <div className="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-sky-200/90 min-w-0 max-w-full shadow-2xs">
+                      <span className="text-[11px] font-extrabold text-stone-800 truncate max-w-[92px] sm:max-w-[135px]">
+                        {fromPlace}
                       </span>
-                    )}
+                      <span className="text-sky-600 font-black text-xs shrink-0 px-0.5">➔</span>
+                      <span className="text-[11px] font-extrabold text-sky-950 truncate max-w-[92px] sm:max-w-[135px]">
+                        {toPlace}
+                      </span>
+                    </div>
 
+                    {/* 金額（1人あたり × 参加人数） */}
                     {Number(event.cost) > 0 && (
-                      <span className="text-[10px] font-extrabold text-sky-900 bg-white/90 px-1.5 py-0.2 rounded border border-sky-200/80 shrink-0">
-                        ¥{Number(event.cost).toLocaleString()}
+                      <span className="text-[10px] font-extrabold text-sky-900 bg-white/90 px-1.5 py-0.5 rounded-md border border-sky-200/80 shrink-0">
+                        ¥{Number(event.cost).toLocaleString()}/人{memberCount > 1 ? `×${memberCount}` : ''}
                       </span>
                     )}
                   </div>
 
-                  {/* 右：承認ボタン（提案中のみ）・ナビ・編集・削除をスリムに1列配置 */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  {/* 右：承認・経路ナビ・編集・削除 */}
+                  <div className="flex items-center gap-0.5 shrink-0">
                     {isProposed && (
                       <button
                         type="button"
@@ -12572,19 +13078,14 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                       </button>
                     )}
 
-                    {(event.location || event.mapPinQuery || event.title) && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenNavigation();
-                        }}
-                        className="px-2 py-0.5 bg-white hover:bg-blue-50 text-blue-600 rounded-lg text-[10px] font-extrabold inline-flex items-center gap-0.5 border border-blue-200 transition-all active:scale-95 shrink-0 cursor-pointer"
-                        title="経路ナビを起動"
-                      >
-                        <Navigation size={10} className="shrink-0" /> ナビ
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={handleOpenRouteNav}
+                      className="px-2 py-0.5 bg-white hover:bg-blue-50 text-blue-600 rounded-lg text-[10px] font-extrabold inline-flex items-center gap-0.5 border border-blue-200 transition-all active:scale-95 shrink-0 cursor-pointer"
+                      title={`${fromPlace}から${toPlace}までの経路ナビを起動`}
+                    >
+                      <Navigation size={10} className="shrink-0" /> 経路
+                    </button>
 
                     {isReadOnly ? (
                       <button
@@ -12741,23 +13242,23 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
               {/* 予定名の下：場所（ピン指定時は下線付きGoogleマップリンク） / 予算 ＋ ナビボタン */}
               <div className="pt-0.5 flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-bold text-stone-600">
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
-                  {(event.location || event.mapPinQuery) && (
+                  {(displaySpotLocation || event.mapPinQuery) && (
                     <a
                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedMapDestination)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
                       className="inline-flex items-center gap-0.5 text-stone-800 hover:text-[#4A6B5D] max-w-full truncate transition-colors"
-                      title="Googleマップで開く"
+                      title={`Googleマップで「${displaySpotLocation}」を開く`}
                     >
-                      <MapPin size={11} className={event.mapPinQuery ? 'text-rose-500 fill-rose-500 shrink-0' : 'text-[#7A9D8C] shrink-0'} />
+                      <MapPin size={11} className="text-rose-500 fill-rose-500 shrink-0" />
                       <span className="truncate underline decoration-2 underline-offset-2 decoration-[#7A9D8C]">
-                        {event.location || event.mapPinQuery}
+                        {displaySpotLocation}
                       </span>
                     </a>
                   )}
 
-                  {(event.location || event.mapPinQuery) && Number(event.cost) > 0 && (
+                  {(displaySpotLocation || event.mapPinQuery) && Number(event.cost) > 0 && (
                     <span className="text-stone-300 font-normal">/</span>
                   )}
 
@@ -12786,17 +13287,104 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
               </div>
             </div>
 
-            {/* ② メモがあるときのみ表示 */}
-            {(event.memo || isEditingMemo) && (
-              <div className="mt-2 pt-2 border-t border-stone-100">
-                {isEditingMemo ? (
+            {/* ② 「メモ（大きめ比率 flex-1）」と「写真を追加（shrink-0）」を常に1列に横並び配置 */}
+            {(event.memo || isEditingMemo || !isReadOnly || (Array.isArray(event.photos) && event.photos.length > 0)) && (
+              <div className="mt-2 pt-2 border-t border-stone-100 space-y-2">
+                {!isEditingMemo && (event.memo || !isReadOnly) && (
+                  <div className="flex items-stretch gap-1.5">
+                    {/* 左側：メモ領域（大きめ比率 flex-1） */}
+                    {event.memo ? (
+                      isMemoOpen ? (
+                        <div className="flex-1 min-w-0 p-2.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-stone-700 space-y-1">
+                          <div className="flex justify-between items-center text-[10px] font-bold text-stone-400">
+                            <span className="flex items-center gap-1 text-[#557465]">
+                              <FileText size={11} className="text-[#7A9D8C]" /> メモ
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingMemo(true)}
+                                  className="text-[#7A9D8C] hover:underline font-extrabold"
+                                >
+                                  編集
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setIsMemoOpen(false)}
+                                className="text-stone-400 hover:text-stone-600 font-extrabold"
+                              >
+                                閉じる ▲
+                              </button>
+                            </div>
+                          </div>
+                          <p className="whitespace-pre-wrap leading-relaxed text-[11px]">{event.memo}</p>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsMemoOpen(true)}
+                          className="flex-1 min-w-0 py-2 px-3 bg-stone-50 hover:bg-stone-100 rounded-xl border border-stone-200/80 flex items-center justify-between gap-2 text-xs font-bold text-stone-700 text-left transition-colors cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <FileText size={13} className="text-[#7A9D8C] shrink-0" />
+                            <span className="truncate">{event.memo}</span>
+                          </span>
+                          <span className="text-[10px] font-extrabold text-[#557465] shrink-0">メモ ▼</span>
+                        </button>
+                      )
+                    ) : (
+                      !isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingMemo(true)}
+                          className="flex-1 min-w-0 py-2 px-3 bg-stone-50/80 hover:bg-stone-100 rounded-xl border border-dashed border-stone-300 flex items-center justify-between gap-2 text-xs font-extrabold text-stone-500 hover:text-stone-700 text-left transition-colors cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5 truncate">
+                            <FileText size={13} className="text-[#7A9D8C] shrink-0" />
+                            <span className="truncate">メモ</span>
+                          </span>
+                          <span className="text-[10px] text-stone-400 font-bold shrink-0">＋追加入力</span>
+                        </button>
+                      )
+                    )}
+
+                    {/* 右側：写真を追加ボタン（コンパクト比率 shrink-0 で同じ1列に配置） */}
+                    {!isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="shrink-0 py-2 px-2.5 rounded-xl bg-stone-50 hover:bg-stone-100 border border-stone-200/80 text-[11px] font-extrabold text-stone-600 hover:text-stone-800 inline-flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95"
+                      >
+                        <Camera size={13} className="text-[#7A9D8C] shrink-0" />
+                        <span className="whitespace-nowrap">写真を追加</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {isEditingMemo && (
                   <div className="space-y-1.5">
-                    <textarea
-                      value={memoText}
-                      onChange={e => setMemoText(e.target.value)}
-                      rows="2"
-                      className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
-                    />
+                    <div className="flex items-stretch gap-1.5">
+                      <textarea
+                        value={memoText}
+                        onChange={e => setMemoText(e.target.value)}
+                        rows="2"
+                        placeholder="メモや予約番号を入力..."
+                        className="flex-1 min-w-0 p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
+                      />
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => photoInputRef.current?.click()}
+                          className="shrink-0 px-2.5 rounded-xl bg-stone-50 hover:bg-stone-100 border border-stone-200 text-[10px] font-extrabold text-stone-600 inline-flex flex-col items-center justify-center gap-1"
+                        >
+                          <Camera size={13} className="text-[#7A9D8C]" />
+                          <span className="whitespace-nowrap">写真を追加</span>
+                        </button>
+                      )}
+                    </div>
                     <div className="flex justify-end gap-1.5">
                       <button
                         type="button"
@@ -12817,42 +13405,8 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                       </button>
                     </div>
                   </div>
-                ) : isMemoOpen ? (
-                  <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200/70 text-xs text-stone-700 space-y-1">
-                    <div className="flex justify-between items-center text-[10px] font-bold text-stone-400">
-                      <span>メモ</span>
-                      <div className="flex items-center gap-2">
-                        {!isReadOnly && (
-                          <button type="button" onClick={() => setIsEditingMemo(true)} className="text-[#7A9D8C] hover:underline">
-                            編集
-                          </button>
-                        )}
-                        <button type="button" onClick={() => setIsMemoOpen(false)} className="text-stone-400 hover:text-stone-600">
-                          閉じる ▲
-                        </button>
-                      </div>
-                    </div>
-                    <p className="whitespace-pre-wrap leading-relaxed">{event.memo}</p>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsMemoOpen(true)}
-                    className="w-full py-1 px-2 bg-stone-50 hover:bg-stone-100 rounded-lg border border-stone-200/60 flex items-center justify-between gap-2 text-[11px] font-bold text-stone-600 text-left transition-colors"
-                  >
-                    <span className="flex items-center gap-1.5 truncate">
-                      <FileText size={11} className="text-[#7A9D8C] shrink-0" />
-                      <span className="truncate">{event.memo}</span>
-                    </span>
-                    <span className="text-[10px] text-stone-400 shrink-0">詳細 ▼</span>
-                  </button>
                 )}
-              </div>
-            )}
 
-            {/* ③ 思い出写真セクション */}
-            {((Array.isArray(event.photos) && event.photos.length > 0) || !isReadOnly) && (
-              <div className="mt-2 pt-2 border-t border-stone-100 space-y-1.5">
                 {Array.isArray(event.photos) && event.photos.length > 0 && (
                   <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                     {event.photos.map((photo, pIdx) => (
@@ -12885,30 +13439,21 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                 )}
 
                 {!isReadOnly && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="px-2.5 py-1 rounded-lg bg-stone-50 hover:bg-stone-100 border border-stone-200/80 text-[10px] font-bold text-stone-500 hover:text-stone-700 inline-flex items-center gap-1 transition-colors"
-                    >
-                      <Camera size={11} className="text-[#7A9D8C]" /> 思い出の写真を貼る
-                    </button>
-                    <input
-                      type="file"
-                      ref={photoInputRef}
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        if (e.target.files?.[0]) {
-                          const compressedUrl = await compressImageFile(e.target.files[0], 1200, 0.82);
-                          if (compressedUrl && onAddPhoto) {
-                            onAddPhoto(compressedUrl);
-                          }
-                          e.target.value = '';
+                  <input
+                    type="file"
+                    ref={photoInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      if (e.target.files?.[0]) {
+                        const compressedUrl = await compressImageFile(e.target.files[0], 1200, 0.82);
+                        if (compressedUrl && onAddPhoto) {
+                          onAddPhoto(compressedUrl);
                         }
-                      }}
-                    />
-                  </div>
+                        e.target.value = '';
+                      }
+                    }}
+                  />
                 )}
               </div>
             )}
@@ -13142,8 +13687,270 @@ const SPECIFIC_AREA_SPOTS_DB = [
       day2ShopSpot: '旧軽井沢銀座通り（ミカド珈琲のモカソフト＆沢屋の旬のフルーツジャムお土産）',
       day2ShopPin: 'ミカド珈琲 軽井沢旧道店 長野県北佐久郡軽井沢町軽井沢786-2'
     }
+  },
+  {
+    keywords: ['群馬', '草津', '伊香保', '高崎', '前橋', '富岡', 'みなかみ', '四万', '万座'],
+    station: 'JR高崎駅',
+    royal: {
+      morningSpot: '草津温泉 湯畑（毎分4,000Lの源泉が湧き出る湯けむり散策＆熱乃湯「湯もみと踊り」見学）',
+      morningPin: '草津温泉 湯畑 群馬県吾妻郡草津町草津',
+      lunchSpot: '元祖 水沢うどん 大澤屋 第一店舗（日本三大うどん・コシと弾力抜群のざる水沢うどん＆舞茸天ぷら）',
+      lunchPin: '大澤屋 第一店舗 群馬県渋川市伊香保町水沢125-1',
+      afternoonSpot: '伊香保温泉 石段街（365段の情緒ある石段さんぽ＆勝月堂の湯乃花まんじゅう食べ歩き）',
+      afternoonPin: '伊香保温泉石段街 群馬県渋川市伊香保町伊香保76',
+      cafeSpot: '西の河原公園 露天風呂＆草津ガラス蔵（温泉たまご・抹茶ティラミス休憩）',
+      cafePin: '西の河原公園 群馬県吾妻郡草津町草津521-3',
+      hotelSpot: '草津温泉 ホテル一井 または 季の庭（湯畑一望の源泉かけ流し大浴場＆上州牛会席ディナー）',
+      hotelPin: '草津温泉 ホテル一井 群馬県吾妻郡草津町草津411',
+      day2MorningSpot: '世界遺産・富岡製糸場（明治の赤レンガ繰糸所・国宝建築ガイド見学）',
+      day2MorningPin: '富岡製糸場 群馬県富岡市富岡1-1',
+      day2LunchSpot: '登利平 高崎モントレー店（群馬県民のソウルフード・上州御用「鳥めし松弁当」＆焼き鳥）',
+      day2LunchPin: '登利平 高崎モントレー店 群馬県高崎市八島町222',
+      day2ShopSpot: 'ガトーフェスタ ハラダ 本社工場シャトー・デュ・ボヌール（工場見学＆限定グーテ・デ・ロワお土産）',
+      day2ShopPin: 'ガトーフェスタ ハラダ 本館シャトー・デュ・ボヌール 群馬県高崎市新町1207'
+    }
+  },
+  {
+    keywords: ['栃木', '日光', '鬼怒川', '那須', '宇都宮', '益子', '中禅寺湖'],
+    station: 'JR・東武日光駅',
+    royal: {
+      morningSpot: '世界遺産・日光東照宮（国宝・陽明門、三猿、眠り猫、奥宮参拝）',
+      morningPin: '日光東照宮 栃木県日光市山内2301',
+      lunchSpot: '西洋料理 明治の館（登録有形文化財の洋館で味わうオムレツライス＆チーズケーキ「ニルバーナ」）',
+      lunchPin: '西洋料理 明治の館 栃木県日光市山内2339-1',
+      afternoonSpot: '華厳ノ滝（高さ97mの大迫力エレベーター観瀑台）＆中禅寺湖畔散策',
+      afternoonPin: '華厳ノ滝 栃木県日光市中宮祠2479-2',
+      cafeSpot: '日光珈琲 御用邸通（古民家カフェで味わう自家焙煎珈琲と天然氷のかき氷・シフォンケーキ）',
+      cafePin: '日光珈琲 御用邸通 栃木県日光市本町3-13',
+      hotelSpot: '鬼怒川温泉 あさや（空中庭園露天風呂と和洋中100種以上の豪華ビュッフェディナー）',
+      hotelPin: '鬼怒川温泉 あさや 栃木県日光市鬼怒川温泉滝813',
+      day2MorningSpot: '那須どうぶつ王国 または 大谷資料館（幻想的な巨大地下採掘場跡見学）',
+      day2MorningPin: '大谷資料館 栃木県宇都宮市大谷町909',
+      day2LunchSpot: '宇都宮みんみん 本店 または 来らっせ本店（焼餃子・揚餃子・水餃子の食べ比べランチ）',
+      day2LunchPin: '宇都宮みんみん 本店 栃木県宇都宮市馬場通り4-2-3',
+      day2ShopSpot: '日光駅前 補陀洛本舗（名物・ゆばむすび）＆さかえやの揚げゆばまんじゅう食べ歩き',
+      day2ShopPin: 'さかえや 栃木県日光市松原町10-1'
+    }
+  },
+  {
+    keywords: ['静岡', '熱海', '伊豆', '伊東', '修善寺', '下田', '浜松', '御殿場'],
+    station: 'JR熱海駅',
+    royal: {
+      morningSpot: '來宮神社（樹齢2,100年超の国指定天然記念物「大楠」パワースポット参拝＆境内カフェ茶寮「報鼓」）',
+      morningPin: '來宮神社 静岡県熱海市西山町43-1',
+      lunchSpot: '囲炉茶屋（熱海銀座近く・駿河湾の金目鯛の煮付け＆あじのまご茶漬け御膳）',
+      lunchPin: '囲炉茶屋 静岡県熱海市田原本町2-6',
+      afternoonSpot: 'MOA美術館（相模灘を一望するメインロビーと円形ホールの万華鏡プロジェクション）',
+      afternoonPin: 'MOA美術館 静岡県熱海市桃山町26-2',
+      cafeSpot: '熱海プリン カフェ2nd（お風呂タイル張りのレトロ空間で味わう特製カラメル熱海プリン）',
+      cafePin: '熱海プリン カフェ2nd 静岡県熱海市銀座町10-22',
+      hotelSpot: '熱海温泉 湯宿一番地（源泉かけ流し露天風呂＆伊豆の金目鯛・鮑の磯会席ディナー）',
+      hotelPin: '熱海温泉 湯宿一番地 静岡県熱海市春日町1-2',
+      day2MorningSpot: '大室山リフト（標高580mの噴火口お鉢めぐり360度パノラマ）＆城ヶ崎海岸・門脇吊橋',
+      day2MorningPin: '大室山登山リフト 静岡県伊東市池672-2',
+      day2LunchSpot: '炭焼きレストランさわやか 御殿場インター店 または 沼津魚がし鮨（名物・げんこつハンバーグ）',
+      day2LunchPin: 'さわやか 御殿場インター店 静岡県御殿場市東田中984-1',
+      day2ShopSpot: '熱海駅前 平和通り商店街・仲見世商店街（まる天の海鮮磯揚げ・住吉屋の温泉まんじゅうお土産）',
+      day2ShopPin: '熱海駅前平和通り商店街 静岡県熱海市田原本町'
+    }
+  },
+  {
+    keywords: ['大阪', '難波', '道頓堀', '梅田', 'USJ', 'ユニバ', '心斎橋', '新世界'],
+    station: 'JR新大阪駅・大阪駅',
+    royal: {
+      morningSpot: '大阪城天守閣（黄金の茶室・展望台パノラマと大阪城公園散策）',
+      morningPin: '大阪城天守閣 大阪府大阪市中央区大阪城1-1',
+      lunchSpot: 'お好み焼 美津の（道頓堀・山芋100%のふわふわ山芋焼＆名物美津の焼ランチ）',
+      lunchPin: '美津の 大阪府大阪市中央区道頓堀1-4-15',
+      afternoonSpot: '道頓堀グリコサイン＆黒門市場・なんばグランド花月周辺散策',
+      afternoonPin: '道頓堀グリコサイン 大阪府大阪市中央区道頓堀1-10-2',
+      cafeSpot: 'たこ焼道楽 わなか 千日前本店（外カリッ中トロッの熱々たこ焼き食べ比べ）',
+      cafePin: 'たこ焼道楽 わなか 千日前本店 大阪府大阪市中央区難波千日前11-19',
+      hotelSpot: '新世界・通天閣＆串かつだるま 新世界総本店ディナー（なんば・梅田エリアホテル泊）',
+      hotelPin: '串かつだるま 新世界総本店 大阪府大阪市浪速区恵美須東2-3-9',
+      day2MorningSpot: '梅田スカイビル 空中庭園展望台 または 海遊館（ジンベエザメが泳ぐ世界最大級の水族館）',
+      day2MorningPin: '海遊館 大阪府大阪市港区海岸通1-1-10',
+      day2LunchSpot: '北極星 心斎橋本店（大正11年創業・元祖オムライスの純和風座敷ランチ）',
+      day2LunchPin: '北極星 心斎橋本店 大阪府大阪市中央区西心斎橋2-7-27',
+      day2ShopSpot: '551蓬莱 本店＆りくろーおじさんの店 なんば本店（豚まん・焼きたてチーズケーキお土産）',
+      day2ShopPin: '551蓬莱 本店 大阪府大阪市中央区難波3-6-3'
+    }
   }
 ];
+
+// ★ 全47都道府県の代表名所・老舗グルメ・カフェ・宿マスター（どの県名で作成しても「群馬駅」「群馬代表名所」のような抽象表現にならず、Googleマップでピンポイント表示される実在スポット名に変換）
+const PREFECTURE_SPECIFIC_SPOTS_MAP = {
+  '北海道': { station: 'JR札幌駅', morning: '白い恋人パーク', lunch: '札幌二条市場 大磯', afternoon: '小樽運河', cafe: '小樽洋菓子舗ルタオ 本店', hotel: '定山渓温泉 ぬくもりの宿 ふる川', day2Morning: '札幌もいわ山ロープウェイ', day2Lunch: 'スープカレー GARAKU 札幌本店', shop: '六花亭 札幌本店' },
+  '青森': { station: 'JR新青森駅・青森駅', morning: 'ねぶたの家 ワ・ラッセ', lunch: '青森魚菜センター（元祖青森のっけ丼）', afternoon: '奥入瀬渓流・十和田湖', cafe: 'A-FACTORY（シードル＆アップルパイ）', hotel: '星野リゾート 青森屋（古牧温泉）', day2Morning: '弘前公園・弘前城天守', day2Lunch: '津軽藩ねぷた村・貝焼き味噌御膳', shop: '青森県観光物産館アスパム' },
+  '岩手': { station: 'JR盛岡駅', morning: '世界遺産・中尊寺 金色堂（平泉）', lunch: 'わんこそば 東家 本店', afternoon: '小岩井農場まきば園', cafe: '光原社 可否館（宮沢賢治ゆかりの喫茶）', hotel: 'つなぎ温泉 ホテル紫苑', day2Morning: '盛岡城跡公園（岩手公園）', day2Lunch: '盛楼閣（盛岡冷麺・焼肉）', shop: '盛岡駅ビル フェザン おでんせ館' },
+  '宮城': { station: 'JR仙台駅', morning: '瑞鳳殿・仙台城跡（伊達政宗公騎馬像）', lunch: '味太助 本店（発祥の炭火焼牛たん定食）', afternoon: '日本三景・松島湾遊覧船＆瑞巌寺', cafe: 'ずんだ茶寮 仙台駅ずんだ小径店', hotel: '秋保温泉 ホテル瑞鳳', day2Morning: '松島 五大堂＆福浦橋', day2Lunch: '松島さかな市場（焼き牡蠣＆海鮮丼）', shop: '仙台朝市・エスパル仙台' },
+  '秋田': { station: 'JR秋田駅', morning: '角館 武家屋敷通り（青柳家）', lunch: '佐藤養助 角館店（稲庭うどん）', afternoon: '田沢湖（たつこ像）＆御座石神社', cafe: '甘味処 くら吉 角館本店（マロンドール）', hotel: '乳頭温泉郷 鶴の湯温泉', day2Morning: '千秋公園・秋田市民俗芸能伝承館（ねぶり流し館）', day2Lunch: '秋田比内地鶏や 秋田駅店（究極の親子丼＆きりたんぽ鍋）', shop: '秋田まるごと市場' },
+  '山形': { station: 'JR山形駅', morning: '宝珠山 立石寺（山寺・五大堂の絶景）', lunch: '手打の水車生そば（元祖・鳥中華＆板そば）', afternoon: '銀山温泉 大正ロマンのガス灯街並み散策', cafe: '伊豆の華（銀山温泉・揚げ茄子おろし蕎麦＆甘味）', hotel: '蔵王温泉 蔵王国際ホテル（源泉かけ流し硫黄泉）', day2Morning: '蔵王ロープウェイ＆御釜展望', day2Lunch: '米沢牛 登起波（極上米沢牛すき焼き）', shop: '道の駅やまがた蔵王 樹氷ホール' },
+  '福島': { station: 'JR郡山駅・会津若松駅', morning: '鶴ヶ城（会津若松城・赤瓦天守閣）', lunch: '坂新 または ばんない食堂（喜多方ラーメン）', afternoon: '大内宿（茅葺き屋根が並ぶ宿場町散策）', cafe: '三澤屋（大内宿名物・高遠そば／ねぎそば）', hotel: '会津東山温泉 御宿東鳳', day2Morning: '猪苗代湖＆野口英世記念館', day2Lunch: '元祖輪箱飯 割烹・会津料理 田季野', shop: '七日町通り・鶴ヶ城会館' },
+  '茨城': { station: 'JR水戸駅', morning: '国営ひたち海浜公園（みはらしの丘）', lunch: '那珂湊おさかな市場 ヤマサ水産（回転寿司・海鮮丼）', afternoon: '大洗磯前神社（神磯の鳥居）＆アクアワールド茨城県大洗水族館', cafe: 'サザコーヒー 本店（将軍珈琲＆自家製ケーキ）', hotel: '大洗ホテル（太平洋一望の露天風呂＆あんこう鍋）', day2Morning: '日本三名園・偕楽園＆好文亭', day2Lunch: '山翠（水戸・奥久慈しゃもと常陸秋そば）', shop: '水戸駅ビル エクセルみなみ' },
+  '栃木': { station: 'JR・東武日光駅', morning: '日光東照宮（陽明門・三猿・眠り猫）', lunch: '西洋料理 明治の館（オムレツライス）', afternoon: '華厳ノ滝＆中禅寺湖', cafe: '日光珈琲 御用邸通', hotel: '鬼怒川温泉 あさや', day2Morning: '大谷資料館（巨大地下空間）', day2Lunch: '宇都宮みんみん 本店（焼餃子・水餃子）', shop: 'さかえや（揚げゆばまんじゅう）' },
+  '群馬': { station: 'JR高崎駅', morning: '草津温泉 湯畑＆熱乃湯（湯もみと踊り）', lunch: '元祖 水沢うどん 大澤屋 第一店舗', afternoon: '伊香保温泉 石段街（365段の石段さんぽ）', cafe: '西の河原公園（大露天風呂＆湯上がりカフェ）', hotel: '草津温泉 ホテル一井', day2Morning: '世界遺産・富岡製糸場', day2Lunch: '登利平 高崎モントレー店（上州御用鳥めし）', shop: 'ガトーフェスタ ハラダ 本館シャトー・デュ・ボヌール' },
+  '埼玉': { station: 'JR・西武 秩父駅 / 川越駅', morning: '川越 氷川神社（縁結び風鈴・鯛みくじ）', lunch: '小川菊（川越・創業文政年間の老舗うなぎ蒲焼）', afternoon: '小江戸川越 蔵造りの町並み・時の鐘・菓子屋横丁', cafe: '菓匠右門 一番街店（いも恋＆芋おこわ）', hotel: '秩父温泉 満願の湯・ナチュラルファームシティ農園ホテル', day2Morning: '長瀞岩畳＆荒川ライン下り・寶登山神社', day2Lunch: '阿左美冷蔵 金崎本店（天然氷のかき氷）＆安田屋（わらじかつ丼）', shop: '西武秩父駅前温泉 祭の湯 ちちぶみやげ市' },
+  '千葉': { station: 'JR千葉駅・館山駅', morning: '成田山新勝寺 大本堂参拝＆表参道散策', lunch: '川豊 本店（成田山表参道・捌きたて炭火焼うなぎ重）', afternoon: '鴨川シーワールド（シャチ・イルカパフォーマンス）', cafe: '木村ピーナッツ（館山・濃厚ピーナッツソフトクリーム）', hotel: '鴨川館 または 三日月シーパークホテル勝浦', day2Morning: '濃溝の滝・亀岩の洞窟＆鋸山 日本寺（地獄のぞき）', day2Lunch: '保田小学校 里山食堂 または ばんや（黄金アジフライ＆海鮮丼）', shop: '道の駅 富楽里とみやま・房総四季の蔵' },
+  '東京': { station: 'JR東京駅', morning: '浅草寺 雷門・仲見世通り散策', lunch: '浅草今半 国際通り本店（黒毛和牛すき焼き御膳）', afternoon: '東京スカイツリー 天望デッキ＆すみだ水族館', cafe: '壽々喜園 浅草本店（世界一濃い抹茶ジェラート）', hotel: '東京ステーションホテル または 浅草ビューホテル', day2Morning: '明治神宮 参拝＆表参道・渋谷スカイ展望台', day2Lunch: '築地場外市場 すしざんまい 本店（本マグロづくし）', shop: 'グランスタ東京・大丸東京店' },
+  '神奈川': { station: '箱根湯本駅・JR鎌倉駅', morning: '鶴岡八幡宮＆鎌倉小町通り食べ歩き', lunch: 'はつ花そば 本店（箱根湯本・自然薯せいろ蕎麦）', afternoon: '彫刻の森美術館＆大涌谷（名物・黒たまご）', cafe: 'Bakery & Table 箱根（芦ノ湖ビュー足湯テラス）', hotel: '強羅温泉 季の湯 雪月花', day2Morning: '箱根神社・平和の鳥居＆芦ノ湖海賊船', day2Lunch: 'しらす問屋 とびっちょ 本店（江の島・釜揚げしらす丼）', shop: '横浜赤レンガ倉庫・横浜中華街 江戸清' },
+  '新潟': { station: 'JR新潟駅・越後湯沢駅', morning: '清津峡渓谷トンネル（水鏡のパノラマステーション）', lunch: 'とんかつ太郎（新潟名物・元祖タレかつ丼）', afternoon: '彌彦神社（越後一宮）＆弥彦山ロープウェイ', cafe: 'ぽんしゅ館 越後湯沢驛店（全酒蔵のきき酒＆爆弾おにぎり）', hotel: '月岡温泉 白玉の湯 泉慶（エメラルドグリーンの美白硫黄泉）', day2Morning: '北方文化博物館（豪農の館と大藤棚庭園）', day2Lunch: '小嶋屋総本店（布海苔つなぎの越後へぎそば）', shop: 'ピアBandai（万代島鮮魚センター・新潟銘菓）' },
+  '富山': { station: 'JR富山駅', morning: '富岩運河環水公園＆スターバックス富山環水公園店', lunch: '廻転とやま鮨 富山駅前店（富山湾の白えび・寒ブリ・ホタルイカ）', afternoon: '黒部峡谷トロッコ電車（宇奈月駅〜欅平）または 立山黒部アルペンルート', cafe: '藤子・F・不二雄ふるさとギャラリー＆高岡大仏さんぽ', hotel: '宇奈月温泉 延楽（黒部川渓谷沿いの露天風呂）', day2Morning: '世界遺産・五箇山 菅沼合掌造り集落', day2Lunch: '白えび亭（富山駅・白えび刺身丼＆天丼）', shop: 'きときと市場 とやマルシェ（ますのすし本舗 源）' },
+  '石川': { station: 'JR金沢駅 鼓門', morning: '兼六園＆金沢城公園', lunch: '近江町市場 山さん寿司 本店（18種ネタ海鮮丼＆のどぐろ握り）', afternoon: '金沢21世紀美術館', cafe: 'ひがし茶屋街 箔一 東山店（金箔のかがやきソフト）', hotel: '山代温泉 ゆのくに天祥 または ドーミーイン金沢', day2Morning: '長町武家屋敷跡 野村家', day2Lunch: 'グリルオーツカ（金沢名物ハントンライス）', shop: '金沢百番街 あんと' },
+  '福井': { station: 'JR福井駅', morning: '福井県立恐竜博物館（全身骨格44体展示の巨大ドーム）', lunch: 'ヨーロッパ軒 総本店（福井名物・元祖ソースカツ丼）', afternoon: '東尋坊（日本海の荒波が削り出した断崖絶壁）', cafe: '羽二重餅の古里 マエダセイカ（できたて生羽二重餅）', hotel: 'あわら温泉 まつや千千（北陸最大級の源泉大浴場＆越前ガニ会席）', day2Morning: '大本山 永平寺（七堂伽藍と傘松閣の天井絵）', day2Lunch: '越前そばの里（越前おろしそば＆焼き鯖寿司セット）', shop: 'くるふ福井駅・日本海さかな街' },
+  '山梨': { station: 'JR甲府駅・河口湖駅', morning: '新倉山浅間公園 忠霊塔（五重塔と富士山の大パノラマ）', lunch: 'ほうとう不動 河口湖北本店（富士山を模した白い建物＆名物ほうとう）', afternoon: '大石公園（河口湖畔の季節の花畑と富士山）＆カチカチ山ロープウェイ', cafe: '葡萄屋kofu ハナテラスcafé（季節の山梨県産シャインマスカット・桃パフェ）', hotel: '富士河口湖温泉 秀峰閣 湖月（全室富士山＆河口湖ビュー露天風呂）', day2Morning: '忍野八海（富士山の伏流水が湧く透明な8つの池）', day2Lunch: '甲州ほうとう 小作 甲府駅前店（かぼちゃほうとう＆鳥もつ煮）', shop: '桔梗信玄餅 工場テーマパーク（桔梗屋本社）' },
+  '長野': { station: 'JR松本駅・軽井沢駅', morning: '国宝・松本城（現存五重六階の黒漆天守）', lunch: '蕎麦倶楽部 佐々木 または 川上庵（本格石臼挽き信州蕎麦）', afternoon: '上高地 河童橋・大正池さんぽ または 軽井沢 白糸の滝', cafe: '星野エリア ハルニレテラス 丸山珈琲', hotel: '浅間温泉 界 松本 または 軽井沢プリンスホテル', day2Morning: '信州善光寺 本堂参拝＆仲見世通り食べ歩き', day2Lunch: '明治亭 中央アルプス登山口店（信州ソースかつ丼）', shop: '小布施堂 本店（栗鹿ノ子・モンブラン朱雀）＆中町通り' },
+  '岐阜': { station: 'JR高山駅', morning: '飛騨高山 宮川朝市＆古い町並（三町伝統的建造物群）', lunch: '味蔵天国（JAひだ直営・A5等級飛騨牛焼肉ランチ）', afternoon: '世界遺産・白川郷 合掌造り集落＆城山天守閣展望台', cafe: '飛騨こって牛（竹炭塩・飛騨牛トロさし握り寿司食べ歩き）', hotel: '下呂温泉 水明館（日本三名泉の美肌の湯＆飛騨牛朴葉みそ会席）', day2Morning: '下呂温泉 合掌村＆温泉街足湯めぐり', day2Lunch: 'まるっとプラザ けいちゃん専門店（下呂名物・鶏ちゃん焼き定食）', shop: '高山陣屋前朝市・飛騨物産館' },
+  '静岡': { station: 'JR熱海駅', morning: '來宮神社（樹齢2,100年の大楠参拝）', lunch: '囲炉茶屋（金目鯛の煮付け＆あじのまご茶漬け）', afternoon: 'MOA美術館', cafe: '熱海プリン カフェ2nd', hotel: '熱海温泉 湯宿一番地', day2Morning: '大室山リフト＆城ヶ崎海岸 門脇吊橋', day2Lunch: '炭焼きレストランさわやか（名物げんこつハンバーグ）', shop: '熱海駅前 平和通り商店街' },
+  '愛知': { station: 'JR名古屋駅', morning: '名古屋城 本丸御殿＆金シャチ横丁', lunch: 'あつた蓬萊軒 本店（登録商標・名物ひつまぶし）', afternoon: '熱田神宮 参拝＆ジブリパーク（愛・地球博記念公園）', cafe: 'コンパル 大須本店（元祖エビフライサンド＆本格アイスコーヒー）', hotel: '名古屋マリオットアソシアホテル または 三谷温泉 松風園', day2Morning: '国宝・犬山城＆犬山城下町 本町通り食べ歩き', day2Lunch: '矢場とん 矢場町本店（鉄板わらじとんかつ・みそかつ）', shop: 'ジェイアール名古屋タカシマヤ 地下銘菓街' },
+  '三重': { station: '近鉄・JR伊勢市駅', morning: '伊勢神宮 外宮（豊受大神宮）＆内宮（皇大神宮）正式参拝', lunch: 'おかげ横丁 豚捨（名物・伊勢牛の牛丼＆コロッケ）とふくすけ（伊勢うどん）', afternoon: 'おはらい町・おかげ横丁散策', cafe: '赤福 本店（五十鈴川を眺めながら味わう作りたて赤福餅）', hotel: '鳥羽国際ホテル または 賢島 宝生苑（英虞湾を望む露天風呂）', day2Morning: '横山展望台 天空カフェテラス「ミラドール志摩」', day2Lunch: '鳥羽 海女小屋 はちまんかまど（現役海女さんが炭火で焼く伊勢海老・アワビ）', shop: '鳥羽一番街・ミキモト真珠島' },
+  '滋賀': { station: 'JR彦根駅・近江八幡駅', morning: '国宝・彦根城（現存天守と玄宮園・ひこにゃん登場）', lunch: '近江牛 毛利志満（モリシマ）近江八幡本店（近江牛石焼＆すき焼き）', afternoon: 'ラ コリーナ近江八幡（藤森照信氏設計の草屋根建築＆焼きたてバームクーヘン）', cafe: 'たねや クラブハリエ 日牟禮ヴィレッジ', hotel: 'おごと温泉 びわ湖花街道（琵琶湖一望の美肌の湯）', day2Morning: 'びわ湖バレイ・びわ湖テラス（標高1,100mの絶景インフィニティ水盤）', day2Lunch: '長浜 黒壁スクエア 翼果楼（名物・焼鯖そうめん）', shop: '黒壁ガラス館・三井アウトレットパーク滋賀竜王' },
+  '京都': { station: 'JR京都駅', morning: '清水寺 本堂・舞台＆産寧坂', lunch: '南禅寺 順正（京ゆどうふランチ）', afternoon: '伏見稲荷大社 千本鳥居', cafe: 'ぎおん徳屋（練りたて本わらびもち）', hotel: '京都嵐山温泉 花伝抄', day2Morning: '嵐山 竹林の小径・天龍寺・渡月橋', day2Lunch: '嵐山よしむら（渡月橋一望の手打ち蕎麦）', shop: '錦市場商店街' },
+  '大阪': { station: 'JR新大阪駅・大阪駅', morning: '大阪城天守閣', lunch: 'お好み焼 美津の（道頓堀）', afternoon: '道頓堀グリコサイン＆黒門市場', cafe: 'たこ焼道楽 わなか 千日前本店', hotel: '串かつだるま 新世界総本店＆なんば・梅田ホテル泊', day2Morning: '海遊館 または 梅田スカイビル空中庭園', day2Lunch: '北極星 心斎橋本店（元祖オムライス）', shop: '551蓬莱 本店＆りくろーおじさんの店 なんば本店' },
+  '兵庫': { station: 'JR三ノ宮駅・新神戸駅', morning: '神戸北野異人館街（風見鶏の館・萌黄の館）', lunch: '神戸ステーキランド 神戸館（目の前の鉄板で焼き上げる神戸牛ステーキランチ）', afternoon: '有馬温泉 金の湯・銀の湯＆湯本坂食べ歩き（なま炭酸せんべい）', cafe: '神戸南京町 老祥記（元祖豚まん）＆観音屋（デンマークチーズケーキ）', hotel: '有馬温泉 兵衛向陽閣 または 神戸メリケンパークオリエンタルホテル', day2Morning: '世界遺産・国宝 姫路城（白鷺城の大天守見学）', day2Lunch: '明石 魚の棚商店街 きむらや（本場・明石焼／玉子焼）', shop: '神戸ハーバーランド umie MOSAIC' },
+  '奈良': { station: '近鉄奈良駅・JR奈良駅', morning: '東大寺 大仏殿（盧舎那仏）＆奈良公園の鹿さんぽ', lunch: '志津香 公園店（注文後に炊き上げる七種釜めし）', afternoon: '春日大社（朱塗りの回廊と万燈籠）＆ならまち格子家の街並み', cafe: '中谷堂（高速餅つき実演・つきたてよもぎ餅）＆ほうせき箱（かき氷）', hotel: 'ANDO HOTEL 奈良若草山 または 奈良ホテル', day2Morning: '世界遺産・法隆寺（日本最古の木造建築・五重塔）', day2Lunch: '三輪そうめん 山本 三輪茶屋（本場手延べ三輪そうめん＆柿の葉寿司）', shop: '中川政七商店 奈良本店（鹿猿狐ビルヂング）' },
+  '和歌山': { station: 'JR白浜駅・和歌山駅', morning: 'アドベンチャーワールド（サファリワールド＆マリンライブ）', lunch: 'とれとれ市場 南紀白浜（紀州の生マグロ解体ショー＆海鮮バーベキュー）', afternoon: '白良浜＆千畳敷・三段壁洞窟・円月島サンセット', cafe: '福菱 Kagerou Cafe（生かげろう＆白浜海岸テラス席）', hotel: '白浜古賀の井リゾート＆スパ または 浜千鳥の湯 海舟', day2Morning: '世界遺産・熊野那智大社＆那智の滝（落差133mの名瀑）', day2Lunch: '井出商店（和歌山市・豚骨醤油の和歌山ラーメン名店）', shop: '黒潮市場（和歌山マリーナシティ・紀州南高梅お土産）' },
+  '鳥取': { station: 'JR鳥取駅・米子駅', morning: '鳥取砂丘（馬の背砂丘＆砂の美術館）', lunch: '村上水産 鮮魚部（鳥取港・猛者エビ＆日本海海鮮丼）', afternoon: '水木しげるロード（境港・177体の妖怪ブロンズ像と水木しげる記念館）', cafe: 'すなば珈琲 鳥取駅前店（砂焼きコーヒー＆大山どりサンド）', hotel: '皆生温泉 皆生游月 または 三朝温泉 依山楼岩崎', day2Morning: '大山のみるくの里（白バラ牛乳ソフトクリームと秀峰大山の大パノラマ）', day2Lunch: 'まつやホルモン店 または 牛骨ラーメン香味徳', shop: '鳥取砂丘会館・境港さかなセンター' },
+  '島根': { station: 'JR松江駅・出雲市駅', morning: '出雲大社（大国主大神・大しめ縄の神楽殿参拝）', lunch: '献上そば 羽根屋 本店（日本三大そば・三段割子そば）', afternoon: '足立美術館（21年連続日本一の日本庭園＆横山大観コレクション）', cafe: 'ご縁横丁 ぜんざい餅店（出雲発祥・紅白餅入り出雲ぜんざい）', hotel: '玉造温泉 佳翠苑 皆美（美肌の湯と宍道湖しじみ・島根和牛会席）', day2Morning: '国宝・松江城（現存天守）＆堀川めぐり遊覧船', day2Lunch: '皆美館（松江・藩主ゆかりの伝統料理「鯛めし」御膳）', shop: '神門通り おみやげ街道・シャミネ松江' },
+  '岡山': { station: 'JR岡山駅・倉敷駅', morning: '倉敷美観地区（白壁の町並み・川舟流し＆大原美術館）', lunch: '有鄰庵（倉敷美観地区・名物しあわせプリン＆卵かけご飯）または 味司 野崎（デミカツ丼）', afternoon: '日本三名園・岡山後楽園＆岡山城（烏城）', cafe: 'くらしき桃子 倉敷本店（岡山県産清水白桃・シャインマスカットパフェ）', hotel: '倉敷アイビースクエア または 湯原温泉 八景', day2Morning: '鷲羽山展望台（瀬戸大橋と瀬戸内海多島美の大パノラマ）＆児島ジーンズストリート', day2Lunch: 'ひるぜん大将（蒜山高原名物・ひるぜん焼そば＆ジンギスカン）', shop: 'さんすて岡山（廣榮堂の元祖きびだんご・むらすゞめ）' },
+  '広島': { station: 'JR広島駅', morning: '世界遺産・宮島 厳島神社（海上の大鳥居と朱塗りの社殿）', lunch: 'あなごめし うえの 宮島口本店（明治34年創業・炭火焼あなごめし）', afternoon: '平和記念公園・原爆ドーム＆おりづるタワー展望台', cafe: '紅葉堂 本店（宮島表参道商店街・熱々の揚げもみじ）', hotel: 'グランドプリンスホテル広島 または ONOMICHI U2', day2Morning: '尾道 千光寺山ロープウェイ＆頂上展望台PEAK・猫の細道', day2Lunch: 'お好み村 八昌 または みっちゃん総本店（本場広島お好み焼き・そば肉玉）', shop: '広島駅 ekie おみやげ街道（にしき堂の生もみじ・牡蠣オイル漬け）' },
+  '山口': { station: 'JR新山口駅・下関駅', morning: '角島大橋（コバルトブルーの海を渡る全長1,780mの絶景橋）', lunch: '唐戸市場 活きいき馬関街（下関・本場とらふぐ握り＆海鮮寿司バトル）', afternoon: '元乃隅神社（日本海に向かって連なる123基の赤い鳥居）', cafe: '春帆楼 茶寮（下関・関門海峡を眺めながら味わう甘味＆ふぐ料理）', hotel: '長門湯本温泉 大谷山荘（音信川沿いの名湯＆仙崎イカ・下関ふぐ会席）', day2Morning: '日本三名橋・錦帯橋（木造五連アーチ橋）＆岩国城ロープウェイ', day2Lunch: '元祖瓦そば たかせ 川棚本館（熱々の日本瓦で焼く名物・茶そばと錦糸卵）', shop: 'カモンワーフ・シーモール下関' },
+  '徳島': { station: 'JR徳島駅', morning: '鳴門海峡 うずしお観潮船（世界最大級の大渦潮クルーズ）', lunch: 'びんび家（鳴門海岸・プリプリの活ハマチ刺身定食＆わかめ汁）', afternoon: '大塚国際美術館（世界26ヶ国の名画1,000点以上を陶板で原寸大再現）', cafe: 'アオアヲナルトリゾート テラスカフェ オーゲ（鳴門金時パフェ）', hotel: '大歩危峡まんなか または 祖谷温泉（ケーブルカーで行く渓谷露天風呂）', day2Morning: '祖谷のかずら橋＆大歩危峡遊覧船', day2Lunch: 'いのたに 本店（徳島ラーメン・甘辛豚バラ肉と生卵）', shop: '阿波おどり会館・徳島駅クレメントプラザ' },
+  '香川': { station: 'JR高松駅', morning: '特別名勝 栗林公園（ミシュラン三つ星の回遊式大名庭園＆和船）', lunch: '手打十段 うどんバカ一代（高松・名物釜バターうどん）または 山越うどん', afternoon: '金刀比羅宮（こんぴらさん・御本宮785段参拝）', cafe: '資生堂パーラー 神椿（金刀比羅宮境内・神椿パフェ）', hotel: 'ことひら温泉 琴参閣 または 小豆島国際ホテル（エンジェルロード目の前）', day2Morning: '父母ヶ浜（日本のウユニ塩湖と呼ばれる水鏡ビーチ）＆高屋神社（天空の鳥居）', day2Lunch: '骨付鳥 一鶴 高松店（スパイシーな親どり・ひなどり丸焼き）', shop: '高松オルネ・丸亀町グリーン' },
+  '愛媛': { station: 'JR松山駅', morning: '道後温泉本館（国の重要文化財・千と千尋のモデルともいわれる公衆浴場）', lunch: '五志喜 本店 または かどや 道後椿坂店（宇和島鯛めし・松山鯛めし食べ比べ）', afternoon: '松山城（ロープウェイで登る現存十二天守）', cafe: '10 FACTORY 道後店（愛媛県産みかんジュース蛇口体験＆みかんジェラート）', hotel: '道後温泉 大和屋本店（能舞台のある老舗宿＆瀬戸内会席）', day2Morning: 'JR予讃線 下灘駅（海に一番近い絶景無人駅）＆しまなみ海道 亀老山展望公園', day2Lunch: 'よしうみいきいき館（来島海峡の七輪海鮮バーベキュー）', shop: '道後ハイカラ通り（一六タルト・坊っちゃん団子）' },
+  '高知': { station: 'JR高知駅', morning: '桂浜公園（坂本龍馬像＆桂浜水族館・太平洋の黒潮ビュー）', lunch: 'ひろめ市場 明神丸（目の前で豪快に藁焼きする塩たたき定食）', afternoon: '仁淀川・にこ淵（神秘の「仁淀ブルー」滝壺）または 四万十川沈下橋', cafe: '高知アイスカフェ よさこい咲都（高知名物・1×1=1アイスクリン＆文旦ソフト）', hotel: '城西館（高知城を望む展望露天風呂＆皿鉢料理）', day2Morning: '日本三大ガッカリ名所返上・はりまや橋＆高知城 本丸御殿（現存天守）', day2Lunch: '鍋焼きラーメン 千秋 または 司 高知本店（土佐料理・鰹のたたき）', shop: '日曜市（追手筋）＆とさのさと AGRI COLLETTO' },
+  '福岡': { station: 'JR博多駅', morning: '太宰府天満宮 御本殿参拝＆参道食べ歩き', lunch: '博多一双 博多駅東本店（泡系豚骨ラーメン）', afternoon: '糸島・桜井二見ヶ浦（夫婦岩と海上の白い鳥居）', cafe: 'かさの家（太宰府・焼きたて梅ヶ枝餅と抹茶）', hotel: '博多もつ鍋 やま中 本店ディナー＆博多・天神ホテル泊', day2Morning: '櫛田神社＆キャナルシティ博多', day2Lunch: '元祖博多めんたい重（西中洲）', shop: '博多デイトス みやげもん市場（博多通りもん）' },
+  '佐賀': { station: 'JR佐賀駅・武雄温泉駅', morning: '祐徳稲荷神社（日本三大稲荷・懸造りの極彩色本殿）', lunch: '河太郎 呼子店（透明に輝く活イカの姿造り＆ゲソ天ぷら）', afternoon: '吉野ヶ里歴史公園（弥生時代の巨大環壕集落跡）', cafe: '武雄市図書館・蔦屋書店＆御船山楽園 茶屋', hotel: '嬉野温泉 大正屋（日本三大美肌の湯・とろける湯どうふ会席）', day2Morning: '有田ポーセリンパーク＆有田焼窯元めぐり（トレジャーハンティング）', day2Lunch: '季楽 本店（JAさが直営・最高級佐賀牛せいろ蒸し＆ステーキ）', shop: 'えきマチ1丁目佐賀（小城羊羹・まるぼうろ）' },
+  '長崎': { station: 'JR長崎駅', morning: '大浦天主堂（国宝）＆グラバー園（長崎港を一望する洋館群）', lunch: '四海樓（ちゃんぽん・皿うどん発祥の店）', afternoon: '平和公園・原爆資料館＆出島和蘭商館跡', cafe: '福砂屋 長崎本店（寛永元年創業・底に双目糖が残る本場カステラ）', hotel: '稲佐山観光ホテル（世界新三大夜景を一望する展望露天風呂＆卓袱料理）', day2Morning: 'ハウステンボス（ヨーロッパの街並みと季節のフラワー＆イルミネーション）', day2Lunch: 'ツル茶ん（九州最古の喫茶店・長崎名物トルコライス＆ミルクセーキ）', shop: '長崎街道かもめ市場（長崎駅直結）' },
+  '熊本': { station: 'JR熊本駅', morning: '熊本城 天守閣＆桜の馬場 城彩苑（武者返し石垣と復興天守）', lunch: '菅乃屋 上通店（鮮度抜群の特選霜降り馬刺し＆馬肉焼肉御膳）', afternoon: '阿蘇中岳火口・草千里ヶ浜＆大観峰（阿蘇五岳の大カルデラ眺望）', cafe: '黒川温泉 パティスリー麓（塩麹シュークリーム）＆入湯手形で露天風呂めぐり', hotel: '黒川温泉 山みず木（渓流沿いの森の露天風呂＆肥後あか牛会席）', day2Morning: '水前寺成趣園（東海道五十三次を模した桃山式回遊庭園）', day2Lunch: 'いまきん食堂（内牧温泉・行列必至の阿蘇あか牛丼）または 桂花ラーメン 本店', shop: '肥後よかモン市場（陣太鼓・いきなり団子）' },
+  '大分': { station: 'JR別府駅・由布院駅', morning: '別府地獄めぐり（コバルトブルーの海地獄・かまど地獄）', lunch: '地獄蒸し工房 鉄輪（温泉蒸気で一気に蒸し上げる海鮮＆野菜ランチ）', afternoon: '由布院・湯の坪街道食べ歩き＆フローラルヴィレッジ', cafe: 'B-speak（Pロール）＆Milch（由布院・焼きたてケーゼクーヘン）', hotel: '由布院温泉 ゆふいん山水館 または 杉乃井ホテル（棚湯）', day2Morning: '金鱗湖（湖面から朝霧が立ち上る幻想的な湖畔さんぽ）', day2Lunch: '由布まぶし 心 金鱗湖本店（土鍋炊き豊後牛まぶし）または 東洋軒（元祖とり天）', shop: '別府駅 えきマチ1丁目・トキハ別府店（ざびえる・かぼす銘菓）' },
+  '宮崎': { station: 'JR宮崎駅', morning: '青島神社（鬼の洗濯板に囲まれた亜熱帯植物の島）＆青島ビーチパーク', lunch: '味のおぐら 本店（宮崎名物・元祖チキン南蛮発祥の店）', afternoon: 'サンメッセ日南（太平洋を背に立つ完全復刻モアイ像）＆鵜戸神宮（洞窟内の本殿と運玉投げ）', cafe: 'フルーツ大野（宮崎完熟マンゴーパフェ）', hotel: 'シェラトン・グランデ・オーシャンリゾート（フェニックス・シーガイア）', day2Morning: '高千穂峡（真名井の滝・手漕ぎボート遊覧）＆高千穂神社', day2Lunch: 'ミヤチク（日本一に輝く宮崎牛の鉄板焼ステーキランチ）＆釜揚げうどん重乃井', shop: 'アミュプラザみやざき（チーズ饅頭・日向夏お土産）' },
+  '鹿児島': { station: 'JR鹿児島中央駅', morning: '桜島フェリー乗船＆桜島・湯之平展望所', lunch: '黒かつ亭 中央駅本店（熟成かごしま黒豚の上ロースかつ定食）', afternoon: '名勝 仙巌園（島津家別邸庭園からの桜島眺望）', cafe: '天文館むじゃき 本店（元祖・氷白熊）', hotel: 'SHIROYAMA HOTEL kagoshima（展望露天温泉「さつま乃湯」）', day2Morning: '指宿温泉 砂むし会館「砂楽」', day2Lunch: '指宿市営 唐船峡そうめん流し', shop: 'アミュプラザ鹿児島・さつまいもの館（かるかん・さつま揚げ）' },
+  '沖縄': { station: '那覇空港', morning: '瀬長島ウミカジテラス', lunch: '首里そば（首里城近くの手打ち沖縄そば）', afternoon: '沖縄美ら海水族館（ジンベエザメ大水槽）', cafe: '星野リゾート バンタカフェ（読谷村）', hotel: '恩納村オーシャンビューリゾートホテル＆アグー豚しゃぶしゃぶ', day2Morning: '古宇利大橋＆古宇利オーシャンタワー', day2Lunch: 'A&W 牧港店（ルートビア＆バーガー）', shop: '那覇・国際通り＆第一牧志公設市場' }
+};
+
+const getPrefectureSpotFallback = (destStr = '') => {
+  const raw = (destStr || '').trim();
+  const key = Object.keys(PREFECTURE_SPECIFIC_SPOTS_MAP).find(k => raw.includes(k));
+  if (key) return PREFECTURE_SPECIFIC_SPOTS_MAP[key];
+  const clean = raw.replace(/[都道府県]$/, '') || '現地';
+  return {
+    station: `${clean}駅`,
+    morning: `${clean} 城跡公園・総鎮守神社`,
+    lunch: `${clean}駅前 老舗郷土料理店`,
+    afternoon: `${clean} 市立美術館・展望タワー`,
+    cafe: `${clean} 表参道 自家焙煎珈琲店`,
+    hotel: `${clean}温泉 源泉かけ流し旅館`,
+    day2Morning: `${clean} 朝市・歴史街並み保存地区`,
+    day2Lunch: `${clean} 名物手打ち蕎麦・海鮮処`,
+    shop: `${clean}駅 観光物産館・おみやげ処`
+  };
+};
+
+// AIが「群馬」「栃木」「現地」などの県名・抽象名だけをlocationに返した場合でも、具体的な実在スポット名とGoogleマップ検索クエリに置換する関数
+const resolveSpecificSpotAndPin = (rawLocation, rawPinQuery, fallbackEv, destStr) => {
+  const prefFallback = getPrefectureSpotFallback(destStr);
+  const cleanLoc = (rawLocation || '').trim();
+  const isTooGeneric =
+    !cleanLoc ||
+    PREFECTURES.includes(cleanLoc) ||
+    PREFECTURES.some(p => p.replace(/[都道府県]$/, '') === cleanLoc) ||
+    /^(現地|中心街|市街地|観光名所|観光地|目的地|出発地|周辺|名店|老舗|カフェ|ランチ|ホテル|旅館|温泉宿)$/.test(cleanLoc) ||
+    /(代表ランドマーク|人気水族館|高評価|定番名所|名物ランチ|人気ロースタリー)/.test(cleanLoc);
+
+  const resolvedLocation = !isTooGeneric
+    ? cleanLoc
+    : (fallbackEv?.location || prefFallback.morning);
+
+  const resolvedPinQuery =
+    rawPinQuery && !PREFECTURES.includes(rawPinQuery.trim()) && rawPinQuery.trim().length > 3
+      ? rawPinQuery.trim()
+      : (fallbackEv?.mapPinQuery || `${destStr} ${resolvedLocation}`);
+
+  return { location: resolvedLocation, mapPinQuery: resolvedPinQuery };
+};
+
+// ★ イベントのタイトルや抽象的な県名表記（「群馬」「群馬県」「群馬駅」など）から具体的な名所・店舗名とGoogleマップ検索ピンを復元するヘルパー
+const extractConcreteSpotLabel = (spotTitle = '', fallbackPin = '') => {
+  const fromTitle = (spotTitle || '')
+    .split('（')[0]
+    .split('(')[0]
+    .replace(/^世界遺産・/, '')
+    .replace(/^国宝・/, '')
+    .replace(/^日本三景・/, '')
+    .replace(/^日本三名園・/, '')
+    .replace(/^特別名勝\s*/, '')
+    .split(' または ')[0]
+    .trim();
+  if (fromTitle && !PREFECTURES.includes(fromTitle) && !PREFECTURES.some(p => p.replace(/[都道府県]$/, '') === fromTitle)) {
+    return fromTitle;
+  }
+  const cleanedPin = (fallbackPin || '')
+    .replace(/\s+[^\s]*?[都道府県][^\s]*$/, '')
+    .trim();
+  return cleanedPin || fromTitle || '観光スポット';
+};
+
+const normalizeConcreteEventSpot = (event, tripDest = '') => {
+  if (!event) return { location: '', mapPinQuery: '' };
+  const rawLoc = (event.location || '').trim();
+  const rawPin = (event.mapPinQuery || '').trim();
+  const titleStr = (event.title || '').trim();
+  const prefSpots = getPrefectureSpotFallback(tripDest || rawLoc || titleStr);
+
+  // 1) タイトルに具体的なスポット名（例：「草津温泉 湯畑」「元祖 水沢うどん 大澤屋」「伊香保温泉 石段街」など）が含まれている場合はそれを優先抽出
+  const titleCandidate = extractConcreteSpotLabel(titleStr, rawPin);
+
+  // 2) location が「群馬」「群馬県」「群馬駅」「現地」などの抽象的な県名・自治体名だけになっているか判定
+  const isGenericPrefOrArea =
+    !rawLoc ||
+    PREFECTURES.includes(rawLoc) ||
+    PREFECTURES.some(p => p.replace(/[都道府県]$/, '') === rawLoc) ||
+    PREFECTURES.some(p => `${p.replace(/[都道府県]$/, '')}駅` === rawLoc) ||
+    /^(現地|中心街|市街地|観光名所|観光地|目的地|出発地|周辺)$/.test(rawLoc);
+
+  if (!isGenericPrefOrArea) {
+    return {
+      location: rawLoc,
+      mapPinQuery: rawPin && !PREFECTURES.includes(rawPin) ? rawPin : `${tripDest || ''} ${rawLoc}`.trim()
+    };
+  }
+
+  // タイトルから具体的な施設名が取れる場合（移動タイトル以外）
+  if (
+    titleCandidate &&
+    event.type !== 'transport' &&
+    !/移動|出発|帰路|帰着|到着/.test(titleCandidate)
+  ) {
+    return {
+      location: titleCandidate,
+      mapPinQuery: rawPin && !PREFECTURES.includes(rawPin) ? rawPin : `${tripDest || ''} ${titleCandidate}`.trim()
+    };
+  }
+
+  // カテゴリと時間帯から都道府県の具体的な実在名所（草津温泉 湯畑・元祖 水沢うどん 大澤屋・伊香保温泉 石段街など）を割り当て
+  const hour = Number((event.time || '12:00').split(':')[0]) || 12;
+  let concreteSpot = prefSpots.morning.split('（')[0];
+  if (event.type === 'transport') {
+    concreteSpot = prefSpots.station;
+  } else if (event.type === 'hotel') {
+    concreteSpot = prefSpots.hotel.split('（')[0];
+  } else if (event.type === 'meal') {
+    concreteSpot = hour >= 14 && hour <= 16 ? prefSpots.cafe.split('（')[0] : prefSpots.lunch.split('（')[0];
+  } else if (hour >= 13 && hour <= 16) {
+    concreteSpot = prefSpots.afternoon.split('（')[0];
+  } else if (hour >= 16) {
+    concreteSpot = prefSpots.shop.split('（')[0];
+  }
+
+  return {
+    location: concreteSpot.trim(),
+    mapPinQuery:
+      rawPin && !PREFECTURES.includes(rawPin) && rawPin.length > 3
+        ? rawPin
+        : `${tripDest || ''} ${concreteSpot}`.trim()
+  };
+};
 
 function buildFallbackPlans(
   dest,
@@ -13212,6 +14019,7 @@ function buildFallbackPlans(
   const matchedArea = SPECIFIC_AREA_SPOTS_DB.find(entry =>
     entry.keywords.some(k => rawDest.includes(k))
   );
+  const prefSpots = getPrefectureSpotFallback(rawDest);
 
   const companionNote =
     childCount > 0
@@ -13223,7 +14031,7 @@ function buildFallbackPlans(
   const buildDayEventsForCourse = (courseKey, costScale = 1.0) => {
     const scaleCost = (c) => (c <= 0 ? 0 : round100(c * costScale));
     const areaPreset = matchedArea?.[courseKey] || matchedArea?.royal || null;
-    const hubStation = matchedArea?.station || `${cleanDest}駅`;
+    const hubStation = matchedArea?.station || prefSpots.station || `${cleanDest}駅`;
 
     const allEvents = [];
 
@@ -13247,148 +14055,118 @@ function buildFallbackPlans(
           memo: `【${transMethodMeta.label}】${cleanOrigin}から${hubStation}へ出発${companionNote}。到着後は${localMethodMeta.short}で各スポットを巡ります。`
         });
 
-        // 2) 1日目 午前スポット（テーマに応じて分岐）
+        // 2) 1日目 午前スポット（県名だけの表記を避け、必ず実在の具体的な名所名を設定）
         const mTitle =
           areaPreset?.morningSpot ||
-          (isThemeParkOrFamily
-            ? `${cleanDest} 人気水族館・ファミリー体験パーク`
-            : isHistoryTheme
-            ? `${cleanDest} 国宝・総本宮神社参拝＆御朱印めぐり`
-            : isArtTheme
-            ? `${cleanDest} 現代美術館・建築ミュージアム鑑賞`
-            : isCafeTheme || courseKey === 'gourmet'
-            ? `${cleanDest} 老舗ベーカリー＆自家焙煎モーニングカフェ`
-            : isOnsenTheme || courseKey === 'relax'
-            ? `${cleanDest} 渓谷遊歩道さんぽ＆源泉足湯テラス`
-            : `${cleanDest} 代表ランドマーク・絶景展望スポット`);
+          prefSpots.morning;
         const mPin =
           areaPreset?.morningPin ||
-          (isThemeParkOrFamily
-            ? `${cleanDest} 水族館 テーマパーク`
-            : isHistoryTheme
-            ? `${cleanDest} 神社 仏閣`
-            : isArtTheme
-            ? `${cleanDest} 美術館`
-            : `${cleanDest} 観光名所`);
+          `${rawDest} ${prefSpots.morning.replace(/（.*?）/g, '')}`;
+        const mPlaceLabel = extractConcreteSpotLabel(mTitle, mPin);
         allEvents.push({
           date: dStr,
           time: '10:45',
           endTime: '12:00',
           title: mTitle,
           type: isCafeTheme || courseKey === 'gourmet' ? 'meal' : isThemeParkOrFamily ? 'active' : 'sightseeing',
-          location: mPin.split(' ')[0],
+          location: mPlaceLabel,
           mapPinQuery: mPin,
           cost: scaleCost(spotEntryCost),
-          memo: `【テーマ：${theme || '王道観光'}】午前中の澄んだ空気のなかで${cleanDest}の注目スポットを満喫します。`
+          memo: `【テーマ：${theme || '王道観光'}】午前中の澄んだ空気のなかで「${mPlaceLabel}」を満喫します。`
         });
 
         // 3) 1日目 ご当地ランチ
         const lTitle =
           areaPreset?.lunchSpot ||
-          (isSakeTheme
-            ? `${cleanDest} 名物海鮮・郷土肴と地酒の昼飲み御膳`
-            : isCafeTheme
-            ? `${cleanDest} 築100年の古民家カフェで季節のプレートランチ`
-            : courseKey === 'gourmet'
-            ? `${cleanDest} 食べログ百名店・特選ご当地グルメランチ`
-            : `${cleanDest} 老舗名店で味わう名物郷土料理ランチ`);
-        const lPin = areaPreset?.lunchPin || `${cleanDest} 名物 ランチ 老舗`;
+          prefSpots.lunch;
+        const lPin = areaPreset?.lunchPin || `${rawDest} ${prefSpots.lunch.replace(/（.*?）/g, '')}`;
+        const lPlaceLabel = extractConcreteSpotLabel(lTitle, lPin);
         allEvents.push({
           date: dStr,
           time: '12:15',
           endTime: '13:45',
           title: lTitle,
           type: 'meal',
-          location: lPin.split(' ')[0],
+          location: lPlaceLabel,
           mapPinQuery: lPin,
           cost: scaleCost(lunchCost),
-          memo: `【🚃現地移動：前の予定地から${localMethodMeta.short}で約15分】${cleanDest}ならではの旬の食材を使った看板ランチを堪能。`
+          memo: `【🚃現地移動：前の予定地から${localMethodMeta.short}で約15分】「${lPlaceLabel}」で旬の食材を使った看板ランチを堪能。`
         });
 
         // 4) 1日目 午後スポット
         const aTitle =
           areaPreset?.afternoonSpot ||
-          (isOnsenTheme
-            ? `${cleanDest} 名湯・絶景日帰り露天風呂＆湯上がり散策`
-            : isDriveTheme
-            ? `${cleanDest} パノラマ展望台＆海岸・高原ドライブコース`
-            : isSakeTheme
-            ? `${cleanDest} 老舗酒蔵・ワイナリー見学＆きき酒体験`
-            : courseKey === 'gourmet'
-            ? `${cleanDest} 歴史通り・食べ歩き横丁めぐり`
-            : `${cleanDest} 人気ビュースポット＆歴史街並み散策`);
+          prefSpots.afternoon;
         const aPin =
           areaPreset?.afternoonPin ||
-          (isOnsenTheme
-            ? `${cleanDest} 日帰り温泉 露天風呂`
-            : isSakeTheme
-            ? `${cleanDest} 酒蔵 ブルワリー`
-            : `${cleanDest} 展望台 観光`);
+          `${rawDest} ${prefSpots.afternoon.replace(/（.*?）/g, '')}`;
+        const aPlaceLabel = extractConcreteSpotLabel(aTitle, aPin);
         allEvents.push({
           date: dStr,
           time: '14:00',
           endTime: '15:30',
           title: aTitle,
           type: isOnsenTheme || isSakeTheme ? 'active' : 'sightseeing',
-          location: aPin.split(' ')[0],
+          location: aPlaceLabel,
           mapPinQuery: aPin,
           cost: scaleCost(spotEntryCost),
-          memo: `【🚃現地移動：ランチ場所から${localMethodMeta.short}で約15分】午後はご希望テーマに合わせて${cleanDest}のハイライトを体験。`
+          memo: `【🚃現地移動：ランチ場所から${localMethodMeta.short}で約15分】午後は「${aPlaceLabel}」で名所めぐりを体験。`
         });
 
         // 5) 1日目 カフェ・甘味休憩
         const cTitle =
           areaPreset?.cafeSpot ||
-          `${cleanDest} 人気ロースタリーカフェ＆ご当地限定スイーツ休憩`;
-        const cPin = areaPreset?.cafePin || `${cleanDest} カフェ スイーツ`;
+          prefSpots.cafe;
+        const cPin = areaPreset?.cafePin || `${rawDest} ${prefSpots.cafe.replace(/（.*?）/g, '')}`;
+        const cPlaceLabel = extractConcreteSpotLabel(cTitle, cPin);
         allEvents.push({
           date: dStr,
           time: '15:45',
           endTime: '16:45',
           title: cTitle,
           type: 'meal',
-          location: cPin.split(' ')[0],
+          location: cPlaceLabel,
           mapPinQuery: cPin,
           cost: scaleCost(cafeCost),
-          memo: `【🚃現地移動：前のスポットから${localMethodMeta.short}で約10分】写真映えするご当地パフェや和スイーツでほっと一息。`
+          memo: `【🚃現地移動：前のスポットから${localMethodMeta.short}で約10分】「${cPlaceLabel}」でご当地スイーツとカフェ休憩。`
         });
       } else {
         // 2日目以降の午前スポット
         const d2MTitle =
           areaPreset?.day2MorningSpot ||
-          (isHistoryTheme
-            ? `${cleanDest} 早朝の神社・史跡と城下町さんぽ（${dayIdx + 1}日目）`
-            : `${cleanDest} 朝の絶景スポット＆朝市・人気エリア散策（${dayIdx + 1}日目）`);
-        const d2MPin = areaPreset?.day2MorningPin || `${cleanDest} 朝市 観光スポット`;
+          prefSpots.day2Morning;
+        const d2MPin = areaPreset?.day2MorningPin || `${rawDest} ${prefSpots.day2Morning.replace(/（.*?）/g, '')}`;
+        const d2MPlaceLabel = extractConcreteSpotLabel(d2MTitle, d2MPin);
         allEvents.push({
           date: dStr,
           time: '09:30',
           endTime: '11:30',
           title: d2MTitle,
           type: 'sightseeing',
-          location: d2MPin.split(' ')[0],
+          location: d2MPlaceLabel,
           mapPinQuery: d2MPin,
           cost: scaleCost(spotEntryCost),
-          memo: `${dayIdx + 1}日目の朝は、混雑前の時間帯に${cleanDest}の絶景・定番スポットを巡ります。`
+          memo: `${dayIdx + 1}日目の朝は、混雑前の時間帯に「${d2MPlaceLabel}」を巡ります。`
         });
 
         // 2日目以降のランチ
         const d2LTitle =
           areaPreset?.day2LunchSpot ||
-          `${cleanDest} 地元食材のこだわり名物ランチ（${dayIdx + 1}日目）`;
+          prefSpots.day2Lunch;
         const d2LPin = areaPreset?.day2LunchSpot
           ? areaPreset.day2LunchPin
-          : `${cleanDest} ランチ 名店`;
+          : `${rawDest} ${prefSpots.day2Lunch.replace(/（.*?）/g, '')}`;
+        const d2LPlaceLabel = extractConcreteSpotLabel(d2LTitle, d2LPin);
         allEvents.push({
           date: dStr,
           time: '12:00',
           endTime: '13:30',
           title: d2LTitle,
           type: 'meal',
-          location: d2LPin.split(' ')[0],
+          location: d2LPlaceLabel,
           mapPinQuery: d2LPin,
           cost: scaleCost(lunchCost),
-          memo: `${dayIdx + 1}日目のお昼は地元で長年愛される人気店へ。`
+          memo: `${dayIdx + 1}日目のお昼は地元で長年愛される「${d2LPlaceLabel}」へ。`
         });
       }
 
@@ -13396,37 +14174,37 @@ function buildFallbackPlans(
         // 宿泊日（1泊以上の夜）：ホテルチェックイン＆夕食
         const hTitle =
           areaPreset?.hotelSpot ||
-          (isHocanceTheme
-            ? `${cleanDest} 憧れの露天風呂付き客室・ラグジュアリー宿で極上ステイ＆特選会席`
-            : `${cleanDest}温泉 源泉かけ流し露天風呂付き宿 チェックイン＆ご当地会席ディナー`);
-        const hPin = areaPreset?.hotelPin || `${cleanDest} 温泉 旅館 ホテル`;
+          prefSpots.hotel;
+        const hPin = areaPreset?.hotelPin || `${rawDest} ${prefSpots.hotel.replace(/（.*?）/g, '')}`;
+        const hPlaceLabel = extractConcreteSpotLabel(hTitle, hPin);
         allEvents.push({
           date: dStr,
           time: '17:30',
           endTime: '21:00',
           title: hTitle,
           type: 'hotel',
-          location: hPin.split(' ')[0],
+          location: hPlaceLabel,
           mapPinQuery: hPin,
           cost: scaleCost(perNightHotelCost),
-          memo: `予算目安（1人¥${safeBudget.toLocaleString()}）に合わせ、温泉と地元食材の夕食をゆっくり堪能できる宿にチェックイン。`
+          memo: `予算目安（1人¥${safeBudget.toLocaleString()}）に合わせ、「${hPlaceLabel}」で温泉と地元食材の夕食をゆっくり堪能。`
         });
       } else {
         // 最終日：お土産ショッピング＆帰路の移動
         const sTitle =
           areaPreset?.day2ShopSpot ||
-          `${hubStation}・商店街で${cleanDest}名物お土産＆限定スイーツ選び`;
-        const sPin = areaPreset?.day2ShopPin || `${hubStation} お土産`;
+          prefSpots.shop;
+        const sPin = areaPreset?.day2ShopPin || `${rawDest} ${prefSpots.shop.replace(/（.*?）/g, '')}`;
+        const sPlaceLabel = extractConcreteSpotLabel(sTitle, sPin);
         allEvents.push({
           date: dStr,
           time: totalDays === 1 ? '17:00' : '14:00',
           endTime: totalDays === 1 ? '18:15' : '15:30',
           title: sTitle,
           type: 'sightseeing',
-          location: sPin.split(' ')[0],
+          location: sPlaceLabel,
           mapPinQuery: sPin,
           cost: scaleCost(souvenirCost),
-          memo: `帰りの移動前に${cleanDest}限定のお菓子や特産品・雑貨をまとめ買い！`
+          memo: `帰りの移動前に「${sPlaceLabel}」で限定のお菓子や特産品・お土産をまとめ買い！`
         });
 
         if (totalDays === 1) {
@@ -13434,10 +14212,10 @@ function buildFallbackPlans(
             date: dStr,
             time: '18:30',
             endTime: '20:30',
-            title: `${cleanDest}名物ディナーを堪能して${cleanOrigin}へ${transMethodMeta.short}で帰着`,
+            title: `${sPlaceLabel}周辺で名物ディナーを堪能して${cleanOrigin}へ${transMethodMeta.short}で帰着`,
             type: 'meal',
-            location: `${hubStation}周辺`,
-            mapPinQuery: `${hubStation} ディナー 居酒屋`,
+            location: hubStation,
+            mapPinQuery: `${rawDest} ${hubStation}`,
             cost: scaleCost(dinnerCost + oneWayTransportCost),
             memo: `日帰り旅の締めくくりに名物ディナーを味わってから${cleanOrigin}へ帰路につきます。`
           });
@@ -13502,6 +14280,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   const [saveOriginForNext, setSaveOriginForNext] = useState(false);
   const [destination, setDestination] = useState('');
   const [destinationError, setDestinationError] = useState(false);
+  const [destinationErrorMsg, setDestinationErrorMsg] = useState('');
   const destinationInputRef = useRef(null);
   const conditionScrollRef = useRef(null);
   const plansResultScrollRef = useRef(null);
@@ -13576,11 +14355,26 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
     const trimmedDest = (destination || '').trim();
     if (!trimmedDest) {
       setDestinationError(true);
+      setDestinationErrorMsg('行きたいエリア・目的地が未入力です。入力してください！');
       customAlert('⚠️ 「行きたいエリア・目的地」を入力してください！');
-      destinationInputRef.current?.focus();
+      destinationInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => destinationInputRef.current?.focus(), 60);
       return;
     }
+
+    // ★ 意味不明な文字列（「ふぁえsf」「あああ」など）や実在しない地名が入力された場合はAI回数を消費せず弾き返す
+    const destValidation = await validateDestinationInput(trimmedDest);
+    if (!destValidation.valid) {
+      setDestinationError(true);
+      setDestinationErrorMsg(destValidation.message);
+      setGeneratedPlans(null);
+      destinationInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => destinationInputRef.current?.focus(), 60);
+      return;
+    }
+
     setDestinationError(false);
+    setDestinationErrorMsg('');
 
     const cacheKey = `cond_v2_${trimmedDest}_${days}_${budgetAmount}_${theme}_${transportMethod}_${localTransportMethod}`;
     const cached = getCachedAiResponse(cacheKey);
@@ -13679,22 +14473,22 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               const fbEv = fbPlan.events[eIdx % fbPlan.events.length] || {};
               const rawCost = Number(ev.cost);
               const validCost = rawCost && rawCost > 0 ? rawCost : (Number(fbEv.cost) || 1500);
-              const specificLoc = (ev.location && !/中心街|観光名所|市街地|名店$/.test(ev.location.trim()))
-                ? ev.location.trim()
-                : (fbEv.location || trimmedDest);
-              const specificPin = (ev.mapPinQuery && ev.mapPinQuery.trim())
-                ? ev.mapPinQuery.trim()
-                : (fbEv.mapPinQuery || `${trimmedDest} ${specificLoc}`);
+              const resolvedSpot = resolveSpecificSpotAndPin(
+                ev.location,
+                ev.mapPinQuery,
+                fbEv,
+                trimmedDest
+              );
               return {
                 date: ev.date || fbEv.date || startDate,
                 time: ev.time || fbEv.time || '12:00',
                 endTime: ev.endTime || fbEv.endTime || '',
-                title: ev.title || fbEv.title || `${trimmedDest}スポット`,
+                title: ev.title || fbEv.title || resolvedSpot.location,
                 type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type) ? ev.type : (fbEv.type || 'sightseeing'),
                 departureOrigin: ev.departureOrigin || fbEv.departureOrigin || '',
                 transportMethod: ev.transportMethod || fbEv.transportMethod || transportMethod,
-                location: specificLoc,
-                mapPinQuery: specificPin,
+                location: resolvedSpot.location,
+                mapPinQuery: resolvedSpot.mapPinQuery,
                 cost: validCost,
                 memo: ev.memo || fbEv.memo || ''
               };
@@ -13946,24 +14740,24 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               const fbEv = fbPlan.events[eIdx % fbPlan.events.length] || {};
               const rawCost = Number(ev.cost);
               const validCost = rawCost && rawCost > 0 ? rawCost : (Number(fbEv.cost) || 1500);
-              const specificLoc = (ev.location && !/中心街|観光名所|市街地|名店$/.test(ev.location.trim()))
-                ? ev.location.trim()
-                : (fbEv.location || targetDest);
-              const specificPin = (ev.mapPinQuery && ev.mapPinQuery.trim())
-                ? ev.mapPinQuery.trim()
-                : (fbEv.mapPinQuery || `${targetDest} ${specificLoc}`);
+              const resolvedSpot = resolveSpecificSpotAndPin(
+                ev.location,
+                ev.mapPinQuery,
+                fbEv,
+                targetDest
+              );
               return {
                 date: ev.date || fbEv.date || startDate,
                 time: ev.time || fbEv.time || '12:00',
                 endTime: ev.endTime || fbEv.endTime || '',
-                title: ev.title || fbEv.title || `${targetDest}スポット`,
+                title: ev.title || fbEv.title || resolvedSpot.location,
                 type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type)
                   ? ev.type
                   : (fbEv.type || 'sightseeing'),
                 departureOrigin: ev.departureOrigin || fbEv.departureOrigin || '',
                 transportMethod: ev.transportMethod || fbEv.transportMethod || transportMethod,
-                location: specificLoc,
-                mapPinQuery: specificPin,
+                location: resolvedSpot.location,
+                mapPinQuery: resolvedSpot.mapPinQuery,
                 cost: validCost,
                 memo: ev.memo || fbEv.memo || ''
               };
@@ -14194,12 +14988,25 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
     if (activeFollowUpType === 'ask_sub_area') {
       // 直前に「九州の中でも、特にメインで訪れたいエリアはどちらですか？」と聞かれていた場合：
-      // ユーザーが入力した文字（例：「桜島」「知覧と指宿」など）をそのまま具体的な目的地として採用し、再び地方質問に戻さない
       const parentReg = activeParentRegion;
       if (explicitDest && !BROAD_REGION_MAP[explicitDest]) {
         resolvedDest = parentReg && !explicitDest.includes(parentReg) ? `${parentReg}・${explicitDest}` : explicitDest;
       } else {
         const cleanedCustomArea = q.replace(/(に行きたい|へ行く|がいい|かな|とか|周辺|あたり|です|！|!)/g, '').trim() || q;
+        const checkSub = await validateDestinationInput(cleanedCustomArea);
+        if (!checkSub.valid) {
+          setChatMessages(prev => [
+            ...prev,
+            {
+              role: 'ai',
+              text: `すみません、「${cleanedCustomArea}」に該当する地名・観光地が見つかりませんでした💦\n実在する市区町村や観光地名（例：桜島、指宿、別府、阿蘇など）でもう一度入力するか、上の選択肢から選んでみてください！（※AI残り回数は減っていません）`,
+              isFreeFollowUp: true,
+              followUpType: 'ask_sub_area',
+              parentRegion: parentReg
+            }
+          ]);
+          return;
+        }
         resolvedDest = parentReg && !cleanedCustomArea.includes(parentReg)
           ? `${parentReg}・${cleanedCustomArea}`
           : cleanedCustomArea;
@@ -14208,6 +15015,19 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
       // 直前に「ご希望のエリア（行き先）を教えてください」と聞かれていた場合：
       if (!resolvedDest) {
         const cleanedCustomDest = q.replace(/(に行きたい|へ行く|がいい|かな|とか|周辺|あたり|です|！|!)/g, '').trim();
+        const checkReg = await validateDestinationInput(cleanedCustomDest);
+        if (!checkReg.valid) {
+          setChatMessages(prev => [
+            ...prev,
+            {
+              role: 'ai',
+              text: `すみません、「${cleanedCustomDest || q}」に該当する日本の地名・観光地が見つかりませんでした💦\n実在する都道府県や観光地名（例：箱根、金沢、京都、宮古島など）を入力するか、上のボタンからエリアを選んでください！（※AI残り回数は減っていません）`,
+              isFreeFollowUp: true,
+              followUpType: 'ask_region'
+            }
+          ]);
+          return;
+        }
         if (cleanedCustomDest) resolvedDest = cleanedCustomDest;
       }
     } else if (activeFollowUpType === 'ask_theme') {
@@ -14224,6 +15044,22 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
     if (!resolvedDest) {
       resolvedDest = activeParentRegion;
+    }
+
+    // ユーザーが初回チャットで意味不明な文字列（例：「ふぁえsf」）だけを送ってきた場合も弾き返す
+    if (!resolvedDest && !hasThemeKeyword) {
+      const checkInitial = await validateDestinationInput(q);
+      if (!checkInitial.valid) {
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'ai',
+            text: `すみません、「${q}」に該当する地名や旅のテーマが見つかりませんでした💦\n「京都でカフェ巡り」「箱根で温泉」「金沢に行きたい」のように、実在する行き先ややりたいことを入力してみてください！（※AI残り回数は減っていません）`,
+            isFreeFollowUp: true
+          }
+        ]);
+        return;
+      }
     }
 
     // 1. まだ行き先が全く決まっていない場合
@@ -14448,7 +15284,10 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       value={destination}
                       onChange={e => {
                         setDestination(e.target.value);
-                        if (destinationError && e.target.value.trim()) setDestinationError(false);
+                        if (destinationError && e.target.value.trim()) {
+                          setDestinationError(false);
+                          setDestinationErrorMsg('');
+                        }
                       }}
                       placeholder="例: 京都府、沖縄、箱根、金沢（必須）"
                       className={`w-full min-w-0 px-3 py-2 rounded-xl text-xs sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 transition-all ${
@@ -14458,8 +15297,9 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       }`}
                     />
                     {destinationError && (
-                      <p className="mt-1 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5 animate-in fade-in">
-                        <AlertCircle size={12} /> 行きたいエリア・目的地が未入力です。入力してください！
+                      <p className="mt-1.5 text-[11px] font-extrabold text-rose-600 flex items-start gap-1 pl-0.5 leading-snug animate-in fade-in">
+                        <AlertCircle size={13} className="shrink-0 text-rose-500 mt-0.5" />
+                        <span>{destinationErrorMsg || '行きたいエリア・目的地が未入力です。入力してください！'}</span>
                       </p>
                     )}
                   </div>
@@ -15462,22 +16302,90 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
 // ------------------------------------------
 // しおり内のAIコンシェルジュ相談モーダル (AiConciergeChatModal)
+// 前後の日程・既存スケジュール・空き時間を把握し、1日まるごと作成・ギャップ補完・単発スポット提案まで柔軟に対応
 // ------------------------------------------
-function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onClose, onAddSuggestedEvent }) {
+function AiConciergeChatModal({
+  trip,
+  selectedDate,
+  tripDates = [],
+  isReadOnly,
+  currentUser,
+  onClose,
+  onAddSuggestedEvent,
+  onApplySuggestedSchedule
+}) {
   useLockBodyScroll(true);
   const dest = trip.destination || '京都府';
   const [input, setInput] = useState('');
   const inputFieldRef = useRef(null);
   const messageListRef = useRef(null);
+  const [targetConsultDate, setTargetConsultDate] = useState(selectedDate || trip.startDate || getTodayString());
   const [spotBudgetCap, setSpotBudgetCap] = useState('指定なし');
   const [transportFilter, setTransportFilter] = useState(trip.transportMethod || 'shinkansen_train');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [quotaStatus, setQuotaStatus] = useState(() => getAiQuotaStatus());
   const [showRewardAd, setShowRewardAd] = useState(false);
-  const [messages, setMessages] = useState([
+
+  // 相談対象の日が何日目かと、前後の日程・既存予定の文脈を計算
+  const scheduleContext = useMemo(() => {
+    const dates = Array.isArray(tripDates) && tripDates.length > 0 ? tripDates : [targetConsultDate];
+    const dayIdx = Math.max(0, dates.indexOf(targetConsultDate));
+    const dayNumber = dayIdx + 1;
+    const prevDate = dayIdx > 0 ? dates[dayIdx - 1] : null;
+    const nextDate = dayIdx < dates.length - 1 ? dates[dayIdx + 1] : null;
+
+    const allEvents = Array.isArray(trip.events) ? trip.events : [];
+    const currentDayEvents = allEvents
+      .filter((e) => e.date === targetConsultDate)
+      .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const prevDayEvents = prevDate
+      ? allEvents
+          .filter((e) => e.date === prevDate)
+          .sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+      : [];
+    const nextDayEvents = nextDate
+      ? allEvents
+          .filter((e) => e.date === nextDate)
+          .sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+      : [];
+
+    // すでにしおり全体に入っているスポット名（重複提案を避けるため）
+    const existingSpotNames = new Set(
+      allEvents.map((e) => (e.location || e.title || '').replace(/（.*?）/g, '').trim()).filter(Boolean)
+    );
+
+    // 前日の最終到着地・宿泊地、または出発地点
+    const prevDayLastLocation =
+      prevDayEvents.length > 0
+        ? prevDayEvents[prevDayEvents.length - 1].location || prevDayEvents[prevDayEvents.length - 1].title
+        : trip.departurePoint || getHomeDepartureLabel(currentUser);
+
+    // 翌日の最初の予定地
+    const nextDayFirstLocation =
+      nextDayEvents.length > 0
+        ? nextDayEvents[0].location || nextDayEvents[0].title
+        : '';
+
+    return {
+      dates,
+      dayIdx,
+      dayNumber,
+      totalDays: dates.length,
+      prevDate,
+      nextDate,
+      currentDayEvents,
+      prevDayEvents,
+      nextDayEvents,
+      existingSpotNames,
+      prevDayLastLocation,
+      nextDayFirstLocation
+    };
+  }, [tripDates, targetConsultDate, trip.events, trip.departurePoint, currentUser]);
+
+  const [messages, setMessages] = useState(() => [
     {
       role: 'ai',
-      text: `「${trip.title}（${dest}）」のAIコンシェルジュです✨\n上のタブで「予算上限」や「移動手段」を選び、下の候補ボタン（タップで入力欄に入ります）から何でも相談してください！`
+      text: `「${trip.title}（${dest}）」のAIコンシェルジュです✨\n前後の日程や今の予定状況を見ながら、\n・🗓️ **この日の予定を朝から夜まで全部考えて！**\n・🔗 **前後の予定の空き時間を埋めて！**\n・☕ **近くのカフェやランチを1件教えて！**\nなど、1件の追加から1日まるごと作成まで柔軟に組み込めます！`
     }
   ]);
 
@@ -15493,48 +16401,440 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
 
   const SPOT_BUDGET_TABS = ['指定なし', '〜¥1,500', '〜¥3,000', '〜¥5,000', '贅沢ディナー'];
 
+  // 1日まるごと作成・前後日程連動・空き時間補完・単発相談がワンタップでできるクイックアクション
   const QUICK_PROMPTS = [
-    '☕ 近くで評判のカフェを教えて',
-    '🍽️ このエリアの名物ランチは？',
-    '☔ 雨でも楽しめるスポットは？',
-    '🎁 おすすめのお土産スポット'
+    { label: `🗓️ ${scheduleContext.dayNumber}日目の予定を全部考えて`, mode: 'full_day', immediate: true },
+    { label: '🔗 前後の予定を見て空き時間を提案して', mode: 'fill_gaps', immediate: true },
+    { label: '🚃 予定の間の移動ルートもまとめて組んで', mode: 'with_transport', immediate: true },
+    { label: '☕ 近くで評判のカフェを教えて', mode: 'single', immediate: false },
+    { label: '🍽️ このエリアの名物ランチは？', mode: 'single', immediate: false },
+    { label: '☔ 雨でも楽しめるプランにして', mode: 'full_day_rain', immediate: false }
   ];
 
-  const handleSend = async (e, presetText) => {
+  // 相談内容と前後の日程・既存予定から、1日分または複数件の具体的なスケジュールを組み立てるローカル高精度ジェネレーター
+  const buildContextAwareSchedule = (userQuery, requestMode = 'auto') => {
+    const isFullDay =
+      requestMode === 'full_day' ||
+      requestMode === 'full_day_rain' ||
+      /全部|丸ごと|まるごと|1日|一日|朝から|スケジュール|プラン|コース|日程/.test(userQuery);
+    const isFillGaps =
+      requestMode === 'fill_gaps' ||
+      requestMode === 'with_transport' ||
+      /前後|空き時間|間を|隙間|すき間|つなぐ|繋ぐ|移動も|残り|続き/.test(userQuery);
+
+    const matchedArea = SPECIFIC_AREA_SPOTS_DB.find((entry) =>
+      entry.keywords.some((k) => dest.includes(k))
+    );
+    const prefSpots = getPrefectureSpotFallback(dest);
+    const areaRoyal = matchedArea?.royal || null;
+    const hubStation = matchedArea?.station || prefSpots.station;
+
+    const cleanOrigin = (scheduleContext.prevDayLastLocation || hubStation)
+      .replace(/（.*?）/g, '')
+      .trim();
+    const transMeta =
+      TRANSPORT_METHODS.find((m) => m.id === transportFilter) || TRANSPORT_METHODS[0];
+
+    const morningTitle =
+      scheduleContext.dayNumber >= 2
+        ? areaRoyal?.day2MorningSpot || prefSpots.day2Morning
+        : areaRoyal?.morningSpot || prefSpots.morning;
+    const morningPin =
+      scheduleContext.dayNumber >= 2
+        ? areaRoyal?.day2MorningPin || `${dest} ${extractConcreteSpotLabel(morningTitle)}`
+        : areaRoyal?.morningPin || `${dest} ${extractConcreteSpotLabel(morningTitle)}`;
+    const morningPlace = extractConcreteSpotLabel(morningTitle, morningPin);
+
+    const lunchTitle =
+      scheduleContext.dayNumber >= 2
+        ? areaRoyal?.day2LunchSpot || prefSpots.day2Lunch
+        : areaRoyal?.lunchSpot || prefSpots.lunch;
+    const lunchPin =
+      scheduleContext.dayNumber >= 2
+        ? areaRoyal?.day2LunchPin || `${dest} ${extractConcreteSpotLabel(lunchTitle)}`
+        : areaRoyal?.lunchPin || `${dest} ${extractConcreteSpotLabel(lunchTitle)}`;
+    const lunchPlace = extractConcreteSpotLabel(lunchTitle, lunchPin);
+
+    const afternoonTitle = areaRoyal?.afternoonSpot || prefSpots.afternoon;
+    const afternoonPin =
+      areaRoyal?.afternoonPin || `${dest} ${extractConcreteSpotLabel(afternoonTitle)}`;
+    const afternoonPlace = extractConcreteSpotLabel(afternoonTitle, afternoonPin);
+
+    const cafeTitle = areaRoyal?.cafeSpot || prefSpots.cafe;
+    const cafePin = areaRoyal?.cafePin || `${dest} ${extractConcreteSpotLabel(cafeTitle)}`;
+    const cafePlace = extractConcreteSpotLabel(cafeTitle, cafePin);
+
+    const shopTitle = areaRoyal?.day2ShopSpot || prefSpots.shop;
+    const shopPin = areaRoyal?.day2ShopPin || `${dest} ${extractConcreteSpotLabel(shopTitle)}`;
+    const shopPlace = extractConcreteSpotLabel(shopTitle, shopPin);
+
+    const hotelTitle = areaRoyal?.hotelSpot || prefSpots.hotel;
+    const hotelPin = areaRoyal?.hotelPin || `${dest} ${extractConcreteSpotLabel(hotelTitle)}`;
+    const hotelPlace = extractConcreteSpotLabel(hotelTitle, hotelPin);
+
+    const isLastTripDay = scheduleContext.dayNumber === scheduleContext.totalDays;
+
+    // ①「前後の予定を見て空き時間を埋める」モード（その日にすでにいくつか予定がある場合、重複しない時間帯を補完）
+    if (isFillGaps && scheduleContext.currentDayEvents.length > 0) {
+      const existingHours = scheduleContext.currentDayEvents.map(
+        (ev) => Number((ev.time || '12:00').split(':')[0]) || 12
+      );
+      const hasMorning = existingHours.some((h) => h >= 8 && h <= 11);
+      const hasLunch = existingHours.some((h) => h >= 11 && h <= 13);
+      const hasAfternoon = existingHours.some((h) => h >= 14 && h <= 16);
+      const hasEvening = existingHours.some((h) => h >= 17);
+
+      const gapEvents = [];
+      const firstEv = scheduleContext.currentDayEvents[0];
+      const lastEv = scheduleContext.currentDayEvents[scheduleContext.currentDayEvents.length - 1];
+
+      if (!hasMorning) {
+        gapEvents.push({
+          date: targetConsultDate,
+          time: '09:30',
+          endTime: '11:00',
+          title: morningTitle,
+          type: 'sightseeing',
+          location: morningPlace,
+          mapPinQuery: morningPin,
+          cost: 1200,
+          memo: `【前後の予定に連動】${firstEv ? `「${firstEv.time} ${firstEv.title}」の前に立ち寄れる` : '午前中に回れる'}代表スポット「${morningPlace}」です。`
+        });
+      }
+      if (!hasLunch) {
+        gapEvents.push({
+          date: targetConsultDate,
+          time: '12:15',
+          endTime: '13:30',
+          title: lunchTitle,
+          type: 'meal',
+          location: lunchPlace,
+          mapPinQuery: lunchPin,
+          cost: 2200,
+          memo: `【前後のルート連動】移動動線上で無理なく立ち寄れる名物ランチ「${lunchPlace}」です。`
+        });
+      }
+      if (!hasAfternoon) {
+        gapEvents.push({
+          date: targetConsultDate,
+          time: '14:30',
+          endTime: '16:00',
+          title: afternoonTitle,
+          type: 'sightseeing',
+          location: afternoonPlace,
+          mapPinQuery: afternoonPin,
+          cost: 1500,
+          memo: `【午後の空き時間提案】午後の時間帯に楽しめる「${afternoonPlace}」です。`
+        });
+        gapEvents.push({
+          date: targetConsultDate,
+          time: '16:15',
+          endTime: '17:00',
+          title: cafeTitle,
+          type: 'meal',
+          location: cafePlace,
+          mapPinQuery: cafePin,
+          cost: 1400,
+          memo: `【カフェ休憩】散策の合間に「${cafePlace}」でご当地スイーツ休憩。`
+        });
+      }
+      if (!hasEvening) {
+        if (!isLastTripDay && scheduleContext.totalDays > 1) {
+          gapEvents.push({
+            date: targetConsultDate,
+            time: '17:45',
+            endTime: '20:30',
+            title: hotelTitle,
+            type: 'hotel',
+            location: hotelPlace,
+            mapPinQuery: hotelPin,
+            cost: 16500,
+            memo: `【翌日の予定（${scheduleContext.nextDayFirstLocation || '翌日観光'}）にも好アクセス】「${hotelPlace}」で温泉と夕食を堪能。`
+          });
+        } else {
+          gapEvents.push({
+            date: targetConsultDate,
+            time: '17:30',
+            endTime: '19:00',
+            title: shopTitle,
+            type: 'sightseeing',
+            location: shopPlace,
+            mapPinQuery: shopPin,
+            cost: 2500,
+            memo: `【締めくくり】${lastEv ? `「${lastEv.title}」のあとに立ち寄れる` : ''}お土産＆グルメスポット「${shopPlace}」です。`
+          });
+        }
+      }
+
+      // もし既存予定の間を移動カードでつなぐ要望がある場合
+      if (requestMode === 'with_transport' && scheduleContext.currentDayEvents.length >= 2) {
+        for (let i = 0; i < scheduleContext.currentDayEvents.length - 1; i++) {
+          const cur = scheduleContext.currentDayEvents[i];
+          const nxt = scheduleContext.currentDayEvents[i + 1];
+          if (cur.type !== 'transport' && nxt.type !== 'transport') {
+            const fromLoc = (cur.location || cur.title || hubStation).replace(/（.*?）/g, '');
+            const toLoc = (nxt.location || nxt.title || hubStation).replace(/（.*?）/g, '');
+            gapEvents.push({
+              date: targetConsultDate,
+              time: cur.endTime || cur.time || '11:30',
+              endTime: nxt.time || '12:00',
+              title: `${fromLoc}から${toLoc}へ${transMeta.short}で移動`,
+              type: 'transport',
+              departureOrigin: fromLoc,
+              transportMethod: transportFilter,
+              location: toLoc,
+              mapPinQuery: toLoc,
+              cost: 320,
+              memo: `【予定間の最適移動】「${fromLoc}」から「${toLoc}」へ${transMeta.short}でスムーズに移動します。`
+            });
+          }
+        }
+      }
+
+      if (gapEvents.length > 0) {
+        gapEvents.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+        return {
+          isMulti: true,
+          replyText: `${scheduleContext.dayNumber}日目（${targetConsultDate.slice(5).replace('-', '/')}）の既存予定（${scheduleContext.currentDayEvents.length}件）と前後の日程を見て、空いている時間帯にぴったりの${gapEvents.length}件を組み立てました！\n一括で追加するか、気に入った予定だけ1件ずつ追加できます✨`,
+          events: gapEvents
+        };
+      }
+    }
+
+    // ②「この日の予定を全部考えて」または複数件スケジュール生成モード
+    if (isFullDay || isFillGaps) {
+      const fullDayEvents = [];
+      if (scheduleContext.dayNumber === 1) {
+        fullDayEvents.push({
+          date: targetConsultDate,
+          time: '09:00',
+          endTime: '10:30',
+          title: `${cleanOrigin}から${hubStation}へ${transMeta.short}で移動`,
+          type: 'transport',
+          departureOrigin: cleanOrigin,
+          transportMethod: transportFilter,
+          location: hubStation,
+          mapPinQuery: hubStation,
+          cost: 3500,
+          memo: `【${transMeta.label}】${cleanOrigin}を出発して${hubStation}へ移動します。`
+        });
+      } else if (scheduleContext.prevDayLastLocation) {
+        fullDayEvents.push({
+          date: targetConsultDate,
+          time: '09:15',
+          endTime: '09:50',
+          title: `${cleanOrigin}から${morningPlace}へ移動`,
+          type: 'transport',
+          departureOrigin: cleanOrigin,
+          transportMethod: transportFilter,
+          location: morningPlace,
+          mapPinQuery: morningPin,
+          cost: 420,
+          memo: `【前日の滞在先「${cleanOrigin}」から出発】${scheduleContext.dayNumber}日目の最初の目的地「${morningPlace}」へ向かいます。`
+        });
+      }
+
+      fullDayEvents.push(
+        {
+          date: targetConsultDate,
+          time: '10:30',
+          endTime: '12:00',
+          title: morningTitle,
+          type: 'sightseeing',
+          location: morningPlace,
+          mapPinQuery: morningPin,
+          cost: 1200,
+          memo: `【午前観光】「${morningPlace}」を見学。午前中の時間帯は写真撮影にも最適です。`
+        },
+        {
+          date: targetConsultDate,
+          time: '12:15',
+          endTime: '13:45',
+          title: lunchTitle,
+          type: 'meal',
+          location: lunchPlace,
+          mapPinQuery: lunchPin,
+          cost: 2400,
+          memo: `【ご当地ランチ】「${morningPlace}」から移動しやすい名店「${lunchPlace}」で名物ランチを堪能。`
+        },
+        {
+          date: targetConsultDate,
+          time: '14:00',
+          endTime: '15:30',
+          title: afternoonTitle,
+          type: 'sightseeing',
+          location: afternoonPlace,
+          mapPinQuery: afternoonPin,
+          cost: 1500,
+          memo: `【午後スポット】午後は「${afternoonPlace}」をじっくり巡ります。`
+        },
+        {
+          date: targetConsultDate,
+          time: '15:45',
+          endTime: '16:45',
+          title: cafeTitle,
+          type: 'meal',
+          location: cafePlace,
+          mapPinQuery: cafePin,
+          cost: 1400,
+          memo: `【カフェ・甘味休憩】「${cafePlace}」で人気のスイーツとドリンクでひと休み。`
+        }
+      );
+
+      if (!isLastTripDay && scheduleContext.totalDays > 1) {
+        fullDayEvents.push({
+          date: targetConsultDate,
+          time: '17:30',
+          endTime: '20:30',
+          title: hotelTitle,
+          type: 'hotel',
+          location: hotelPlace,
+          mapPinQuery: hotelPin,
+          cost: 18000,
+          memo: `【宿泊・夕食】${scheduleContext.nextDayFirstLocation ? `翌日の「${scheduleContext.nextDayFirstLocation}」へも動きやすい` : ''}「${hotelPlace}」にチェックインして温泉と夕食を満喫。`
+        });
+      } else {
+        fullDayEvents.push(
+          {
+            date: targetConsultDate,
+            time: '17:00',
+            endTime: '18:15',
+            title: shopTitle,
+            type: 'sightseeing',
+            location: shopPlace,
+            mapPinQuery: shopPin,
+            cost: 2800,
+            memo: `【お土産・ショッピング】帰路の前に「${shopPlace}」で名物土産をまとめ買い！`
+          },
+          {
+            date: targetConsultDate,
+            time: '18:30',
+            endTime: '20:00',
+            title: `${hubStation}から${(trip.departurePoint || getHomeDepartureLabel(currentUser)).replace(/（.*?）/g, '')}へ帰路移動`,
+            type: 'transport',
+            departureOrigin: hubStation,
+            transportMethod: transportFilter,
+            location: (trip.departurePoint || getHomeDepartureLabel(currentUser)).replace(/（.*?）/g, ''),
+            mapPinQuery: (trip.departurePoint || getHomeDepartureLabel(currentUser)).replace(/（.*?）/g, ''),
+            cost: 3500,
+            memo: `思い出とお土産をたっぷり抱えて帰着！`
+          }
+        );
+      }
+
+      const prevNote =
+        scheduleContext.prevDayEvents.length > 0
+          ? `前日（${scheduleContext.dayNumber - 1}日目）の最終地点「${cleanOrigin}」からの流れを踏まえて、`
+          : '';
+      const nextNote =
+        scheduleContext.nextDayFirstLocation
+          ? `翌日（${scheduleContext.dayNumber + 1}日目）の「${scheduleContext.nextDayFirstLocation}」へも繋がるように`
+          : '';
+
+      return {
+        isMulti: true,
+        replyText: `${prevNote}${nextNote}${scheduleContext.dayNumber}日目（${targetConsultDate.slice(5).replace('-', '/')}）の1日まるごとスケジュール（全${fullDayEvents.length}件・終了時刻＆具体的なマップピン付き）を作成しました！✨\n下のボタンから一括でしおりに組み込むことも、1件ずつ選んで追加することもできます。`,
+        events: fullDayEvents
+      };
+    }
+
+    // ③ 単発スポット相談モード（カフェ・ランチ・雨の日・お土産など）
+    const isCafe = /カフェ|コーヒー|スイーツ|甘味|休憩/.test(userQuery);
+    const isMeal = /ランチ|ご飯|ごはん|ディナー|夕飯|名物|グルメ/.test(userQuery);
+    const isRain = /雨|屋内|美術館|水族館/.test(userQuery);
+
+    const singleSpot = isCafe
+      ? {
+          date: targetConsultDate,
+          time: '15:00',
+          endTime: '16:00',
+          title: cafeTitle,
+          type: 'meal',
+          location: cafePlace,
+          mapPinQuery: cafePin,
+          cost: 1500,
+          memo: `【AIおすすめ】観光の合間にほっと一息つける「${cafePlace}」です。`
+        }
+      : isMeal
+      ? {
+          date: targetConsultDate,
+          time: '12:15',
+          endTime: '13:30',
+          title: lunchTitle,
+          type: 'meal',
+          location: lunchPlace,
+          mapPinQuery: lunchPin,
+          cost: 2400,
+          memo: `【AIおすすめ】地元の旬の味覚を堪能できる名店「${lunchPlace}」です。`
+        }
+      : isRain
+      ? {
+          date: targetConsultDate,
+          time: '13:30',
+          endTime: '15:00',
+          title: afternoonTitle,
+          type: 'sightseeing',
+          location: afternoonPlace,
+          mapPinQuery: afternoonPin,
+          cost: 1500,
+          memo: `【AIおすすめ】天候を問わず充実した時間を過ごせる「${afternoonPlace}」です。`
+        }
+      : {
+          date: targetConsultDate,
+          time: '16:00',
+          endTime: '17:15',
+          title: shopTitle,
+          type: 'sightseeing',
+          location: shopPlace,
+          mapPinQuery: shopPin,
+          cost: 2500,
+          memo: `【AIおすすめ】限定スイーツや名産品が揃う「${shopPlace}」です。`
+        };
+
+    return {
+      isMulti: false,
+      replyText: `「${userQuery}」に合わせて、${scheduleContext.dayNumber}日目のルートに組み込みやすい「${singleSpot.location}」をピックアップしました！`,
+      spot: singleSpot
+    };
+  };
+
+  const handleSend = async (e, presetText, requestMode = 'auto') => {
     if (e) e.preventDefault();
     const rawQuery = (presetText || input).trim();
     if (!rawQuery || isAiLoading) return;
     const budgetHint = spotBudgetCap !== '指定なし' ? `（予算目安:${spotBudgetCap}）` : '';
     const query = `${rawQuery}${budgetHint}`;
 
-    setMessages(prev => [...prev, { role: 'user', text: query }]);
+    setMessages((prev) => [...prev, { role: 'user', text: query }]);
     if (!presetText) setInput('');
 
-    // 1. 定番クイック質問または過去キャッシュがある場合はAPI消費ゼロで即答
-    const cacheKey = `concierge_${dest}_${query}`;
+    // 1. キャッシュ確認（同じ日・同じ既存予定数・同じ相談内容ならAI枠消費0で即表示）
+    const cacheKey = `concierge_v3_${dest}_${targetConsultDate}_${scheduleContext.currentDayEvents.length}_${requestMode}_${query}`;
     const cached = getCachedAiResponse(cacheKey);
     if (cached) {
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
           role: 'ai',
-          text: `${cached.text}\n（※キャッシュから高速表示・AI枠消費0⚡）`,
-          spot: cached.spot
+          text: `${cached.replyText}\n（※キャッシュから高速表示・AI枠消費0⚡）`,
+          spot: cached.spot || null,
+          events: cached.events || null,
+          targetDate: targetConsultDate
         }
       ]);
       return;
     }
 
-    // 2. 自由入力の質問はレートリミット（1日5回＋動画広告ボーナス）をチェックしてGemini APIを呼び出す
+    // 2. レートリミット確認
     const quotaCheck = consumeAiQuota();
     setQuotaStatus(quotaCheck.status);
     if (!quotaCheck.ok) {
       setShowRewardAd(true);
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
           role: 'ai',
-          text: `本日のAI無料相談枠（${quotaCheck.status.limit}回）を使い切りました🙏\n上の「🎬 広告で＋${REWARD_AD_BONUS_COUNT}回」から動画を見ると、すぐに相談枠を回復できます！`
+          text: `本日のAI無料相談枠（${quotaCheck.status.limit}回）を使い切りました🙏\n動画を見ると＋${REWARD_AD_BONUS_COUNT}回すぐに回復できます！`
         }
       ]);
       return;
@@ -15542,97 +16842,129 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
 
     setIsAiLoading(true);
     try {
+      const currentDaySummary =
+        scheduleContext.currentDayEvents.length > 0
+          ? scheduleContext.currentDayEvents
+              .map((ev) => `${ev.time}${ev.endTime ? `〜${ev.endTime}` : ''} ${ev.title}(@${ev.location || ''})`)
+              .join(' → ')
+          : 'まだ予定なし（白紙）';
+      const prevDaySummary =
+        scheduleContext.prevDayEvents.length > 0
+          ? scheduleContext.prevDayEvents
+              .map((ev) => `${ev.time} ${ev.title}(@${ev.location || ''})`)
+              .join(' → ')
+          : '前日予定なし';
+      const nextDaySummary =
+        scheduleContext.nextDayEvents.length > 0
+          ? scheduleContext.nextDayEvents
+              .map((ev) => `${ev.time} ${ev.title}(@${ev.location || ''})`)
+              .join(' → ')
+          : '翌日予定なし';
+
       const schema = {
-        type: "OBJECT",
+        type: 'OBJECT',
         properties: {
-          replyText: { type: "STRING" },
-          spot: {
-            type: "OBJECT",
-            properties: {
-              time: { type: "STRING" },
-              title: { type: "STRING" },
-              type: { type: "STRING" },
-              location: { type: "STRING" },
-              cost: { type: "INTEGER" },
-              memo: { type: "STRING" }
-            },
-            propertyOrdering: ["time", "title", "type", "location", "cost", "memo"]
+          replyText: { type: 'STRING' },
+          events: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                time: { type: 'STRING' },
+                endTime: { type: 'STRING' },
+                title: { type: 'STRING' },
+                type: { type: 'STRING' },
+                location: { type: 'STRING' },
+                mapPinQuery: { type: 'STRING' },
+                cost: { type: 'INTEGER' },
+                memo: { type: 'STRING' }
+              },
+              propertyOrdering: ['time', 'endTime', 'title', 'type', 'location', 'mapPinQuery', 'cost', 'memo']
+            }
           }
         },
-        propertyOrdering: ["replyText", "spot"]
+        propertyOrdering: ['replyText', 'events']
       };
 
       const aiRes = await callGoogleGeminiStructured({
-        systemPrompt: "あなたは旅行中のサポートを行うAIコンシェルジュです。質問に対する簡潔な回答(replyText)と、しおりにそのまま追加できる実在のおすすめスポット1件(spot)をJSONで返してください。spot.typeは meal, sightseeing, active, transport, hotel のいずれかにしてください。",
-        userPrompt: `旅行先:${dest}（しおり名:${trip.title}） / 相談内容:「${query}」`,
+        systemPrompt: `あなたは旅行しおり作成をサポートするAIコンシェルジュです。
+ユーザーの相談内容と「前日の予定」「相談当日の既存予定」「翌日の予定」を見て、しおりにそのまま組み込める予定リスト(events)をJSONで返してください。
+・ユーザーが「この日の予定を全部考えて」「1日プランを作って」等と頼んだ場合は5〜7件の1日スケジュールを返してください。
+・「前後の予定を見て空き時間を提案して」等の場合は、既存の予定と被らない時間帯・動線で2〜4件を提案してください。
+・「カフェを教えて」など単発の質問の場合は1〜2件を返してください。
+・すべての予定に開始時刻(time)と終了時刻(endTime)、0円ではないリアルな予算(cost)、県名だけでなくGoogleマップでピンが刺さる具体的な実在施設・店舗名(location, mapPinQuery)を必ず設定してください。`,
+        userPrompt: `旅行先:${dest} / 対象日:${scheduleContext.dayNumber}日目(${targetConsultDate}) / 前日の予定:[${prevDaySummary}] / 当日の既存予定:[${currentDaySummary}] / 翌日の予定:[${nextDaySummary}] / 相談内容:「${query}」`,
         responseSchema: schema
       });
 
-      if (aiRes && aiRes.spot) {
-        const resPayload = {
-          text: aiRes.replyText || `「${query}」に合わせて、${dest}でおすすめのスポットをピックアップしました！`,
-          spot: {
-            time: aiRes.spot.time || '14:00',
-            title: aiRes.spot.title || `${dest}のおすすめスポット`,
-            type: ['meal', 'sightseeing', 'active', 'transport', 'hotel'].includes(aiRes.spot.type) ? aiRes.spot.type : 'sightseeing',
-            location: aiRes.spot.location || dest,
-            cost: Number(aiRes.spot.cost) || 1500,
-            memo: aiRes.spot.memo || ''
+      const fallbackBuilt = buildContextAwareSchedule(rawQuery, requestMode);
+      if (aiRes && Array.isArray(aiRes.events) && aiRes.events.length > 0) {
+        const normalizedEvents = aiRes.events.map((ev, idx) => {
+          const fbList = fallbackBuilt.events || (fallbackBuilt.spot ? [fallbackBuilt.spot] : []);
+          const fbEv = fbList[idx % Math.max(1, fbList.length)] || {};
+          const resolvedSpot = resolveSpecificSpotAndPin(ev.location, ev.mapPinQuery, fbEv, dest);
+          return {
+            date: targetConsultDate,
+            time: ev.time || fbEv.time || '13:00',
+            endTime: ev.endTime || fbEv.endTime || '14:30',
+            title: ev.title || fbEv.title || resolvedSpot.location,
+            type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type)
+              ? ev.type
+              : fbEv.type || 'sightseeing',
+            location: resolvedSpot.location,
+            mapPinQuery: resolvedSpot.mapPinQuery,
+            cost: Number(ev.cost) > 0 ? Number(ev.cost) : Number(fbEv.cost) || 1500,
+            memo: ev.memo || fbEv.memo || ''
+          };
+        });
+
+        const payload =
+          normalizedEvents.length === 1
+            ? {
+                replyText: aiRes.replyText || fallbackBuilt.replyText,
+                spot: normalizedEvents[0],
+                events: null
+              }
+            : {
+                replyText: aiRes.replyText || fallbackBuilt.replyText,
+                spot: null,
+                events: normalizedEvents
+              };
+
+        setCachedAiResponse(cacheKey, payload);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'ai',
+            text: payload.replyText,
+            spot: payload.spot,
+            events: payload.events,
+            targetDate: targetConsultDate
           }
-        };
-        setCachedAiResponse(cacheKey, resPayload);
-        setMessages(prev => [...prev, { role: 'ai', text: resPayload.text, spot: resPayload.spot }]);
+        ]);
         setIsAiLoading(false);
         return;
       }
-      throw new Error('Fallback');
+      throw new Error('Fallback to context builder');
     } catch (err) {
-      const isCafe = /カフェ|コーヒー|スイーツ|甘味|休憩/.test(query);
-      const isMeal = /ランチ|ご飯|ごはん|ディナー|夕飯|名物|グルメ/.test(query);
-      const isRain = /雨|屋内|美術館|水族館/.test(query);
-
-      const suggestedSpot = isCafe
-        ? {
-            time: '15:00',
-            title: `${dest}の人気古民家カフェ＆ご当地スイーツ`,
-            type: 'meal',
-            location: `${dest} カフェ`,
-            cost: 1500,
-            memo: '【AIおすすめ】観光の合間にほっと一息つける口コミ高評価のカフェです。'
-          }
-        : isMeal
-        ? {
-            time: '12:30',
-            title: `${dest}の名物ご当地ランチ（老舗人気店）`,
-            type: 'meal',
-            location: `${dest} ランチ`,
-            cost: 2400,
-            memo: '【AIおすすめ】地元の旬の食材を堪能できる定番ランチスポット。'
-          }
-        : isRain
-        ? {
-            time: '13:30',
-            title: `${dest}の美術館・ミュージアム＆屋内体験`,
-            type: 'sightseeing',
-            location: `${dest} 美術館`,
-            cost: 1200,
-            memo: '【AIおすすめ】天候を問わず快適に楽しめる屋内スポットです。'
-          }
-        : {
-            time: '16:00',
-            title: `${dest}の定番お土産＆セレクトショップ巡り`,
-            type: 'sightseeing',
-            location: `${dest} 駅 お土産`,
-            cost: 2500,
-            memo: '【AIおすすめ】限定スイーツや雑貨が揃う人気のお土産スポット。'
-          };
-
-      const fallbackPayload = {
-        text: `「${query}」に合わせて、${dest}でおすすめのスポットをピックアップしました！ワンタップでしおりに追加できます。`,
-        spot: suggestedSpot
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+      const built = buildContextAwareSchedule(rawQuery, requestMode);
+      const payload = {
+        replyText: built.replyText,
+        spot: built.isMulti ? null : built.spot,
+        events: built.isMulti ? built.events : null
       };
-      setCachedAiResponse(cacheKey, fallbackPayload);
-      setMessages(prev => [...prev, { role: 'ai', text: fallbackPayload.text, spot: fallbackPayload.spot }]);
+      setCachedAiResponse(cacheKey, payload);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'ai',
+          text: payload.replyText,
+          spot: payload.spot,
+          events: payload.events,
+          targetDate: targetConsultDate
+        }
+      ]);
       setIsAiLoading(false);
     }
   };
@@ -15641,46 +16973,88 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
     <div className="fixed inset-0 bg-black/60 z-[250] flex justify-center items-center p-2.5 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
       <div
         style={{ touchAction: 'pan-y' }}
-        className="bg-white w-full max-w-md rounded-[28px] p-4 sm:p-5 shadow-2xl h-[88dvh] max-h-[88dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe"
-        onClick={e => e.stopPropagation()}
+        className="bg-white w-full max-w-md rounded-[28px] p-4 sm:p-5 shadow-2xl h-[90dvh] max-h-[90dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe"
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* 最上段ヘッダー（残り回数は送信ボタンの中へ移動） */}
+        {/* 最上段ヘッダー */}
         <div className="flex justify-between items-center gap-2 mb-2 shrink-0">
           <h3 className="font-extrabold text-sm sm:text-base text-stone-800 flex items-center gap-1.5 truncate">
-            <Sparkles size={16} className="text-[#5E8473] shrink-0" /> AI旅コンシェルジュ
+            <Sparkles size={16} className="text-[#5E8473] shrink-0" /> AI旅コンシェルジュ（前後日程・一括作成対応）
           </h3>
           <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full shrink-0">
             <X size={20} />
           </button>
         </div>
 
-        {/* 上部の「予算タブ」＆「移動手段」を1枚のスリムバーに集約してチャット領域を最大化 */}
-        <div className="mb-2 px-2.5 py-2 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-1.5 shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] font-extrabold text-stone-600">💰 スポット予算:</span>
-              <span className="text-[11px] font-extrabold text-[#4A6B5D]">{spotBudgetCap}</span>
+        {/* 対象日の切り替え＆前後の予定認識ステータスバー */}
+        <div className="mb-2 px-3 py-2 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-1.5 shrink-0">
+          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {scheduleContext.dates.map((dStr, idx) => {
+                const isSelected = dStr === targetConsultDate;
+                const countOnDay = (trip.events || []).filter((e) => e.date === dStr).length;
+                return (
+                  <button
+                    key={dStr}
+                    type="button"
+                    onClick={() => setTargetConsultDate(dStr)}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border transition-all whitespace-nowrap cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#5E8473] text-white border-[#5E8473] shadow-2xs'
+                        : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    {idx + 1}日目 ({dStr.slice(5).replace('-', '/')})
+                    <span className={`ml-1 text-[9px] px-1 py-0.2 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-500'}`}>
+                      {countOnDay}件
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+
             <select
               value={transportFilter}
-              onChange={e => setTransportFilter(e.target.value)}
-              className="px-2 py-0.5 bg-white border border-stone-200 rounded-lg text-[11px] font-extrabold text-stone-700 focus:outline-none"
+              onChange={(e) => setTransportFilter(e.target.value)}
+              className="px-2 py-1 bg-white border border-stone-200 rounded-lg text-[10px] font-extrabold text-stone-700 focus:outline-none shrink-0"
             >
-              {TRANSPORT_METHODS.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
+              {TRANSPORT_METHODS.map((m) => (
+                <option key={m.id} value={m.id}>{m.short}</option>
               ))}
             </select>
           </div>
+
+          {/* 前後の日程＆現在の予定状況サマリー */}
+          <div className="px-2.5 py-1.5 bg-white rounded-xl border border-stone-200/70 text-[10px] font-bold text-stone-600 flex items-center justify-between gap-2">
+            <div className="truncate">
+              <span className="text-[#4A6B5D] font-extrabold">📍 {scheduleContext.dayNumber}日目の状況：</span>
+              {scheduleContext.currentDayEvents.length === 0 ? (
+                <span>まだ予定なし（1日まるごと提案できます！）</span>
+              ) : (
+                <span>
+                  現在{scheduleContext.currentDayEvents.length}件（
+                  {scheduleContext.currentDayEvents[0]?.time} {scheduleContext.currentDayEvents[0]?.location || scheduleContext.currentDayEvents[0]?.title}
+                  〜）
+                </span>
+              )}
+            </div>
+            {scheduleContext.prevDayEvents.length > 0 && (
+              <span className="text-[9px] text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
+                前日考慮済
+              </span>
+            )}
+          </div>
+
           <div
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             className="flex gap-1 overflow-x-auto no-scrollbar [&::-webkit-scrollbar]:hidden"
           >
-            {SPOT_BUDGET_TABS.map(tab => (
+            {SPOT_BUDGET_TABS.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setSpotBudgetCap(tab)}
-                className={`whitespace-nowrap px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition-all shrink-0 ${
+                className={`whitespace-nowrap px-2 py-0.5 rounded-lg text-[10px] font-extrabold border transition-all shrink-0 ${
                   spotBudgetCap === tab
                     ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
                     : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
@@ -15692,7 +17066,7 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
           </div>
         </div>
 
-        {/* 広く見やすいメインのチャット履歴エリア */}
+        {/* メインのチャット履歴エリア */}
         <div
           ref={messageListRef}
           style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
@@ -15701,7 +17075,7 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
           {messages.map((m, idx) => (
             <div key={idx} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div
-                className={`max-w-[90%] px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                className={`max-w-[92%] px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
                   m.role === 'user'
                     ? 'bg-[#7A9D8C] text-white font-bold rounded-br-sm'
                     : 'bg-stone-100 text-stone-800 font-medium rounded-bl-sm'
@@ -15709,26 +17083,118 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
               >
                 {m.text}
               </div>
-              {m.role === 'ai' && idx > 0 && (
-                <div className="mt-1 flex items-center gap-2 px-1 text-[10px] text-stone-400 font-bold">
-                  <span>※AI提案の営業時間・料金は公式情報もご確認ください</span>
-                  <button
-                    type="button"
-                    onClick={() => customAlert('AIの回答内容を運営に報告しました。改善に役立てます。')}
-                    className="underline hover:text-stone-600 flex items-center gap-0.5"
-                  >
-                    <Flag size={9} /> 報告
-                  </button>
+
+              {/* 複数件のスケジュール提案カード（1日まるごと提案 / 空き時間補完提案） */}
+              {Array.isArray(m.events) && m.events.length > 0 && (
+                <div className="mt-2 w-full bg-gradient-to-br from-sky-50/90 via-emerald-50/50 to-white border-2 border-[#7A9D8C]/50 rounded-2xl p-3 space-y-2.5 shadow-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-[#365447] flex items-center gap-1">
+                      <Calendar size={13} className="text-[#5E8473]" />
+                      提案スケジュール（全{m.events.length}件）
+                    </span>
+                    <span className="text-[10px] font-mono font-extrabold text-sky-900 bg-sky-100 px-2 py-0.5 rounded-full">
+                      計 ¥{m.events.reduce((s, e) => s + (Number(e.cost) || 0), 0).toLocaleString()}/人
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto no-scrollbar pr-0.5">
+                    {m.events.map((ev, eIdx) => (
+                      <div
+                        key={eIdx}
+                        className="bg-white p-2.5 rounded-xl border border-stone-200/80 flex items-start justify-between gap-2 shadow-2xs"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-mono font-extrabold text-[#4A6B5D] bg-[#7A9D8C]/15 px-1.5 py-0.2 rounded">
+                              {ev.time}{ev.endTime ? `〜${ev.endTime}` : ''}
+                            </span>
+                            <span className="text-xs font-extrabold text-stone-800 truncate">
+                              {ev.title}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] font-bold text-stone-500">
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.mapPinQuery || ev.location || ev.title)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-stone-700 underline decoration-[#7A9D8C] truncate inline-flex items-center gap-0.5"
+                            >
+                              <MapPin size={10} className="text-rose-500 shrink-0" />
+                              {ev.location}
+                            </a>
+                            <span className="shrink-0 text-stone-700">¥{Number(ev.cost || 0).toLocaleString()}</span>
+                          </div>
+                          {ev.memo && (
+                            <p className="text-[10px] text-stone-500 mt-1 line-clamp-2 leading-snug">
+                              {ev.memo}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onAddSuggestedEvent &&
+                            onAddSuggestedEvent({ ...ev, date: m.targetDate || targetConsultDate })
+                          }
+                          className="shrink-0 px-2 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-200 text-[10px] font-extrabold transition-colors active:scale-95 cursor-pointer"
+                          title="この1件だけしおりに追加"
+                        >
+                          ＋1件追加
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 一括追加 ＆ この日の予定を置き換えボタン */}
+                  <div className="pt-1 flex flex-col sm:flex-row gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onApplySuggestedSchedule &&
+                        onApplySuggestedSchedule(m.events, 'append', m.targetDate || targetConsultDate)
+                      }
+                      className="flex-1 py-2.5 px-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:brightness-105 text-white font-extrabold rounded-xl text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-98 cursor-pointer"
+                    >
+                      <Plus size={14} strokeWidth={2.8} />
+                      <span>この{m.events.length}件をまとめてしおりに追加</span>
+                    </button>
+                    {!isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onApplySuggestedSchedule &&
+                          onApplySuggestedSchedule(m.events, 'replace_day', m.targetDate || targetConsultDate)
+                        }
+                        className="py-2.5 px-3 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 font-extrabold rounded-xl text-[11px] flex items-center justify-center gap-1 active:scale-98 cursor-pointer shrink-0"
+                        title="この日の既存予定をこのスケジュールに置き換えます"
+                      >
+                        <Check size={13} className="text-[#5E8473]" />
+                        <span>この日の予定として上書き</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
+
+              {/* 単発スポット提案カード */}
               {m.spot && (
                 <div className="mt-2 w-full bg-sky-50/70 border border-sky-200/80 rounded-2xl p-3 space-y-2">
                   <div className="flex justify-between items-start gap-2">
                     <div>
                       <p className="text-xs sm:text-sm font-extrabold text-stone-800">{m.spot.title}</p>
                       <p className="text-[11px] font-bold text-stone-500 mt-0.5">
-                        目安時間 {m.spot.time} / 予算 ¥{Number(m.spot.cost).toLocaleString()}
+                        目安時間 {m.spot.time}{m.spot.endTime ? `〜${m.spot.endTime}` : ''} / 予算 ¥{Number(m.spot.cost).toLocaleString()}
                       </p>
+                      {m.spot.location && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.spot.mapPinQuery || m.spot.location)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-extrabold text-[#4A6B5D] underline inline-flex items-center gap-0.5 mt-0.5"
+                        >
+                          <MapPin size={11} className="text-rose-500" /> {m.spot.location}
+                        </a>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs text-stone-600 bg-white p-2 rounded-xl border border-stone-100">
@@ -15736,8 +17202,11 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
                   </p>
                   <button
                     type="button"
-                    onClick={() => onAddSuggestedEvent && onAddSuggestedEvent(m.spot)}
-                    className="w-full py-2.5 bg-gradient-to-r from-sky-100 via-sky-200/85 to-cyan-100 hover:brightness-95 text-sky-900 border border-sky-300 font-extrabold rounded-xl text-xs sm:text-sm shadow-2xs flex items-center justify-center gap-1"
+                    onClick={() =>
+                      onAddSuggestedEvent &&
+                      onAddSuggestedEvent({ ...m.spot, date: m.targetDate || targetConsultDate })
+                    }
+                    className="w-full py-2.5 bg-gradient-to-r from-sky-100 via-sky-200/85 to-cyan-100 hover:brightness-95 text-sky-900 border border-sky-300 font-extrabold rounded-xl text-xs sm:text-sm shadow-2xs flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <Plus size={14} className="text-sky-600" /> この予定をしおりに追加する
                   </button>
@@ -15746,42 +17215,55 @@ function AiConciergeChatModal({ trip, selectedDate, isReadOnly, currentUser, onC
             </div>
           ))}
 
-          {/* ★ AIが考えているときのアニメーションバブル */}
           {isAiLoading && (
-            <AiThinkingIndicator variant="chat" destination={dest} />
+            <AiThinkingIndicator
+              variant="chat"
+              destination={dest}
+              departurePoint={scheduleContext.prevDayLastLocation}
+              days={scheduleContext.totalDays}
+              budgetAmount={trip.budget || 35000}
+            />
           )}
         </div>
 
-        {/* 押したらいきなりチャット送信せず、入力欄にテキストが入る提案チップ */}
+        {/* ワンタップで「この日の予定を全部考えて」「前後の予定を見て空き時間を提案」などを実行・セットできるクイックボタン */}
         <div
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           className="flex gap-1.5 overflow-x-auto no-scrollbar [&::-webkit-scrollbar]:hidden py-1.5 shrink-0"
         >
-          {QUICK_PROMPTS.map(prompt => (
+          {QUICK_PROMPTS.map((item) => (
             <button
-              key={prompt}
+              key={item.label}
               type="button"
               disabled={isAiLoading}
               onClick={() => {
-                const cleanPrompt = prompt.replace(/^[^\s]+\s/, '');
-                setInput(cleanPrompt);
-                setTimeout(() => inputFieldRef.current?.focus(), 30);
+                const cleanPrompt = item.label.replace(/^[^\s]+\s/, '');
+                if (item.immediate) {
+                  handleSend(null, cleanPrompt, item.mode);
+                } else {
+                  setInput(cleanPrompt);
+                  setTimeout(() => inputFieldRef.current?.focus(), 30);
+                }
               }}
-              className="whitespace-nowrap px-2.5 py-1 bg-[#7A9D8C]/10 hover:bg-[#7A9D8C]/20 text-[#4A6B5D] border border-[#7A9D8C]/25 rounded-full text-[11px] font-extrabold transition-colors shrink-0 active:scale-95 disabled:opacity-50"
-              title="タップして入力欄にセット"
+              className={`whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-extrabold border transition-colors shrink-0 active:scale-95 disabled:opacity-50 cursor-pointer ${
+                item.immediate
+                  ? 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-300 shadow-2xs'
+                  : 'bg-[#7A9D8C]/10 hover:bg-[#7A9D8C]/20 text-[#4A6B5D] border-[#7A9D8C]/25'
+              }`}
+              title={item.immediate ? 'タップで即座にAIがスケジュールを提案します' : 'タップして入力欄にセット'}
             >
-              ＋ {prompt}
+              {item.immediate ? item.label : `＋ ${item.label}`}
             </button>
           ))}
         </div>
 
-        <form onSubmit={handleSend} className="pt-1.5 border-t border-stone-100 flex items-center gap-1.5 shrink-0">
+        <form onSubmit={(e) => handleSend(e, null, 'auto')} className="pt-1.5 border-t border-stone-100 flex items-center gap-1.5 shrink-0">
           <input
             ref={inputFieldRef}
             type="text"
             value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="AIに質問・相談を入力..."
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="例: この日の予定を全部考えて / 前後の予定に合わせて提案して"
             className="flex-1 min-w-0 p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
           />
           {quotaStatus.remaining > 0 ? (
@@ -15913,7 +17395,7 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile, hideChr
   // 開発・動作確認用にアプリ本番のバックグラウンド自動獲得をシミュレートできるプレビュー用トグル
   const [devPreviewAppMode, setDevPreviewAppMode] = useState(ENABLE_NATIVE_BACKGROUND_BADGE_TRACKING);
 
-  // ★ 添付画像の訪問カウンター＆円グラフダッシュボード用ステート
+  // ★ 訪問カウンター＆円グラフダッシュボード用ステート
   // 'count': 数値 (36/47・471/1741) / 'percent': 達成率 (◯.◯%) / 'remaining': 残り数 (あと◯)
   const [statsDisplayMode, setStatsDisplayMode] = useState('count');
   const [currentLocationLabel, setCurrentLocationLabel] = useState(() => {
@@ -15925,6 +17407,20 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile, hideChr
   const [isLocatingGps, setIsLocatingGps] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedShareText, setCopiedShareText] = useState(false);
+  // ★「地図の記録ガイド（ルール）」＆「訪問履歴の編集・削除」モーダル用ステート
+  const [showMapRulesModal, setShowMapRulesModal] = useState(false);
+  const [rulesModalTab, setRulesModalTab] = useState('rules'); // 'rules' | 'manage'
+
+  // 意図せず塗られてしまった市区町村の訪問履歴を個別に削除するハンドラー
+  const handleRemoveBadgeRecord = (badgeId, muniLabel) => {
+    if (!onUpdateUser) return;
+    const nextBadges = badges.filter(b => b.id !== badgeId);
+    onUpdateUser({
+      ...currentUser,
+      badges: nextBadges
+    });
+    customAlert(`「${muniLabel}」の訪問記録を取り消しました`);
+  };
 
   // 都道府県ごとの獲得バッジ数マップ
   const badgesByPref = useMemo(() => {
@@ -16275,6 +17771,18 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile, hideChr
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
+                  onClick={() => {
+                    setRulesModalTab('rules');
+                    setShowMapRulesModal(true);
+                  }}
+                  className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200/90 font-extrabold rounded text-[8px] flex items-center gap-0.5 transition-all active:scale-95 cursor-pointer"
+                  title="地図が塗られる仕組み・訪問記録の編集を確認"
+                >
+                  <Info size={8} className="text-[#5E8473]" />
+                  <span>ルール</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleCycleStatsMode}
                   className="px-1.5 py-0.5 bg-[#5E8473] hover:bg-[#4C7262] text-white font-extrabold rounded text-[8px] transition-all active:scale-95 cursor-pointer"
                   title="訪問数 ⇄ 達成率(%) ⇄ 残り数 を切り替え"
@@ -16390,6 +17898,10 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile, hideChr
               }}
               badgesByPref={badgesByPref}
               onSelectMuniChange={(info) => setSelectedMuniInfo(info)}
+              onOpenMapRules={() => {
+                setRulesModalTab('rules');
+                setShowMapRulesModal(true);
+              }}
             />
           </div>
         </div>
@@ -16656,6 +18168,156 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile, hideChr
             >
               {copiedShareText ? <Check size={14} /> : <Copy size={14} />}
               <span>{copiedShareText ? '✓ コピーしました！' : '紹介文つきテキストをコピー'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 🗾 地図の記録ガイド（ルール）＆ 訪問履歴の整理モーダル */}
+      {showMapRulesModal && (
+        <div
+          className="fixed inset-0 bg-black/60 z-[280] flex justify-center items-center p-4 animate-in fade-in"
+          onClick={() => setShowMapRulesModal(false)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-[28px] p-5 shadow-2xl max-h-[86dvh] flex flex-col overflow-hidden animate-in zoom-in-95"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3 shrink-0">
+              <h4 className="font-extrabold text-sm sm:text-base text-stone-800 flex items-center gap-1.5">
+                <MapPin size={17} className="text-[#5E8473]" />
+                日本地図の記録ガイド・管理
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowMapRulesModal(false)}
+                className="p-1 text-stone-400 hover:bg-stone-100 rounded-full cursor-pointer"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            {/* 切り替えタブ：記録の仕組み / 訪問データの整理・削除 */}
+            <div className="flex bg-stone-100 p-1 rounded-2xl mb-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRulesModalTab('rules')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  rulesModalTab === 'rules'
+                    ? 'bg-white text-[#365447] shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-700'
+                }`}
+              >
+                📖 地図が塗られる仕組み
+              </button>
+              <button
+                type="button"
+                onClick={() => setRulesModalTab('manage')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  rulesModalTab === 'manage'
+                    ? 'bg-white text-[#365447] shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-700'
+                }`}
+              >
+                🧹 訪問履歴の編集 ({badges.length}件)
+              </button>
+            </div>
+
+            {rulesModalTab === 'rules' ? (
+              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2.5 pr-0.5 text-xs text-stone-700 leading-relaxed">
+                <div className="p-3.5 rounded-2xl bg-[#F4F8F6] border border-[#7A9D8C]/30 space-y-1">
+                  <p className="font-extrabold text-[#365447] flex items-center gap-1.5">
+                    <span>① 位置情報（GPS）による自動カラーリング</span>
+                  </p>
+                  <p className="text-[11px] text-stone-600">
+                    スマートフォンの位置情報をもとに、訪れた市区町村と都道府県の白地図が自動で緑色に塗られます。スポットごとに手動でスタンプを押す手間なく、旅の軌跡を残せます（画面上部の「📍現在地認証」から即時反映することも可能です）。
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-1">
+                  <p className="font-extrabold text-stone-800 flex items-center gap-1.5">
+                    <span>② 上空や高地を通過中の判定について</span>
+                  </p>
+                  <p className="text-[11px] text-stone-600">
+                    飛行機のフライト中や標高の高い山岳エリア（登山中など）では、地上での滞在と区別するため地図の色塗りが行われない場合があります。
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-1.5">
+                  <p className="font-extrabold text-stone-800 flex items-center gap-1.5">
+                    <span>③ 地図を正しく記録するための端末条件</span>
+                  </p>
+                  <p className="text-[11px] text-stone-600">
+                    次の設定がすべて有効になっている必要があります：
+                  </p>
+                  <ul className="text-[11px] text-stone-600 space-y-1 pl-2 font-bold">
+                    <li>・インターネット通信（電波状況）が安定していること</li>
+                    <li>・端末の位置情報サービス（GPS）がオンになっていること</li>
+                    <li>・本アプリへの位置情報アクセスが「常に許可」または「使用中のみ許可」に設定されていること</li>
+                  </ul>
+                  <div className="pt-1 text-[10px] text-stone-500 space-y-0.5">
+                    <p>※ アプリを閉じている間も自動で塗り進めたい場合は「常に許可」を選択してください。</p>
+                    <p>※ トンネル付近や電波状況の揺らぎにより、隣接する自治体が記録されることがあります。</p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-1.5">
+                  <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                    <span>④ 意図しない市区町村が塗られた場合のリセット</span>
+                  </p>
+                  <p className="text-[11px] text-amber-900">
+                    GPSの誤差などで立ち寄っていない市区町村が塗られてしまった場合は、上の<strong>「🧹 訪問履歴の編集」タブ</strong>からいつでも個別に記録を取り消すことができます。
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
+                <p className="text-[11px] font-bold text-stone-500 px-1">
+                  GPSの揺らぎなどで意図せず塗られてしまった市区町村があれば、右側の「取消」ボタンから個別に白地図へ戻せます。
+                </p>
+                {badges.length === 0 ? (
+                  <div className="py-12 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-200 text-xs font-bold text-stone-400">
+                    まだ記録された市区町村はありません
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {badges.map((b, idx) => (
+                      <div
+                        key={b.id || idx}
+                        className="p-2.5 bg-stone-50 rounded-xl border border-stone-200/80 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm">{b.icon || '🗾'}</span>
+                            <span className="text-xs font-extrabold text-stone-800 truncate">
+                              {b.prefecture} {b.municipality}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-stone-400 block mt-0.5">
+                            記録日: {b.earnedAt || '未記録'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveBadgeRecord(b.id, `${b.prefecture} ${b.municipality}`)}
+                          className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-stone-500 hover:text-rose-600 border border-stone-200 hover:border-rose-200 text-[10px] font-extrabold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={11} />
+                          <span>取消</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowMapRulesModal(false)}
+              className="mt-3 w-full py-2.5 bg-[#5E8473] hover:bg-[#4C7262] text-white font-extrabold rounded-xl text-xs shrink-0 cursor-pointer"
+            >
+              閉じる
             </button>
           </div>
         </div>
