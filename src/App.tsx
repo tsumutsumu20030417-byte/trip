@@ -2576,6 +2576,138 @@ const getTodayString = () => { const d = new Date(); return `${d.getFullYear()}-
 const safeParse = (key, fallback) => { try { const item = localStorage.getItem(key); return item ? JSON.parse(item) : fallback; } catch (e) { return fallback; } };
 
 // ==========================================
+// ★ Supabase クラウド共有エンジン（写真はクラウドに保存せずテキスト＆軽量アバターのみ同期）
+// ==========================================
+const getSupabaseCredentials = () => {
+  try {
+    const url = (import.meta?.env?.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+    const key = (import.meta?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+    return { url, key, enabled: Boolean(url && key) };
+  } catch (e) {
+    return { url: '', key: '', enabled: false };
+  }
+};
+
+// クラウドに保存するしおりデータから「思い出写真（photos）」を除外し、メンバーのアバターは軽量サイズで残すサニタイズ関数
+const stripTripPhotosForCloud = (trip) => {
+  if (!trip || typeof trip !== 'object') return trip;
+  const cleanEvents = (trip.events || []).map(({ photos, ...restEvent }) => ({
+    ...restEvent,
+    photos: []
+  }));
+  const cleanMembers = (trip.members || []).map((m) => ({
+    id: m.id,
+    name: m.name,
+    color: m.color || '#7A9D8C',
+    avatar: m.avatar && String(m.avatar).length < 45000 ? m.avatar : ''
+  }));
+  const { photos, ...restTrip } = trip;
+  return {
+    ...restTrip,
+    members: cleanMembers,
+    events: cleanEvents,
+    photos: []
+  };
+};
+
+// クラウドから同期した際、自分のスマホ内に保存されている思い出写真を消さずにマージする関数
+const mergeCloudTripWithLocalPhotos = (cloudTrip, localTrip) => {
+  if (!localTrip) return cloudTrip;
+  const localEventsMap = new Map((localTrip.events || []).map((ev) => [ev.id, ev]));
+  const mergedEvents = (cloudTrip.events || []).map((cEv) => {
+    const lEv = localEventsMap.get(cEv.id);
+    return {
+      ...cEv,
+      photos: Array.isArray(lEv?.photos) ? lEv.photos : []
+    };
+  });
+  return {
+    ...cloudTrip,
+    events: mergedEvents,
+    photos: Array.isArray(localTrip.photos) ? localTrip.photos : []
+  };
+};
+
+const syncSharedTripToCloud = async (trip) => {
+  const { url, key, enabled } = getSupabaseCredentials();
+  if (!enabled || !trip || trip.isSoloTrip) return false;
+  try {
+    const payload = stripTripPhotosForCloud(trip);
+    const res = await fetch(`${url}/rest/v1/shared_trips?on_conflict=id`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({
+        id: trip.id,
+        data: payload,
+        updated_at: new Date().toISOString()
+      })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+const fetchSharedTripFromCloud = async (tripCode) => {
+  const { url, key, enabled } = getSupabaseCredentials();
+  if (!enabled || !tripCode) return null;
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/shared_trips?id=eq.${encodeURIComponent(tripCode)}&select=id,data,updated_at`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`
+        }
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0 && rows[0]?.data) {
+      return rows[0].data;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+};
+
+// スマホ標準の共有シート（AirDrop / LINE / メール等）で写真を直接共有するヘルパー
+const sharePhotoViaNativeSheet = async (photoUrl, title = '旅の思い出写真') => {
+  try {
+    if (navigator.share) {
+      if (photoUrl.startsWith('data:')) {
+        const res = await fetch(photoUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `tabitabi_memory_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title
+          });
+          return;
+        }
+      }
+      await navigator.share({
+        title,
+        text: `${title}（たびたび）`,
+        url: photoUrl.startsWith('http') ? photoUrl : window.location.href
+      });
+      return;
+    }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+  }
+  const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(`${title}\n${photoUrl.startsWith('http') ? photoUrl : '※スマホの共有メニューまたは長押し保存からLINE・AirDropで送信できます'}`)}`;
+  window.open(lineUrl, '_blank', 'noopener,noreferrer');
+};
+
+// ==========================================
 // ★ ドラムロール式ホイール日付選択コンポーネント (WheelDateRangePicker)
 // 上が「出発日：YYYY年M月D日(曜)」、下が「最終日：YYYY年M月D日(曜)」（時間表示なし）
 // タップするとその行のすぐ下にクルクル回せるドラムロール式ホイール（「11月10日 火」形式・時間なし）がスッと開く
@@ -2595,190 +2727,6 @@ const formatJapaneseDateWithDay = (dateStr) => {
   return `${y}年${m}月${d}日(${w})`;
 };
 
-function SingleColumnWheel({ items, selectedValue, onSelect }) {
-  const ITEM_HEIGHT = 38;
-  const scrollerRef = useRef(null);
-  const scrollTimerRef = useRef(null);
-
-  const currentIndex = useMemo(() => {
-    const idx = items.findIndex((it) => it.value === selectedValue);
-    return idx >= 0 ? idx : 0;
-  }, [items, selectedValue]);
-
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const targetTop = currentIndex * ITEM_HEIGHT;
-    if (Math.abs(el.scrollTop - targetTop) > 4) {
-      el.scrollTop = targetTop;
-    }
-  }, [currentIndex, items.length]);
-
-  const handleWheelScroll = (e) => {
-    const top = e.currentTarget.scrollTop;
-    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = setTimeout(() => {
-      const idx = Math.max(0, Math.min(items.length - 1, Math.round(top / ITEM_HEIGHT)));
-      const picked = items[idx];
-      if (picked && picked.value !== selectedValue) {
-        onSelect(picked.value);
-      }
-    }, 65);
-  };
-
-  const handleClickItem = (idx) => {
-    const picked = items[idx];
-    if (!picked) return;
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollTo({
-        top: idx * ITEM_HEIGHT,
-        behavior: 'smooth'
-      });
-    }
-    onSelect(picked.value);
-  };
-
-  return (
-    <div
-      ref={scrollerRef}
-      onScroll={handleWheelScroll}
-      style={{
-        WebkitOverflowScrolling: 'touch',
-        scrollSnapType: 'y mandatory',
-        paddingTop: `${ITEM_HEIGHT * 2}px`,
-        paddingBottom: `${ITEM_HEIGHT * 2}px`
-      }}
-      className="relative z-20 flex-1 h-full overflow-y-auto no-scrollbar select-none"
-    >
-      {items.map((item, idx) => {
-        const isSelected = item.value === selectedValue;
-        return (
-          <div
-            key={item.value}
-            onClick={() => handleClickItem(idx)}
-            style={{
-              height: `${ITEM_HEIGHT}px`,
-              scrollSnapAlign: 'center'
-            }}
-            className={`flex items-center justify-center gap-1 px-1 cursor-pointer transition-all whitespace-nowrap ${
-              isSelected
-                ? 'text-stone-900 font-extrabold text-sm sm:text-base scale-105'
-                : 'text-stone-400 font-bold text-xs opacity-75 hover:opacity-100'
-            }`}
-          >
-            <span>{item.label}</span>
-            {item.subLabel && (
-              <span className={`text-[11px] ${item.subColor || ''}`}>
-                {item.subLabel}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function DrumWheelSingleDateRoller({ value, minDate, onChange }) {
-  const ITEM_HEIGHT = 38;
-
-  const parsed = useMemo(() => {
-    const parts = (value || getTodayString()).split('-').map(Number);
-    const now = new Date();
-    const y = parts.length === 3 && !isNaN(parts[0]) ? parts[0] : now.getFullYear();
-    const m = parts.length === 3 && !isNaN(parts[1]) ? parts[1] : now.getMonth() + 1;
-    const d = parts.length === 3 && !isNaN(parts[2]) ? parts[2] : now.getDate();
-    return { year: y, month: m, day: d };
-  }, [value]);
-
-  const yearItems = useMemo(() => {
-    const baseYear = new Date().getFullYear();
-    const startY = Math.min(baseYear - 2, parsed.year - 1);
-    const endY = Math.max(baseYear + 5, parsed.year + 2);
-    const arr = [];
-    for (let y = startY; y <= endY; y++) {
-      arr.push({ value: y, label: `${y}年` });
-    }
-    return arr;
-  }, [parsed.year]);
-
-  const monthItems = useMemo(() => {
-    const arr = [];
-    for (let m = 1; m <= 12; m++) {
-      arr.push({ value: m, label: `${m}月` });
-    }
-    return arr;
-  }, []);
-
-  const daysInMonth = useMemo(() => {
-    return new Date(parsed.year, parsed.month, 0).getDate();
-  }, [parsed.year, parsed.month]);
-
-  const dayItems = useMemo(() => {
-    const arr = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dt = new Date(parsed.year, parsed.month - 1, d);
-      const dow = dt.getDay();
-      const w = WEEKDAY_JA[dow];
-      const subColor = dow === 0 ? 'text-rose-500' : dow === 6 ? 'text-sky-600' : 'text-stone-500';
-      arr.push({
-        value: d,
-        label: `${d}日`,
-        subLabel: `(${w})`,
-        subColor
-      });
-    }
-    return arr;
-  }, [parsed.year, parsed.month, daysInMonth]);
-
-  const emitDateChange = (nextY, nextM, nextD) => {
-    const maxD = new Date(nextY, nextM, 0).getDate();
-    const clampedD = Math.min(nextD, maxD);
-    const iso = `${nextY}-${String(nextM).padStart(2, '0')}-${String(clampedD).padStart(2, '0')}`;
-    if (minDate && iso < minDate) {
-      onChange(minDate);
-    } else {
-      onChange(iso);
-    }
-  };
-
-  return (
-    <div
-      data-no-swipe="true"
-      className="relative h-[190px] bg-stone-50/95 border-t border-stone-200/80 select-none overflow-hidden animate-in fade-in duration-150"
-    >
-      {/* 上下のグラデーションフェード */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-stone-50 via-stone-50/85 to-transparent z-10" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-stone-50 via-stone-50/85 to-transparent z-10" />
-
-      {/* 中央の選択ハイライトバー */}
-      <div
-        className="pointer-events-none absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-xl bg-[#7A9D8C]/15 border border-[#7A9D8C]/40 z-0"
-        style={{ height: `${ITEM_HEIGHT}px` }}
-      />
-
-      {/* 独立した「年」「月」「日」の3列ドラムロール */}
-      <div className="relative z-20 h-full flex items-center divide-x divide-stone-200/60 px-3">
-        <SingleColumnWheel
-          items={yearItems}
-          selectedValue={parsed.year}
-          onSelect={(y) => emitDateChange(y, parsed.month, parsed.day)}
-        />
-        <SingleColumnWheel
-          items={monthItems}
-          selectedValue={parsed.month}
-          onSelect={(m) => emitDateChange(parsed.year, m, parsed.day)}
-        />
-        <SingleColumnWheel
-          items={dayItems}
-          selectedValue={Math.min(parsed.day, daysInMonth)}
-          onSelect={(d) => emitDateChange(parsed.year, parsed.month, d)}
-        />
-      </div>
-    </div>
-  );
-}
-
 function WheelDateRangePicker({
   startDate,
   endDate,
@@ -2789,92 +2737,264 @@ function WheelDateRangePicker({
   endLabel = '最終日',
   compact = false
 }) {
-  const [openTarget, setOpenTarget] = useState(null); // 'start' | 'end' | null
+  const safeStart = startDate || getTodayString();
+  const safeEnd = singleDateMode ? safeStart : (endDate && endDate >= safeStart ? endDate : safeStart);
 
-  const toggleRow = (target) => {
-    setOpenTarget((prev) => (prev === target ? null : target));
+  const [isOpen, setIsOpen] = useState(false);
+  // 'start': 次のタップで出発日を選択 / 'end': 次のタップで最終日を選択
+  const [selectingPhase, setSelectingPhase] = useState('start');
+
+  const initialMonthParts = safeStart.split('-').map(Number);
+  const [viewYear, setViewYear] = useState(() => initialMonthParts[0] || new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => (initialMonthParts[1] || new Date().getMonth() + 1) - 1);
+
+  useEffect(() => {
+    const parts = (startDate || getTodayString()).split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      setViewYear(parts[0]);
+      setViewMonth(parts[1] - 1);
+    }
+  }, [startDate]);
+
+  const toDateStr = (y, mZero, d) =>
+    `${y}-${String(mZero + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+  const calendarCells = useMemo(() => {
+    const firstDayWeek = new Date(viewYear, viewMonth, 1).getDay();
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < firstDayWeek; i++) {
+      cells.push(null);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({
+        day: d,
+        dateStr: toDateStr(viewYear, viewMonth, d),
+        dow: (firstDayWeek + d - 1) % 7
+      });
+    }
+    return cells;
+  }, [viewYear, viewMonth]);
+
+  const handlePrevMonth = () => {
+    if (viewMonth === 0) {
+      setViewYear(y => y - 1);
+      setViewMonth(11);
+    } else {
+      setViewMonth(m => m - 1);
+    }
   };
+
+  const handleNextMonth = () => {
+    if (viewMonth === 11) {
+      setViewYear(y => y + 1);
+      setViewMonth(0);
+    } else {
+      setViewMonth(m => m + 1);
+    }
+  };
+
+  const handleSelectDateCell = (clickedDateStr) => {
+    if (singleDateMode) {
+      if (onChangeStart) onChangeStart(clickedDateStr);
+      if (onChangeEnd) onChangeEnd(clickedDateStr);
+      setIsOpen(false);
+      return;
+    }
+
+    if (selectingPhase === 'start') {
+      if (onChangeStart) onChangeStart(clickedDateStr);
+      if (onChangeEnd) onChangeEnd(clickedDateStr);
+      setSelectingPhase('end');
+    } else {
+      if (clickedDateStr < safeStart) {
+        // 出発日より前の日付をタップした場合は、その日を新しい出発日として再設定
+        if (onChangeStart) onChangeStart(clickedDateStr);
+        if (onChangeEnd) onChangeEnd(clickedDateStr);
+        setSelectingPhase('end');
+      } else {
+        if (onChangeEnd) onChangeEnd(clickedDateStr);
+        setSelectingPhase('start');
+        setIsOpen(false);
+      }
+    }
+  };
+
+  const diffDaysCount = useMemo(() => {
+    const s = new Date(safeStart);
+    const e = new Date(safeEnd);
+    const diff = Math.round((e - s) / 86400000) + 1;
+    return isNaN(diff) || diff < 1 ? 1 : diff;
+  }, [safeStart, safeEnd]);
 
   return (
     <div
       data-no-swipe="true"
-      className="bg-white rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs divide-y divide-stone-100"
+      className="bg-white rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs"
     >
-      {/* 上段：出発日：YYYY年M月D日(曜) */}
-      <div>
-        <button
-          type="button"
-          onClick={() => toggleRow('start')}
-          className={`w-full ${
-            compact ? 'px-3 py-2' : 'px-3.5 py-2.5'
-          } flex items-center justify-between gap-2 text-left hover:bg-stone-50/80 transition-colors cursor-pointer`}
-        >
-          <span className="text-xs font-extrabold text-stone-600 flex items-center gap-1.5 shrink-0">
-            <Calendar size={13} className="text-[#7A9D8C] shrink-0" />
-            <span>{startLabel}</span>
-          </span>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`text-xs sm:text-sm font-extrabold px-2.5 py-1 rounded-xl transition-colors ${
-                openTarget === 'start'
-                  ? 'bg-[#7A9D8C]/15 text-[#4A6B5D] ring-1 ring-[#7A9D8C]/40'
-                  : 'bg-stone-100/90 text-stone-800'
-              }`}
-            >
-              {formatJapaneseDateWithDay(startDate)}
-            </span>
+      {/* 上部サマリーバー：タップで1つのカレンダーを開閉 */}
+      <button
+        type="button"
+        onClick={() => {
+          if (!isOpen) setSelectingPhase('start');
+          setIsOpen(prev => !prev);
+        }}
+        className={`w-full ${
+          compact ? 'px-3 py-2' : 'px-3.5 py-2.5'
+        } flex items-center justify-between gap-2 text-left hover:bg-stone-50/80 active:bg-stone-100/70 transition-colors cursor-pointer select-none`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="w-7 h-7 rounded-xl bg-[#7A9D8C]/15 text-[#4A6B5D] flex items-center justify-center shrink-0">
+            <Calendar size={14} />
           </div>
-        </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-stone-400">
+              <span>{ singleDateMode ? startLabel : `${startLabel} 〜 ${endLabel}` }</span>
+              {!singleDateMode && (
+                <span className="px-1.5 py-0.2 rounded-full bg-[#7A9D8C]/15 text-[#4A6B5D] text-[9px] font-extrabold">
+                  {diffDaysCount <= 1 ? '日帰り' : `${diffDaysCount - 1}泊${diffDaysCount}日`}
+                </span>
+              )}
+            </div>
+            <div className="text-xs sm:text-sm font-extrabold text-stone-800 truncate mt-0.5">
+              {singleDateMode ? (
+                formatJapaneseDateWithDay(safeStart)
+              ) : (
+                <span>
+                  {formatJapaneseDateWithDay(safeStart)} <span className="text-[#7A9D8C] mx-0.5">〜</span> {formatJapaneseDateWithDay(safeEnd)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <span className="px-2.5 py-1 rounded-xl bg-stone-100 text-stone-700 text-[11px] font-extrabold shrink-0">
+          {isOpen ? '閉じる ▲' : 'カレンダー ▼'}
+        </span>
+      </button>
 
-        {openTarget === 'start' && (
-          <DrumWheelSingleDateRoller
-            value={startDate || getTodayString()}
-            onChange={(nextStart) => {
-              if (onChangeStart) onChangeStart(nextStart);
-              if (!singleDateMode && onChangeEnd && endDate && endDate < nextStart) {
-                onChangeEnd(nextStart);
-              }
-            }}
-          />
-        )}
-      </div>
-
-      {/* 下段：最終日：YYYY年M月D日(曜)（singleDateMode=false のとき表示） */}
-      {!singleDateMode && (
-        <div>
-          <button
-            type="button"
-            onClick={() => toggleRow('end')}
-            className={`w-full ${
-              compact ? 'px-3 py-2' : 'px-3.5 py-2.5'
-            } flex items-center justify-between gap-2 text-left hover:bg-stone-50/80 transition-colors cursor-pointer`}
-          >
-            <span className="text-xs font-extrabold text-stone-600 flex items-center gap-1.5 shrink-0">
-              <Calendar size={13} className="text-[#7A9D8C] shrink-0" />
-              <span>{endLabel}</span>
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`text-xs sm:text-sm font-extrabold px-2.5 py-1 rounded-xl transition-colors ${
-                  openTarget === 'end'
-                    ? 'bg-[#7A9D8C]/15 text-[#4A6B5D] ring-1 ring-[#7A9D8C]/40'
-                    : 'bg-stone-100/90 text-stone-800'
-                }`}
-              >
-                {formatJapaneseDateWithDay(endDate || startDate)}
+      {/* 展開される1つの期間選択カレンダー */}
+      {isOpen && (
+        <div className="p-3 bg-stone-50/70 border-t border-stone-200/80 space-y-2.5 animate-in fade-in duration-150">
+          {/* 選択ステップ案内バー */}
+          {!singleDateMode && (
+            <div className="flex items-center justify-between gap-2 bg-white px-3 py-1.5 rounded-xl border border-stone-200/80 text-[11px] font-extrabold">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    selectingPhase === 'start'
+                      ? 'bg-[#7A9D8C] text-white'
+                      : 'bg-stone-100 text-stone-600'
+                  }`}
+                  onClick={() => setSelectingPhase('start')}
+                >
+                  ① {startLabel}: {safeStart.slice(5).replace('-', '/')}
+                </span>
+                <span className="text-stone-400">→</span>
+                <span
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    selectingPhase === 'end'
+                      ? 'bg-[#7A9D8C] text-white animate-pulse'
+                      : 'bg-stone-100 text-stone-600'
+                  }`}
+                  onClick={() => setSelectingPhase('end')}
+                >
+                  ② {endLabel}: {safeEnd.slice(5).replace('-', '/')}
+                </span>
+              </div>
+              <span className="text-[10px] text-[#4A6B5D]">
+                {selectingPhase === 'start' ? '出発日をタップ' : '最終日をタップ'}
               </span>
             </div>
-          </button>
-
-          {openTarget === 'end' && (
-            <DrumWheelSingleDateRoller
-              value={endDate || startDate || getTodayString()}
-              minDate={startDate}
-              onChange={(nextEnd) => {
-                if (onChangeEnd) onChangeEnd(nextEnd);
-              }}
-            />
           )}
+
+          {/* 月送りヘッダー */}
+          <div className="flex items-center justify-between px-1">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="p-1.5 rounded-xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 transition-colors active:scale-95"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-xs sm:text-sm font-extrabold text-stone-800">
+              {viewYear}年 {viewMonth + 1}月
+            </span>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="p-1.5 rounded-xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 transition-colors active:scale-95"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* 曜日ヘッダー */}
+          <div className="grid grid-cols-7 text-center text-[10px] font-extrabold">
+            {WEEKDAY_JA.map((w, idx) => (
+              <span
+                key={w}
+                className={
+                  idx === 0 ? 'text-rose-500' : idx === 6 ? 'text-sky-600' : 'text-stone-400'
+                }
+              >
+                {w}
+              </span>
+            ))}
+          </div>
+
+          {/* 日付グリッド（出発日〜最終日の間をハイライト表示） */}
+          <div className="grid grid-cols-7 gap-y-1 text-center">
+            {calendarCells.map((cell, idx) => {
+              if (!cell) return <div key={`empty_${idx}`} className="h-8" />;
+              const isStart = cell.dateStr === safeStart;
+              const isEnd = cell.dateStr === safeEnd;
+              const isInRange = !singleDateMode && cell.dateStr > safeStart && cell.dateStr < safeEnd;
+              const isSelectedEdge = isStart || isEnd;
+
+              return (
+                <button
+                  key={cell.dateStr}
+                  type="button"
+                  onClick={() => handleSelectDateCell(cell.dateStr)}
+                  className={`h-8 text-xs font-extrabold flex flex-col items-center justify-center relative transition-all cursor-pointer select-none ${
+                    isSelectedEdge
+                      ? 'bg-[#7A9D8C] text-white rounded-xl shadow-2xs z-10 scale-105'
+                      : isInRange
+                      ? 'bg-[#7A9D8C]/20 text-[#3F5E50] rounded-none'
+                      : cell.dow === 0
+                      ? 'text-rose-600 hover:bg-stone-200/60 rounded-xl'
+                      : cell.dow === 6
+                      ? 'text-sky-600 hover:bg-stone-200/60 rounded-xl'
+                      : 'text-stone-700 hover:bg-stone-200/60 rounded-xl'
+                  }`}
+                >
+                  <span className="leading-none">{cell.day}</span>
+                  {isStart && isEnd && !singleDateMode && (
+                    <span className="text-[7px] leading-none mt-0.5 text-emerald-100">日帰り</span>
+                  )}
+                  {isStart && !isEnd && (
+                    <span className="text-[7px] leading-none mt-0.5 text-emerald-100">出発</span>
+                  )}
+                  {isEnd && !isStart && (
+                    <span className="text-[7px] leading-none mt-0.5 text-emerald-100">最終</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-1 border-t border-stone-200/70">
+            <span className="text-[10px] font-bold text-stone-500">
+              💡 同じ日を2回タップすると「日帰り」になります
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="px-3 py-1 rounded-lg bg-[#7A9D8C] text-white text-[11px] font-extrabold shadow-2xs"
+            >
+              決定
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -3080,7 +3200,7 @@ function AiThinkingIndicator({ variant = 'chat', destination = '' }) {
         </div>
         <div className="space-y-1">
           <p className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center justify-center gap-1.5">
-            <span>Google AIがプランを考案中</span>
+            <span>プランを構築中...</span>
             <span className="inline-flex items-center gap-1 ml-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-[#5E8473] animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-1.5 h-1.5 rounded-full bg-[#5E8473] animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -3090,6 +3210,93 @@ function AiThinkingIndicator({ variant = 'chat', destination = '' }) {
           <p className="text-[11px] font-bold text-[#4A6B5D] transition-all duration-300">
             {steps[stepIdx]}
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === 'fullscreen') {
+    return (
+      <div className="absolute inset-0 z-50 rounded-[28px] overflow-hidden flex flex-col items-center justify-center p-6 text-center select-none animate-in fade-in duration-300">
+        <style>{`
+          @keyframes tabitabiWobbleBlob1 {
+            0%, 100% { transform: translate(0px, 0px) scale(1) rotate(0deg); border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%; }
+            33% { transform: translate(28px, -24px) scale(1.14) rotate(12deg); border-radius: 70% 30% 46% 54% / 30% 29% 71% 70%; }
+            66% { transform: translate(-22px, 22px) scale(0.92) rotate(-10deg); border-radius: 35% 65% 35% 65% / 65% 35% 65% 35%; }
+          }
+          @keyframes tabitabiWobbleBlob2 {
+            0%, 100% { transform: translate(0px, 0px) scale(1.05) rotate(0deg); border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+            50% { transform: translate(-32px, -18px) scale(0.9) rotate(-18deg); border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+          }
+          @keyframes tabitabiWaveSlide {
+            0% { transform: translateX(0) scaleY(1); }
+            50% { transform: translateX(-25%) scaleY(1.22); }
+            100% { transform: translateX(-50%) scaleY(1); }
+          }
+        `}</style>
+
+        {/* 背景ベース＋すりガラス */}
+        <div className="absolute inset-0 bg-white/88 backdrop-blur-md" />
+
+        {/* うにょうにょと有機的に変形・波打つオーロラブロブ */}
+        <div
+          className="absolute -top-12 -left-12 w-72 h-72 bg-gradient-to-br from-[#7A9D8C]/40 via-sky-300/35 to-emerald-200/40 blur-xl pointer-events-none"
+          style={{ animation: 'tabitabiWobbleBlob1 6s ease-in-out infinite' }}
+        />
+        <div
+          className="absolute -bottom-16 -right-12 w-80 h-80 bg-gradient-to-tr from-cyan-300/35 via-[#7A9D8C]/35 to-amber-200/35 blur-xl pointer-events-none"
+          style={{ animation: 'tabitabiWobbleBlob2 7s ease-in-out infinite' }}
+        />
+
+        {/* 下部でうにょうにょ波打つマルチレイヤーSVGウェーブ */}
+        <div className="absolute inset-x-0 bottom-0 h-44 overflow-hidden pointer-events-none opacity-75">
+          <svg
+            viewBox="0 0 1200 120"
+            preserveAspectRatio="none"
+            className="w-[200%] h-full text-[#7A9D8C]/25 fill-current"
+            style={{ animation: 'tabitabiWaveSlide 5s ease-in-out infinite' }}
+          >
+            <path d="M0,40 C150,110 350,-10 600,50 C850,110 1050,-10 1200,40 L1200,120 L0,120 Z" />
+          </svg>
+          <svg
+            viewBox="0 0 1200 120"
+            preserveAspectRatio="none"
+            className="absolute inset-0 w-[200%] h-full text-sky-400/20 fill-current"
+            style={{ animation: 'tabitabiWaveSlide 7s ease-in-out infinite reverse' }}
+          >
+            <path d="M0,60 C200,-20 400,120 600,50 C800,-20 1000,120 1200,60 L1200,120 L0,120 Z" />
+          </svg>
+        </div>
+
+        {/* 中央のうにょうにょ流体コア＆テキスト */}
+        <div className="relative z-10 flex flex-col items-center max-w-xs space-y-4">
+          <div className="relative w-24 h-24 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-gradient-to-tr from-[#7A9D8C] via-sky-400 to-emerald-300 opacity-35 shadow-inner"
+              style={{ animation: 'tabitabiWobbleBlob1 3.8s ease-in-out infinite' }}
+            />
+            <div
+              className="absolute inset-2 bg-gradient-to-bl from-sky-300 via-[#7A9D8C] to-teal-200 opacity-45"
+              style={{ animation: 'tabitabiWobbleBlob2 4.4s ease-in-out infinite' }}
+            />
+            <div className="relative w-14 h-14 rounded-2xl bg-white/95 shadow-md border border-emerald-200 flex items-center justify-center">
+              <Sparkles size={26} className="text-[#5E8473] animate-spin" style={{ animationDuration: '3.2s' }} />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-base font-extrabold text-stone-800 tracking-wide flex items-center justify-center gap-1.5">
+              <span>プランを構築中</span>
+              <span className="inline-flex items-center gap-1 ml-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#5E8473] animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#5E8473] animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#5E8473] animate-bounce" style={{ animationDelay: '300ms' }} />
+              </span>
+            </p>
+            <p className="text-xs font-bold text-[#4A6B5D] leading-relaxed min-h-[2.5rem] flex items-center justify-center px-2">
+              {steps[stepIdx]}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -4042,10 +4249,10 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
   };
 
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] bg-stone-300 flex justify-center items-stretch sm:items-center p-0 sm:p-3 overflow-hidden overscroll-none">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-stone-300 flex justify-center items-center p-3 sm:p-4 overflow-y-auto overscroll-none">
       <div
         style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
-        className="bg-white w-full max-w-lg h-[100dvh] sm:h-[96dvh] sm:rounded-[32px] px-4 py-3 sm:p-5 shadow-2xl flex flex-col justify-start overflow-hidden animate-in fade-in zoom-in-95 pb-safe"
+        className="bg-white w-full max-w-md max-h-[94dvh] rounded-[32px] px-4 py-4 sm:p-5 shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 pb-safe my-auto"
       >
         {/* ヘッダー（上部にコンパクトに詰めて配置） */}
         <div className="text-center pb-2 shrink-0">
@@ -4059,10 +4266,10 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
           </p>
         </div>
 
-        {/* 無駄な余白を作らず上部に詰めたフォーム本体（下に駅候補リストがそのまま広がる） */}
+        {/* 無駄な余白を作らず中身に合わせた高さで表示するフォーム本体 */}
         <form
           onSubmit={handleStart}
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar space-y-2.5 py-1 flex flex-col justify-start"
+          className="overflow-y-auto overflow-x-hidden no-scrollbar space-y-2.5 py-1 flex flex-col justify-start"
         >
           {/* 1. アイコン選択（選択中アイコンを大きく表示＋上段：男性風 / 下段：女性風） */}
           <div className="p-3 bg-stone-50 border border-stone-200/80 rounded-2xl shrink-0">
@@ -4097,7 +4304,7 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
                     className="hidden"
                     onChange={async (e) => {
                       if (e.target.files?.[0]) {
-                        const compressed = await compressImageFile(e.target.files[0], 500, 0.85);
+                        const compressed = await compressImageFile(e.target.files[0], 160, 0.72);
                         setCustomAvatar(compressed);
                       }
                     }}
@@ -4192,7 +4399,7 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
                 setName(e.target.value);
                 if (nameError && e.target.value.trim()) setNameError(false);
               }}
-              placeholder="例: たびたろう / おみやげ買いすぎ子 / 胃袋無限ちゃん"
+              placeholder="例: たびたろう"
               className={`w-full p-2 bg-white border rounded-xl text-base sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 ${
                 nameError
                   ? 'border-rose-400 focus:ring-rose-400'
@@ -4220,7 +4427,7 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
             <div className="px-2.5 py-1 bg-emerald-50/90 border border-emerald-200/90 rounded-xl flex items-center gap-1.5">
               <span className="text-xs leading-none shrink-0">🔒</span>
               <p className="text-[10px] font-extrabold text-emerald-900 leading-snug">
-                最寄り駅・居住地は他のユーザーには一切公開されません（自分の「🏠自宅」初期セット専用）。
+                最寄り駅・居住地は他のユーザーには一切公開されません。
               </p>
             </div>
 
@@ -4447,11 +4654,41 @@ function TabitabiApp() {
       if (metaViewport && prevViewportContent) {
         metaViewport.setAttribute('content', prevViewportContent);
       }
-      if (styleEl.parentNode) {
+      if (styleEl && styleEl.parentNode) {
         styleEl.parentNode.removeChild(styleEl);
       }
     };
   }, []);
+
+  // 共有しおり（isSoloTrip === false）を開いている間はクラウドと自動同期する
+  // （ReactのHooksルールに従い、if (!currentUser) の早期リターンより前に常時配置）
+  useEffect(() => {
+    if (!currentUser || !activeTripId || isReadOnlyMode) return;
+    const currentOpenTrip = trips.find(t => t.id === activeTripId);
+    if (!currentOpenTrip || currentOpenTrip.isSoloTrip) return;
+
+    let cancelled = false;
+    const pullLatest = async () => {
+      const remoteTrip = await fetchSharedTripFromCloud(activeTripId);
+      if (cancelled || !remoteTrip) return;
+      setTrips(prevTrips =>
+        prevTrips.map(t => {
+          if (t.id !== activeTripId) return t;
+          const merged = mergeCloudTripWithLocalPhotos(remoteTrip, t);
+          return JSON.stringify(stripTripPhotosForCloud(merged)) !== JSON.stringify(stripTripPhotosForCloud(t))
+            ? merged
+            : t;
+        })
+      );
+    };
+
+    pullLatest();
+    const timer = setInterval(pullLatest, 4500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [currentUser, activeTripId, isReadOnlyMode, trips]);
 
   if (!currentUser) {
     const prevSaved = sanitizeUser(safeParse('tabitabi_user', null));
@@ -4490,6 +4727,14 @@ function TabitabiApp() {
     }
     setActiveTripId(null);
     setIsReadOnlyMode(false);
+  };
+
+  const handleUpdateTripWithCloud = (updatedTrip) => {
+    if (isReadOnlyMode) return;
+    setTrips(prev => prev.map(t => (t.id === updatedTrip.id ? updatedTrip : t)));
+    if (!updatedTrip.isSoloTrip) {
+      syncSharedTripToCloud(updatedTrip);
+    }
   };
 
   const handleToggleAutoMinimize = () => {
@@ -4585,7 +4830,7 @@ function TabitabiApp() {
         {activeTripId && (
           <TripDetail 
             currentUser={currentUser} trip={activeTrip} isReadOnly={isReadOnlyMode} myTrips={trips}
-            updateTrip={(updatedTrip) => { if (!isReadOnlyMode) setTrips(trips.map(t => t.id === updatedTrip.id ? updatedTrip : t)); }}
+            updateTrip={handleUpdateTripWithCloud}
             onDeleteTrip={(tripIdToDelete) => {
               setTrips(trips.filter(t => t.id !== tripIdToDelete));
               if (minimizedTripId === tripIdToDelete) setMinimizedTripId(null);
@@ -4633,8 +4878,15 @@ function TabitabiApp() {
         {enlargedImageUrl && (
           <div className="fixed inset-0 bg-black/85 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setEnlargedImageUrl(null)}>
             <button className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-colors"><X size={22} /></button>
-            <div className="max-w-md w-full max-h-[80vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
-              <img src={enlargedImageUrl} alt="Enlarged view" className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl animate-in zoom-in-95" />
+            <div className="max-w-md w-full max-h-[75vh] flex flex-col items-center justify-center gap-3" onClick={e => e.stopPropagation()}>
+              <img src={enlargedImageUrl} alt="Enlarged view" className="max-w-full max-h-[68vh] rounded-2xl object-contain shadow-2xl animate-in zoom-in-95" />
+              <button
+                type="button"
+                onClick={() => sharePhotoViaNativeSheet(enlargedImageUrl, '旅の思い出写真')}
+                className="px-5 py-2.5 rounded-full bg-[#06C755] hover:brightness-95 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-lg active:scale-95 transition-all"
+              >
+                <Share2 size={14} /> AirDrop / LINE で写真を送る
+              </button>
             </div>
           </div>
         )}
@@ -4651,505 +4903,301 @@ function TabitabiApp() {
   );
 }
 
-// ------------------------------------------
-// 画面のどこにでも配置できるフローティング・ミニしおりアイコン (LINE風)
-// ------------------------------------------
+// LINEのマルチタスクアイコンのようにドラッグ移動できるフローティングミニしおりバブル
 function FloatingTripBubble({ trip, isViewingOtherTrip, onRestore, onClose }) {
-  const [pos, setPos] = useState({ x: 280, y: 420 });
-  const [isDragging, setIsDragging] = useState(false);
-  const bubbleRef = useRef(null);
-  const dragInfoRef = useRef({
-    active: false,
-    startX: 0,
-    startY: 0,
-    originX: 280,
-    originY: 420,
-    moved: false
-  });
-
-  useEffect(() => {
-    const parent = bubbleRef.current?.parentElement;
-    if (parent) {
-      const initX = Math.max(12, parent.clientWidth - 88);
-      const initY = Math.max(90, Math.min(parent.clientHeight - 170, Math.round(parent.clientHeight * 0.62)));
-      setPos({ x: initX, y: initY });
-    }
-  }, []);
-
-  const startDrag = (clientX, clientY) => {
-    dragInfoRef.current = {
-      active: true,
-      startX: clientX,
-      startY: clientY,
-      originX: pos.x,
-      originY: pos.y,
-      moved: false
-    };
-    setIsDragging(true);
-  };
-
-  const moveDrag = (clientX, clientY) => {
-    if (!dragInfoRef.current.active) return;
-    const dx = clientX - dragInfoRef.current.startX;
-    const dy = clientY - dragInfoRef.current.startY;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-      dragInfoRef.current.moved = true;
-    }
-    const parent = bubbleRef.current?.parentElement;
-    const maxW = parent ? parent.clientWidth - 76 : 340;
-    const maxH = parent ? parent.clientHeight - 92 : 700;
-    const nextX = Math.max(8, Math.min(maxW, dragInfoRef.current.originX + dx));
-    const nextY = Math.max(56, Math.min(maxH, dragInfoRef.current.originY + dy));
-    setPos({ x: nextX, y: nextY });
-  };
-
-  const endDrag = () => {
-    if (!dragInfoRef.current.active) return;
-    dragInfoRef.current.active = false;
-    setIsDragging(false);
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
-    const handleWinMouseMove = (e) => moveDrag(e.clientX, e.clientY);
-    const handleWinMouseUp = () => endDrag();
-    window.addEventListener('mousemove', handleWinMouseMove);
-    window.addEventListener('mouseup', handleWinMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleWinMouseMove);
-      window.removeEventListener('mouseup', handleWinMouseUp);
-    };
-  }, [isDragging, pos]);
+  const [pos, setPos] = useState({ x: 16, y: 110 });
+  const dragRef = useRef(null);
 
   const handleTouchStart = (e) => {
-    if (e.target.closest('[data-close-bubble]')) return;
-    const touch = e.touches[0];
-    startDrag(touch.clientX, touch.clientY);
+    const t = e.touches[0];
+    dragRef.current = { startX: t.clientX - pos.x, startY: t.clientY - pos.y };
   };
 
   const handleTouchMove = (e) => {
-    if (!dragInfoRef.current.active) return;
-    const touch = e.touches[0];
-    moveDrag(touch.clientX, touch.clientY);
+    if (!dragRef.current) return;
+    const t = e.touches[0];
+    setPos({
+      x: Math.max(8, Math.min(window.innerWidth - 180, t.clientX - dragRef.current.startX)),
+      y: Math.max(60, Math.min(window.innerHeight - 90, t.clientY - dragRef.current.startY))
+    });
   };
 
   const handleTouchEnd = () => {
-    endDrag();
-  };
-
-  const handleMouseDown = (e) => {
-    if (e.target.closest('[data-close-bubble]')) return;
-    e.preventDefault();
-    startDrag(e.clientX, e.clientY);
-  };
-
-  const handleClickMain = () => {
-    if (dragInfoRef.current.moved) {
-      dragInfoRef.current.moved = false;
-      return;
-    }
-    onRestore();
+    dragRef.current = null;
   };
 
   return (
     <div
-      ref={bubbleRef}
-      style={{
-        left: `${pos.x}px`,
-        top: `${pos.y}px`,
-        touchAction: 'none'
-      }}
+      style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      onMouseDown={handleMouseDown}
-      className={`absolute z-[180] select-none ${
-        isDragging ? 'scale-105 cursor-grabbing' : 'cursor-grab transition-transform duration-150 hover:scale-105'
+      className="fixed z-[180] flex items-center gap-2 bg-stone-900/95 text-white pl-3 pr-2 py-2 rounded-full shadow-xl border border-white/20 backdrop-blur-md select-none"
+    >
+      <button
+        type="button"
+        onClick={onRestore}
+        className="flex items-center gap-2 text-left max-w-[160px]"
+      >
+        <Compass size={15} className="text-[#7A9D8C] shrink-0" />
+        <div className="min-w-0">
+          <p className="text-[9px] text-emerald-300 font-bold leading-none">
+            {isViewingOtherTrip ? '自分のしおりに戻る' : '編集中しおり'}
+          </p>
+          <p className="text-xs font-extrabold truncate">{trip.title}</p>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="p-1 rounded-full hover:bg-white/15 text-stone-300"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+function TripCard({ trip, onOpenTrip, isPast = false }) {
+  const memberCount = (trip.members || []).length;
+  return (
+    <div
+      onClick={() => onOpenTrip(trip.id, false)}
+      className={`bg-white p-4 rounded-3xl border shadow-xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-3 ${
+        isPast ? 'border-stone-200/70 opacity-85' : 'border-stone-200/90 hover:border-[#7A9D8C]'
       }`}
     >
-      <div className="relative group">
-        {/* 右上の閉じる（ミニ化解除）ボタン */}
-        <button
-          type="button"
-          data-close-bubble="true"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-white text-stone-500 flex items-center justify-center shadow-md border border-stone-200 hover:bg-rose-50 hover:text-rose-500 transition-colors z-10"
-          title="ミニアイコンを閉じる"
-        >
-          <X size={12} strokeWidth={2.8} />
-        </button>
-
-        {/* 可愛いパステル・トラベルタグ風のフローティングアイコン本体 */}
-        <button
-          type="button"
-          onClick={handleClickMain}
-          className="w-[72px] h-[72px] rounded-[26px] bg-gradient-to-br from-[#FFFDFB] via-[#FFF3EC] to-[#FCE4D8] text-stone-700 shadow-[0_8px_24px_-4px_rgba(226,149,120,0.45)] border-2 border-white ring-1 ring-[#E2A98B]/40 flex flex-col items-center justify-center p-1.5 relative overflow-hidden active:scale-95"
-          title="タップして自分のしおりを開く（ドラッグで移動）"
-        >
-          <div className="w-7 h-7 rounded-2xl bg-gradient-to-br from-[#E29578] to-[#D67D5C] text-white flex items-center justify-center shadow-xs mb-1 shrink-0">
-            <Compass size={15} className="stroke-[2.4]" />
-          </div>
-          <span className="text-[8px] font-extrabold text-[#C86D4E] tracking-tight leading-none mb-0.5">
-            {isViewingOtherTrip ? '✈️ 自分の旅へ' : '📒 しおり中'}
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#7A9D8C]/15 text-[#4A6B5D]">
+            {trip.isSoloTrip ? '👤 1人旅' : `👥 共有 (${memberCount}人)`}
           </span>
-          <span className="text-[9px] font-extrabold text-stone-700 leading-tight w-full truncate text-center px-1">
-            {trip.title}
+          <span className="text-[10px] font-bold text-stone-500 flex items-center gap-0.5">
+            <MapPin size={11} className="text-[#7A9D8C]" /> {trip.destination || '未設定'}
           </span>
-        </button>
+        </div>
+        <h3 className="font-extrabold text-sm text-stone-800 truncate">{trip.title}</h3>
+        <div className="flex items-center gap-3 text-[11px] font-bold text-stone-400">
+          <span className="flex items-center gap-1">
+            <Calendar size={11} /> {trip.startDate?.replace(/-/g, '/')} 〜 {trip.endDate?.slice(5).replace('-', '/')}
+          </span>
+          <span>予定 {(trip.events || []).length}件</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="flex -space-x-2">
+          {(trip.members || []).slice(0, 3).map((m, idx) => (
+            <UserAvatar key={m.id || idx} user={m} size="w-7 h-7" />
+          ))}
+        </div>
+        <ChevronRight size={18} className="text-stone-400" />
       </div>
     </div>
   );
 }
 
-// ------------------------------------------
-// AuthScreen
-// ------------------------------------------
-function AuthScreen({ onLogin }) {
-  const [isLogin, setIsLogin] = useState(false);
-  const [step, setStep] = useState(1); // 1: メール/PW, 2: プロフィール設定, 'forgot': PW再設定
-  const [legalModalType, setLegalModalType] = useState(null); // 'terms' | 'privacy' | null
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  const [name, setName] = useState(''); const [userId, setUserId] = useState('');
-  const [residence, setResidence] = useState('未設定'); const [city, setCity] = useState(''); const [station, setStation] = useState('');
-  const [avatar, setAvatar] = useState(FEMALE_AVATARS[0]); const [customAvatar, setCustomAvatar] = useState(null);
-  const [suggestedIds, setSuggestedIds] = useState([]);
-  const [forgotStep, setForgotStep] = useState(1);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetCode, setResetCode] = useState('');
-  const [resetNewPassword, setResetNewPassword] = useState('');
-  const fileInputRef = useRef(null);
+function CreateTripWizard({ currentUser, onClose, onComplete }) {
+  useLockBodyScroll(true);
+  const defaultOrigin = useMemo(() => getHomeDepartureLabel(currentUser), [currentUser]);
+  const tripCodeRef = useRef(generateTripCode());
+  const [title, setTitle] = useState('');
+  const [departurePoint, setDeparturePoint] = useState(defaultOrigin);
+  const [saveOriginForNext, setSaveOriginForNext] = useState(false);
+  const [destination, setDestination] = useState('');
+  const [startDate, setStartDate] = useState(getTodayString());
+  const [endDate, setEndDate] = useState(getTodayString());
+  const [budget, setBudget] = useState('50000');
+  const [isSoloTrip, setIsSoloTrip] = useState(false);
+  const [myColor, setMyColor] = useState(PRESET_COLORS[0]);
+  const [showAiModal, setShowAiModal] = useState(false);
 
-  const isIdTaken = ['admin', 'test', 'user'].includes((userId || '').toLowerCase());
-
-  useEffect(() => {
-    const timeout = setTimeout(() => { if (name || email) setSuggestedIds(generateSuggests(name, email.split('@')[0])); }, 500);
-    return () => clearTimeout(timeout);
-  }, [name, email]);
-
-  const handleNext = () => {
-    if (!email || !password) { customAlert('メールアドレスとパスワードを入力してください'); return; }
-    if (isLogin) onLogin({ id: 'user123', name: 'テストユーザー', email, password, passkeys: [], avatar: FEMALE_AVATARS[0], isGuest: false, following: ['m1'], followers: [] });
-    else setStep(2);
-  };
-
-  const handlePasskeyLogin = () => {
-    customAlert('パスキー（生体認証）で認証しました！');
-    onLogin({
-      id: 'user123',
-      name: 'テストユーザー',
-      email: email || 'user@example.com',
-      password: 'password123',
-      passkeys: [{ id: 'pk_default', name: 'このデバイスのパスキー', createdAt: new Date().toLocaleDateString() }],
-      avatar: FEMALE_AVATARS[0],
-      isGuest: false,
-      following: ['m1'],
-      followers: []
-    });
-  };
-
-  const handleRegister = () => {
-    if (!name || !userId || isIdTaken) { customAlert('ニックネームと有効なIDを入力してください'); return; }
-    onLogin({ id: userId, name, email, password, passkeys: [], residence, city, station, avatar: customAvatar || avatar, isGuest: false, following: ['m1'], followers: [] });
-  };
-
-  const handleGuest = () => {
-    onLogin({ id: generateId(), name: 'ゲストユーザー', isGuest: true, avatar: FEMALE_AVATARS[0], following: [], followers: ['m2'] });
-  };
-
-  // ★ Google / Apple 外部サービスによるワンタップログイン・新規登録ハンドラー
-  const handleOAuthLogin = (providerName) => {
-    const isGoogle = providerName === 'Google';
-    customAlert(`${providerName}アカウントで認証しました！`);
-    onLogin({
-      id: isGoogle ? 'google_user_' + Math.floor(Math.random() * 900 + 100) : 'apple_user_' + Math.floor(Math.random() * 900 + 100),
-      name: isGoogle ? 'Googleユーザー' : 'Appleユーザー',
-      email: isGoogle ? 'traveler@gmail.com' : 'traveler@privaterelay.appleid.com',
-      authProvider: providerName,
-      password: '',
-      passkeys: [],
-      residence: '未設定',
-      city: '',
-      station: '',
-      avatar: isGoogle ? FEMALE_AVATARS[1] : MALE_AVATARS[0],
-      isGuest: false,
-      following: ['m1'],
-      followers: []
-    });
+  const handleCreate = (e) => {
+    if (e) e.preventDefault();
+    if (saveOriginForNext && departurePoint.trim()) {
+      addSavedDeparturePoint(departurePoint.trim());
+    }
+    const finalTitle = title.trim() || `${destination.trim() || '週末'}の旅`;
+    const newTrip = {
+      id: tripCodeRef.current,
+      title: finalTitle,
+      departurePoint: departurePoint.trim() || defaultOrigin,
+      destination: destination.trim() || '未設定',
+      startDate,
+      endDate: endDate >= startDate ? endDate : startDate,
+      budget: Number(budget) || 50000,
+      members: [{ id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, color: myColor }],
+      isSoloTrip,
+      events: [],
+      photos: [],
+      packingList: [],
+      souvenirList: [],
+      extraExpenses: []
+    };
+    onComplete(newTrip);
   };
 
   return (
-    <div className="min-h-screen bg-stone-300 flex justify-center items-center p-4">
-      <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl animate-in zoom-in-95">
-        <div className="text-center mb-6"><h1 className="text-3xl font-extrabold text-[#7A9D8C] tracking-widest mb-2">たびたび</h1><p className="text-xs text-stone-500 font-bold">みんなの旅行計画アプリ</p></div>
-
-        {step === 'forgot' ? (
-          <div className="animate-in fade-in slide-in-from-right-4">
-            <h2 className="font-bold text-stone-800 text-lg mb-2 text-center">パスワードの再設定</h2>
-            {forgotStep === 1 ? (
-              <>
-                <p className="text-xs text-stone-500 text-center mb-5 leading-relaxed">
-                  ご登録のメールアドレスを入力してください。<br />パスワード再設定用の認証コードをお送りします。
-                </p>
-                <div className="mb-5">
-                  <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">登録メールアドレス</label>
-                  <input
-                    type="email"
-                    value={resetEmail}
-                    onChange={e => setResetEmail(e.target.value)}
-                    className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                    placeholder="mail@example.com"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!resetEmail.trim()) { customAlert('メールアドレスを入力してください'); return; }
-                    customAlert(`${resetEmail} 宛に認証コード（123456）を送信しました`);
-                    setForgotStep(2);
-                  }}
-                  className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors mb-3"
-                >
-                  認証コードを送信する
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="p-3 bg-[#7A9D8C]/10 border border-[#7A9D8C]/20 rounded-2xl text-[11px] font-bold text-[#557465] mb-4 text-center">
-                  {resetEmail} に送信された6桁のコードと<br />新しいパスワードを入力してください
-                </div>
-                <div className="space-y-3.5 mb-5">
-                  <div>
-                    <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">認証コード（6桁）</label>
-                    <input
-                      type="text"
-                      value={resetCode}
-                      onChange={e => setResetCode(e.target.value)}
-                      placeholder="例: 123456"
-                      className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono font-bold text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">新しいパスワード</label>
-                    <input
-                      type="password"
-                      value={resetNewPassword}
-                      onChange={e => setResetNewPassword(e.target.value)}
-                      placeholder="8文字以上の英数字"
-                      className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!resetCode.trim() || resetNewPassword.trim().length < 8) {
-                      customAlert('認証コードと8文字以上の新しいパスワードを入力してください');
-                      return;
-                    }
-                    customAlert('パスワードを再設定しました！新しいパスワードでログインしてください。');
-                    setEmail(resetEmail);
-                    setPassword(resetNewPassword);
-                    setStep(1);
-                    setIsLogin(true);
-                    setForgotStep(1);
-                  }}
-                  className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors mb-3"
-                >
-                  パスワードを再設定する
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => { setStep(1); setForgotStep(1); }}
-              className="w-full py-2.5 text-xs font-bold text-stone-400 hover:text-stone-600"
-            >
-              ログイン画面に戻る
-            </button>
-          </div>
-        ) : step === 1 ? (
-          <div className="animate-in fade-in slide-in-from-left-4">
-            <h2 className="font-bold text-stone-800 text-lg mb-4 text-center">{isLogin ? 'ログイン' : '新規アカウント作成'}</h2>
-
-            {/* ★ Google / Apple 外部連携ログインボタン（App Store審査ガイドライン準拠で並べて配置） */}
-            <div className="space-y-2.5 mb-5">
-              <button
-                type="button"
-                onClick={() => handleOAuthLogin('Google')}
-                className="w-full py-3 px-4 bg-white hover:bg-stone-50 text-stone-700 border border-stone-300 font-extrabold rounded-2xl shadow-2xs text-xs flex items-center justify-center gap-2.5 transition-all active:scale-[0.99]"
-              >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z" />
-                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z" />
-                  <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z" />
-                  <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 21.4 7.4 24 12 24z" />
-                </svg>
-                <span>Googleで{isLogin ? 'ログイン' : '登録して始める'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleOAuthLogin('Apple')}
-                className="w-full py-3 px-4 bg-stone-900 hover:bg-black text-white font-extrabold rounded-2xl shadow-2xs text-xs flex items-center justify-center gap-2.5 transition-all active:scale-[0.99]"
-              >
-                <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
-                  <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-                </svg>
-                <span>Appleで{isLogin ? 'ログイン' : '登録して始める'}</span>
-              </button>
-            </div>
-
-            <div className="relative flex py-1.5 items-center mb-4">
-              <div className="flex-grow border-t border-stone-200"></div>
-              <span className="flex-shrink mx-3 text-[10px] font-bold text-stone-400">またはメールアドレスで{isLogin ? 'ログイン' : '登録'}</span>
-              <div className="flex-grow border-t border-stone-200"></div>
-            </div>
-
-            <div className="space-y-4 mb-5">
-              <div><label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">メールアドレス</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]" placeholder="mail@example.com" /></div>
-              <div>
-                <div className="flex justify-between items-center mb-1 px-1">
-                  <label className="text-[11px] font-bold text-stone-500">パスワード</label>
-                  {isLogin && (
-                    <button
-                      type="button"
-                      onClick={() => { setResetEmail(email); setForgotStep(1); setStep('forgot'); }}
-                      className="text-[11px] font-bold text-[#7A9D8C] hover:underline"
-                    >
-                      パスワードを忘れた方
-                    </button>
-                  )}
-                </div>
-                <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]" placeholder="8文字以上の英数字" />
-              </div>
-            </div>
-            <button onClick={handleNext} className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors mb-3">{isLogin ? 'メールアドレスでログイン' : '次へ（プロフィール設定）'}</button>
-            {isLogin && (
-              <button
-                type="button"
-                onClick={handlePasskeyLogin}
-                className="w-full py-3 bg-stone-100 text-stone-700 border border-stone-200 font-bold rounded-2xl text-xs hover:bg-stone-200 transition-colors mb-4 flex items-center justify-center gap-2"
-              >
-                <Sparkles size={14} className="text-amber-500" /> パスキー（生体認証）でログイン
-              </button>
-            )}
-            <div className="text-center"><button onClick={() => setIsLogin(!isLogin)} className="text-xs text-stone-500 font-bold hover:text-[#7A9D8C] underline">{isLogin ? 'アカウントをお持ちでない方はこちら' : '既にアカウントをお持ちの方はこちら'}</button></div>
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-right-4 max-h-[70vh] overflow-y-auto no-scrollbar pb-2">
-            <h2 className="font-bold text-stone-800 text-lg mb-4 text-center">プロフィール設定</h2>
-            
-            <div className="mb-6 flex flex-col items-center">
-              <p className="text-[11px] font-bold text-stone-500 mb-3 text-center bg-stone-100 px-3 py-1 rounded-full">初期アイコン、または自分の写真から選べます</p>
-              <div className="relative w-24 h-24 mb-5">
-                <button onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-full border-2 border-dashed border-stone-300 bg-stone-50 flex flex-col items-center justify-center overflow-hidden transition-all shadow-inner text-stone-400 z-0 hover:bg-stone-100">
-                  {customAvatar ? <img src={customAvatar} className="w-full h-full object-cover" alt="custom" /> : <div className="flex flex-col items-center"><Camera size={20} className="mb-1" /><span className="text-[9px] font-bold">写真を選ぶ</span></div>}
-                </button>
-                <div className="absolute -bottom-2 -right-2 w-11 h-11 rounded-full border-[3px] border-white shadow-md bg-stone-100 z-10 overflow-hidden pointer-events-none"><img src={avatar} alt="preset" className="w-full h-full object-cover" /></div>
-                <input type="file" ref={fileInputRef} accept="image/*" onChange={async (e) => { if(e.target.files?.[0]) { const compressed = await compressImageFile(e.target.files[0], 500, 0.85); setCustomAvatar(compressed); } }} className="hidden" />
-              </div>
-              <div className="w-full space-y-4">
-                <div><p className="text-[10px] font-bold text-stone-400 mb-1.5 text-center">女性風アイコン</p><div className="flex justify-center gap-2">{FEMALE_AVATARS.map(url => (<button key={url} onClick={() => { setAvatar(url); setCustomAvatar(null); }} className={`w-10 h-10 rounded-full border-2 transition-all ${avatar === url && !customAvatar ? 'border-[#7A9D8C] scale-110 shadow-sm' : 'border-transparent opacity-70 hover:opacity-100'}`}><img src={url} alt="female" className="w-full h-full rounded-full object-cover" /></button>))}</div></div>
-                <div><p className="text-[10px] font-bold text-stone-400 mb-1.5 text-center">男性風アイコン</p><div className="flex justify-center gap-2">{MALE_AVATARS.map(url => (<button key={url} onClick={() => { setAvatar(url); setCustomAvatar(null); }} className={`w-10 h-10 rounded-full border-2 transition-all ${avatar === url && !customAvatar ? 'border-[#7A9D8C] scale-110 shadow-sm' : 'border-transparent opacity-70 hover:opacity-100'}`}><img src={url} alt="male" className="w-full h-full rounded-full object-cover" /></button>))}</div></div>
-              </div>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div><label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">ニックネーム</label><input type="text" value={name} onChange={e=>setName(e.target.value)} className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]" placeholder="例: たびたろう" /></div>
-              <div>
-                <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">ユーザーID (半角英数字)</label>
-                <div className="relative">
-                  <input type="text" value={userId} onChange={e=>setUserId(e.target.value)} className={`w-full p-3 pr-10 bg-stone-50 border ${userId && isIdTaken ? 'border-red-300 focus:ring-red-400' : 'border-stone-200 focus:ring-[#7A9D8C]'} rounded-xl text-sm font-bold focus:outline-none focus:ring-2 font-mono`} placeholder="例: taro_123" />
-                  {userId && <div className="absolute right-3 top-1/2 -translate-y-1/2">{isIdTaken ? <XCircle size={18} className="text-red-500" /> : <CheckCircle2 size={18} className="text-[#7A9D8C]" />}</div>}
-                </div>
-                {suggestedIds.length > 0 && !userId && (<div className="mt-2 flex flex-wrap gap-1.5">{suggestedIds.map(id => (<button key={id} onClick={() => setUserId(id)} className="px-2 py-1 bg-stone-100 text-stone-600 rounded-lg text-[10px] font-mono hover:bg-stone-200 transition-colors">{id}</button>))}</div>)}
-              </div>
-              <div>
-                <label className="text-[11px] font-bold text-stone-500 mb-1 block pl-1">居住地・最寄り駅</label>
-                <p className="text-[9px] text-stone-400 mb-2 leading-tight px-1">※公開されません。登録すると交通手段の検索が便利になります。</p>
-                <div className="space-y-2">
-                  <select value={residence} onChange={e=>setResidence(e.target.value)} className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]">
-                    <option value="未設定">🗾 都道府県（未選択）</option>
-                    {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <MunicipalitySearchInput
-                    value={city}
-                    onChange={setCity}
-                    prefectureContext={residence}
-                    onSelectPrefecture={(autoPref) => setResidence(autoPref)}
-                    placeholder="市区町村 (例: 新宿区 / 横浜市 / 大阪市)"
-                  />
-                  <StationSearchInput value={station} onChange={setStation} cityContext={city} prefectureContext={residence} />
-                </div>
-              </div>
-            </div>
-
-            <button onClick={handleRegister} className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors mb-3">登録して始める</button>
-            <button onClick={() => setStep(1)} className="w-full py-3 text-xs font-bold text-stone-400 hover:text-stone-600">戻る</button>
-          </div>
-        )}
-
-        <div className="mt-8 pt-4 border-t border-stone-100 text-center flex flex-col items-center">
-          <button onClick={handleGuest} className="text-[11px] font-bold text-stone-400 hover:text-stone-600 flex justify-center items-center gap-1 mx-auto mb-2"><User size={12} /> アカウントを作らずにゲストとして始める</button>
-          <p className="text-[9px] text-stone-400 leading-tight mb-2">※ゲスト利用は一部機能が制限されます。後から引き継ぎ可能です。</p>
-          <div className="flex items-center justify-center gap-3 text-[10px] font-bold text-stone-400 mb-1">
-            <button type="button" onClick={() => setLegalModalType('terms')} className="underline hover:text-[#7A9D8C]">利用規約</button>
-            <span>・</span>
-            <button type="button" onClick={() => setLegalModalType('privacy')} className="underline hover:text-[#7A9D8C]">プライバシーポリシー</button>
-          </div>
-          <HeartRailsCreditBadge className="justify-center text-[9px] opacity-75" />
+    <div className="fixed inset-0 bg-black/55 z-[200] flex justify-center items-start sm:items-center pt-2 sm:pt-4 p-2.5 sm:p-4 overflow-y-auto animate-in fade-in" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-[28px] p-5 shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-3 shrink-0">
+          <h3 className="font-extrabold text-base text-stone-800 flex items-center gap-1.5">
+            <Compass size={18} className="text-[#7A9D8C]" /> 新しい旅のしおりを作成
+          </h3>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
         </div>
 
-        {/* App Store / Google Play 審査必須：ログイン前の利用規約・プライバシーポリシー確認モーダル */}
-        {legalModalType && (
-          <div className="fixed inset-0 bg-black/60 z-[300] flex justify-center items-center p-4 animate-in fade-in" onClick={() => setLegalModalType(null)}>
-            <div className="bg-white w-full max-w-md rounded-[28px] p-5 shadow-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-center mb-3 shrink-0">
-                <h3 className="font-extrabold text-sm text-stone-800">
-                  {legalModalType === 'terms' ? '📜 利用規約' : '🛡️ プライバシーポリシー'}
-                </h3>
-                <button type="button" onClick={() => setLegalModalType(null)} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={18} /></button>
+        <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
+          <button
+            type="button"
+            onClick={() => setShowAiModal(true)}
+            className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-sky-100 via-emerald-50 to-cyan-100 border border-sky-300/80 text-left flex items-center justify-between gap-2 shadow-2xs hover:brightness-98 active:scale-[0.99] transition-all"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-sky-600 shadow-2xs shrink-0">
+                <Sparkles size={18} />
               </div>
-              <div className="flex-1 overflow-y-auto no-scrollbar text-xs text-stone-600 space-y-3 leading-relaxed pr-1">
-                {legalModalType === 'terms' ? (
-                  <>
-                    <p className="font-bold text-stone-800">第1条（適用）</p>
-                    <p>本規約は「たびたび」（以下「本アプリ」）の利用に関する条件を定めるものです。利用者は本規約に同意の上、本アプリを利用するものとします。</p>
-                    <p className="font-bold text-stone-800">第2条（AI提案機能に関する免責）</p>
-                    <p>本アプリのAIコンシェルジュ（Google Gemini API等を利用）が提案する店舗・営業時間・料金・交通ルート等の情報は、正確性を保証するものではありません。お出かけ前に公式情報をご確認ください。</p>
-                    <p className="font-bold text-stone-800">第3条（禁止事項・コンテンツ削除）</p>
-                    <p>法令または公序良俗に反する投稿、他者の権利を侵害する行為を禁止します。違反が確認された場合、運営は事前通知なく投稿削除やアカウント停止を行う場合があります。</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-bold text-stone-800">1. 取得する情報と利用目的</p>
-                    <p>本アプリでは、アカウント認証情報（メールアドレス・外部連携ID）、プロフィール情報、作成したしおり・写真データを、旅行計画の作成・共有機能の提供のために利用します。</p>
-                    <p className="font-bold text-stone-800">2. 生成AI（第三者サービス）へのデータ送信</p>
-                    <p>AIプラン作成およびAI相談機能を利用する際、入力された旅行条件・相談テキストを Google LLC（Gemini API）へ送信し、プラン生成の目的にのみ使用します。個人を特定する情報を入力しないようご注意ください。</p>
-                    <p className="font-bold text-stone-800">3. データの削除（退会）</p>
-                    <p>プロフィール設定内の「アカウントを削除（退会）する」から、いつでも登録データを完全に削除できます。</p>
-                  </>
-                )}
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-sky-950">AIにおまかせでプランを提案してもらう</p>
+                <p className="text-[10px] font-bold text-sky-800 truncate">条件やチャット相談から自動でしおりを作成</p>
               </div>
-              <button type="button" onClick={() => setLegalModalType(null)} className="mt-4 w-full py-2.5 bg-[#7A9D8C] text-white font-extrabold rounded-xl text-xs">閉じる</button>
             </div>
-          </div>
+            <ChevronRight size={16} className="text-sky-700 shrink-0" />
+          </button>
+
+          <form id="create-trip-form" onSubmit={handleCreate} className="space-y-3">
+            <div>
+              <label className="text-xs font-extrabold text-stone-600 block mb-1 pl-0.5">旅のタイトル</label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="例: 秋の京都グルメ旅"
+                className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+              />
+            </div>
+
+            <DepartureSelectorBox
+              user={currentUser}
+              value={departurePoint}
+              onChange={setDeparturePoint}
+              saveForNext={saveOriginForNext}
+              onChangeSaveForNext={setSaveOriginForNext}
+              label="出発地点"
+              compact
+            />
+
+            <div>
+              <label className="text-xs font-extrabold text-stone-600 block mb-1 pl-0.5">目的地・エリア</label>
+              <input
+                type="text"
+                value={destination}
+                onChange={e => setDestination(e.target.value)}
+                placeholder="例: 京都府 / 箱根 / 沖縄"
+                className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
+              />
+            </div>
+
+            <WheelDateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onChangeStart={(nextStart) => {
+                setStartDate(nextStart);
+                if (endDate < nextStart) setEndDate(nextStart);
+              }}
+              onChangeEnd={(nextEnd) => setEndDate(nextEnd)}
+              compact
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSoloTrip(false)}
+                className={`p-2.5 rounded-xl border text-xs font-extrabold transition-all ${
+                  !isSoloTrip ? 'border-[#7A9D8C] bg-[#7A9D8C]/10 text-[#4A6B5D]' : 'border-stone-200 bg-white text-stone-500'
+                }`}
+              >
+                👥 みんなで共有
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSoloTrip(true)}
+                className={`p-2.5 rounded-xl border text-xs font-extrabold transition-all ${
+                  isSoloTrip ? 'border-[#7A9D8C] bg-[#7A9D8C]/10 text-[#4A6B5D]' : 'border-stone-200 bg-white text-stone-500'
+                }`}
+              >
+                👤 1人旅（自分専用）
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="pt-3 border-t border-stone-100 shrink-0">
+          <button
+            type="submit"
+            form="create-trip-form"
+            className="w-full py-3.5 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-sm"
+          >
+            この内容でしおりを作成する
+          </button>
+        </div>
+
+        {showAiModal && (
+          <AiPlanSuggestModal
+            currentUser={currentUser}
+            onClose={() => setShowAiModal(false)}
+            onSelectPlan={(plan) => {
+              const isSolo = Boolean(currentUser.isGuest || plan.isSoloPlan);
+              const planEvents = (plan.events || []).map(ev => ({
+                ...ev,
+                id: generateId(),
+                status: isSolo ? 'approved' : 'proposed',
+                authorId: currentUser.id,
+                photos: []
+              }));
+              setShowAiModal(false);
+              onComplete({
+                id: tripCodeRef.current,
+                title: plan.title || '新しい旅行',
+                departurePoint: plan.departurePoint || departurePoint || defaultOrigin,
+                destination: plan.destination || '行き先未定',
+                startDate: plan.startDate,
+                endDate: plan.endDate,
+                budget: Number(plan.budget) || 50000,
+                members: [{ id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, color: myColor }],
+                isSoloTrip: isSolo,
+                events: planEvents,
+                photos: []
+              });
+            }}
+          />
         )}
       </div>
     </div>
   );
 }
 
-// ------------------------------------------
-// Dashboard
-function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, setPublicTrips, setTrips, dashboardState, setDashboardState, onOpenTrip, onToggleLike, onToggleFollow, onOpenUserProfile, onEnlargeImage, onRefreshPublicTrips, notifications, setNotifications, onAddComment, onCopySave, isHidden }) {
+function Dashboard({
+  currentUser,
+  onUpgradeUser,
+  onLogout,
+  trips,
+  publicTrips,
+  setPublicTrips,
+  setTrips,
+  dashboardState,
+  setDashboardState,
+  onOpenTrip,
+  onToggleLike,
+  onToggleFollow,
+  onEnlargeImage,
+  onRefreshPublicTrips,
+  notifications,
+  setNotifications,
+  onAddComment,
+  onCopySave
+}) {
   const activeTab = dashboardState?.activeTab || 'my';
-  const setActiveTab = (tab) => {
-    setDashboardState(prev => ({ ...prev, activeTab: tab, scrollTop: 0, windowScrollY: 0 }));
-  };
+  const setActiveTab = (tab) => setDashboardState(prev => ({ ...prev, activeTab: tab }));
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -5158,190 +5206,150 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
   const [viewingUserProfile, setViewingUserProfile] = useState(null);
   const [dashboardCopyTarget, setDashboardCopyTarget] = useState(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-
-  // 上下バーの高さ固定によりスクロール時の加速・ガタつきを防止
-  const hideChrome = false;
+  const [hideChrome, setHideChrome] = useState(false);
+  const lastScrollTopRef = useRef(0);
   const scrollContainerRef = useRef(null);
 
-  const handleFeedScroll = () => {};
-
   useEffect(() => {
-    if (!isHidden) {
-      if (scrollContainerRef.current && dashboardState?.scrollTop !== undefined) {
-        scrollContainerRef.current.scrollTop = dashboardState.scrollTop;
-      }
-      if (typeof window !== 'undefined' && dashboardState?.windowScrollY !== undefined) {
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: dashboardState.windowScrollY, behavior: 'instant' });
-        });
-      }
-    }
-  }, [isHidden]);
+    setHideChrome(false);
+    lastScrollTopRef.current = 0;
+  }, [activeTab]);
 
-  const handleOpenTripWithScroll = (id, readOnly = false) => {
-    const currentScroll = scrollContainerRef.current ? scrollContainerRef.current.scrollTop : 0;
-    const currentWinY = typeof window !== 'undefined' ? window.scrollY : 0;
-    setDashboardState(prev => ({ ...prev, scrollTop: currentScroll, windowScrollY: currentWinY }));
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'instant' });
+  const handleFeedScroll = (e) => {
+    const currentTop = e.currentTarget.scrollTop;
+    const diff = currentTop - lastScrollTopRef.current;
+
+    if (currentTop <= 24) {
+      setHideChrome(false);
+    } else if (diff > 10 && currentTop > 60 && !isFilterOpen) {
+      setHideChrome(true);
+    } else if (diff < -8) {
+      setHideChrome(false);
     }
-    onOpenTrip(id, readOnly);
+    lastScrollTopRef.current = currentTop;
   };
 
   const todayStr = getTodayString();
-  const upcomingTrips = useMemo(() => (trips || []).filter(t => (t.endDate || '') >= todayStr).sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')), [trips, todayStr]);
-  const pastTrips = useMemo(() => (trips || []).filter(t => (t.endDate || '') < todayStr).sort((a, b) => (b.endDate || '').localeCompare(a.endDate || '')), [trips, todayStr]);
+  const upcomingTrips = useMemo(
+    () => (trips || []).filter(t => (t.endDate || t.startDate || '') >= todayStr).sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')),
+    [trips, todayStr]
+  );
+  const pastTrips = useMemo(
+    () => (trips || []).filter(t => (t.endDate || t.startDate || '') < todayStr).sort((a, b) => (b.endDate || '').localeCompare(a.endDate || '')),
+    [trips, todayStr]
+  );
+
+  const handleOpenTripWithScroll = (id, readOnly = false) => {
+    onOpenTrip(id, readOnly);
+  };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F4F7F5] relative">
-      {/* ① 上部ヘッダーバー */}
-      <header className="bg-white/95 backdrop-blur-md px-4 py-3 border-b border-stone-200/80 z-30 shrink-0">
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div
+        className={`bg-white px-5 shadow-xs z-20 relative shrink-0 border-b border-stone-100 transition-all duration-300 overflow-hidden ${
+          activeTab === 'discover' && hideChrome && !isFilterOpen
+            ? 'max-h-0 py-0 opacity-0 border-none pointer-events-none'
+            : 'max-h-20 pt-4 pb-3 opacity-100'
+        }`}
+      >
         <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setShowProfileModal(true)}
-              className="relative group focus:outline-none"
-              title="プロフィール・設定"
-            >
-              <UserAvatar user={currentUser} size="w-9 h-9" />
-              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-white rounded-full flex items-center justify-center shadow-xs border border-stone-200 text-stone-500">
-                <Edit2 size={8} />
-              </span>
-            </button>
-            <div>
-              <h1 className="text-base font-extrabold text-[#7A9D8C] tracking-wider leading-none">たびたび</h1>
-              <p className="text-[10px] font-bold text-stone-400 mt-0.5">{currentUser?.name}</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="font-extrabold tracking-widest text-xl text-[#7A9D8C]">たびたび</span>
           </div>
-
           <div className="flex items-center gap-1.5">
-            {/* キーワード検索トグル（「みんなの旅」タブ表示中） */}
             {activeTab === 'discover' && (
               <button
                 type="button"
-                onClick={() => {
-                  setIsFilterOpen(prev => !prev);
-                }}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1 transition-all active:scale-95 ${
-                  isFilterOpen || Boolean((dashboardState?.searchQuery || '').trim())
-                    ? 'bg-[#7A9D8C]/15 border-[#7A9D8C] text-[#557465]'
-                    : 'bg-stone-100/90 border-transparent text-stone-600 hover:bg-stone-200/70'
-                }`}
+                onClick={() => setIsFilterOpen(prev => !prev)}
+                className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"
                 title="キーワード検索"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#7A9D8C]" />
+                <Search size={19} />
               </button>
             )}
-
-            {/* 旅バッジタブ表示中は獲得自治体数ピル（ベータ版はCOMING SOON）を表示 */}
-            {activeTab === 'badges' && (
-              ENABLE_BADGE_MAP_FEATURE ? (
-                <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-extrabold flex items-center gap-1">
-                  🏅 {(currentUser?.badges || []).length} / 1,741市区町村
-                </span>
-              ) : (
-                <span className="px-2.5 py-1 rounded-full bg-stone-100 border border-stone-200 text-stone-600 text-[10px] font-extrabold flex items-center gap-1">
-                  🚧 アプリ版で公開予定
-                </span>
-              )
-            )}
-
             <button
               type="button"
               onClick={() => {
                 setShowNotifications(!showNotifications);
-                setNotifications(notifications.map(n => ({ ...n, read: true })));
+                setNotifications((notifications || []).map(n => ({ ...n, read: true })));
               }}
               className="relative p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"
-              title="お知らせ"
             >
               <Bell size={20} />
-              {notifications.some(n => !n.read) && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              {(notifications || []).some(n => !n.read) && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(true)}
+              className="relative group transition-transform active:scale-95 outline-none"
+            >
+              <UserAvatar user={currentUser} size="w-9 h-9" />
             </button>
           </div>
         </div>
-      </header>
+      </div>
 
-      {showNotifications && (
-        <div className="absolute top-12 right-4 w-72 bg-white rounded-2xl shadow-xl border border-stone-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-4">
-          <div className="p-3 border-b border-stone-100 flex justify-between items-center">
-            <h4 className="font-bold text-sm text-stone-800">お知らせ</h4>
-            <button onClick={() => setShowNotifications(false)} className="text-stone-400 hover:text-stone-600"><X size={15} /></button>
-          </div>
-          <div className="max-h-64 overflow-y-auto no-scrollbar">
-            {notifications.length === 0 ? (
-              <div className="p-4 text-center text-xs text-stone-400">通知はありません</div>
-            ) : (
-              notifications.map(n => (
-                <div key={n.id} className={`p-3 border-b border-stone-50 text-xs ${!n.read ? 'bg-stone-50/80' : 'bg-white'}`}>
-                  <div className="flex items-start gap-2">
-                    <div className="mt-0.5">{n.type === 'like' ? <Heart size={14} className="text-red-500" /> : <MessageSquare size={14} className="text-[#7A9D8C]" />}</div>
-                    <div>
-                      <p className="text-stone-700 font-bold mb-0.5 leading-snug">{n.message}</p>
-                      <p className="text-[9px] text-stone-400">{new Date(n.createdAt).toLocaleString()}</p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ② メインコンテンツ領域 */}
       <div
-        ref={activeTab === 'my' || activeTab === 'badges' ? scrollContainerRef : null}
-        onScroll={activeTab === 'my' ? handleFeedScroll : undefined}
-        style={{
-          WebkitOverflowScrolling: 'touch',
-          touchAction: activeTab === 'my' && trips.length === 0 ? 'none' : 'pan-y',
-          overscrollBehavior: 'none'
-        }}
-        className={`flex-1 flex flex-col min-h-0 ${
-          activeTab === 'my'
-            ? trips.length === 0
-              ? 'overflow-hidden'
-              : 'overflow-y-auto overflow-x-hidden overscroll-none no-scrollbar'
-            : activeTab === 'badges'
-            ? 'overflow-y-auto overflow-x-hidden overscroll-none no-scrollbar'
-            : 'overflow-hidden'
-        }`}
+        ref={activeTab === 'my' ? scrollContainerRef : null}
+        className={`flex-1 bg-[#F4F7F5] ${activeTab === 'my' || activeTab === 'badges' ? 'overflow-y-auto overscroll-y-contain no-scrollbar' : 'flex flex-col overflow-hidden'}`}
       >
         {activeTab === 'my' ? (
-          <div className={`px-5 py-4 animate-in fade-in duration-300 ${trips.length === 0 ? 'flex-1 flex flex-col overflow-hidden' : 'pb-28'}`}>
-            <div className="flex gap-2.5 mb-5 shrink-0">
-              <button onClick={() => setShowCreateModal(true)} className="flex-1 py-3.5 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-sm text-sm flex justify-center items-center gap-1.5 hover:bg-[#688a79] active:scale-[0.99] transition-all"><Plus size={18} /> 新しい旅のしおり</button>
-              <button onClick={() => setShowJoinModal(true)} className="flex-1 py-3.5 bg-white text-[#7A9D8C] border-2 border-[#7A9D8C] font-extrabold rounded-2xl shadow-sm text-sm flex justify-center items-center gap-1.5 hover:bg-stone-50 active:scale-[0.99] transition-all"><Check size={18} /> コードで参加</button>
+          <div className="px-5 py-5 pb-28 space-y-5 animate-in fade-in duration-200">
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="flex-1 py-3.5 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-xs text-xs sm:text-sm flex justify-center items-center gap-1.5 hover:bg-[#688a79] active:scale-[0.99] transition-all"
+              >
+                <Plus size={17} /> 新しい旅のしおり
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowJoinModal(true)}
+                className="flex-1 py-3.5 bg-white text-[#7A9D8C] border-2 border-[#7A9D8C] font-extrabold rounded-2xl shadow-xs text-xs sm:text-sm flex justify-center items-center gap-1.5 hover:bg-stone-50 active:scale-[0.99] transition-all"
+              >
+                <Check size={17} /> コードで参加
+              </button>
             </div>
+
             {trips.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center pb-8">
-                <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center mb-4 text-[#7A9D8C] rotate-6 border border-stone-100">
-                  <Compass size={36} strokeWidth={1.5} />
+              <div className="flex flex-col items-center justify-center py-16 text-center bg-white rounded-3xl border border-stone-200/70 p-6">
+                <div className="w-16 h-16 bg-[#7A9D8C]/10 rounded-3xl flex items-center justify-center mb-3 text-[#7A9D8C]">
+                  <Compass size={32} strokeWidth={1.8} />
                 </div>
-                <h3 className="text-lg font-extrabold text-stone-800 mb-1">旅行のしおりがありません</h3>
-                <p className="text-sm text-stone-500">「新しい旅のしおり」を作るか、<br />友達の招待コードで参加しましょう。</p>
+                <h3 className="text-sm font-extrabold text-stone-800 mb-1">まだ旅行のしおりがありません</h3>
+                <p className="text-xs text-stone-500 leading-relaxed">
+                  「＋ 新しい旅のしおり」から作成するか、<br />友達から届いた招待コード（TABI-XXXX）で参加しましょう！
+                </p>
               </div>
             ) : (
-              <div className="flex flex-col gap-5">
+              <div className="space-y-5">
                 {upcomingTrips.length > 0 && (
-                  <div className="flex flex-col gap-3"><h2 className="text-sm font-extrabold text-stone-500 mb-0.5 flex items-center gap-1.5"><Calendar size={15} /> これからの旅 ({upcomingTrips.length})</h2>{upcomingTrips.map(trip => <TripCard key={trip.id} trip={trip} onOpenTrip={handleOpenTripWithScroll} />)}</div>
+                  <div className="space-y-2.5">
+                    <h2 className="text-xs font-extrabold text-stone-500 flex items-center gap-1.5 pl-1">
+                      <Calendar size={14} className="text-[#7A9D8C]" /> これからの旅 ({upcomingTrips.length})
+                    </h2>
+                    {upcomingTrips.map(trip => (
+                      <TripCard key={trip.id} trip={trip} onOpenTrip={handleOpenTripWithScroll} />
+                    ))}
+                  </div>
                 )}
                 {pastTrips.length > 0 && (
-                  <div className="flex flex-col gap-3"><h2 className="text-sm font-extrabold text-stone-500 mb-0.5 flex items-center gap-1.5"><Camera size={15} /> 過去の旅・思い出 ({pastTrips.length})</h2>{pastTrips.map(trip => <TripCard key={trip.id} trip={trip} onOpenTrip={handleOpenTripWithScroll} isPast />)}</div>
+                  <div className="space-y-2.5">
+                    <h2 className="text-xs font-extrabold text-stone-400 flex items-center gap-1.5 pl-1">
+                      <Camera size={14} /> 過去の旅・思い出 ({pastTrips.length})
+                    </h2>
+                    {pastTrips.map(trip => (
+                      <TripCard key={trip.id} trip={trip} onOpenTrip={handleOpenTripWithScroll} isPast />
+                    ))}
+                  </div>
                 )}
               </div>
             )}
           </div>
-        ) : activeTab === 'badges' ? (
-          <TravelBadgesMapPage
-            currentUser={currentUser}
-            onUpdateUser={onUpgradeUser}
-            onOpenProfile={() => setShowProfileModal(true)}
-          />
-        ) : (
+        ) : activeTab === 'discover' ? (
           <DiscoverTab
             publicTrips={publicTrips}
             setPublicTrips={setPublicTrips}
@@ -5362,59 +5370,52 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
             isFilterOpen={isFilterOpen}
             setIsFilterOpen={setIsFilterOpen}
           />
+        ) : (
+          <TravelBadgesMapPage
+            currentUser={currentUser}
+            onUpdateUser={onUpgradeUser}
+            onOpenProfile={() => setShowProfileModal(true)}
+          />
         )}
       </div>
 
-      {/* ③ 下部ボトムナビゲーション（「自分たちの旅」「みんなの旅」「旅バッジ・日本地図」の3タブ） */}
-      <nav
-        className={`bg-white/95 backdrop-blur-md border-t border-stone-200/80 flex justify-around items-center pb-safe z-30 shrink-0 transition-all duration-300 overflow-hidden ${
-          hideChrome
-            ? 'max-h-0 py-0 opacity-0 translate-y-full border-none pointer-events-none'
-            : 'max-h-16 py-1.5 opacity-100 translate-y-0'
-        }`}
-      >
+      {/* 下部ボトムナビゲーションバー（「自分たちの旅」「みんなの旅」「日本地図」タブ） */}
+      <nav className="bg-white/95 backdrop-blur-md border-t border-stone-200/70 flex justify-around pb-safe z-30 relative shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.03)]">
         <button
           type="button"
           onClick={() => setActiveTab('my')}
-          className={`flex-1 py-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+          className={`flex-1 py-2.5 flex flex-col justify-center items-center gap-1 transition-colors ${
             activeTab === 'my' ? 'text-[#7A9D8C]' : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <div className={`px-3.5 py-0.5 rounded-full transition-colors ${activeTab === 'my' ? 'bg-[#7A9D8C]/15' : ''}`}>
-            <Compass size={20} strokeWidth={activeTab === 'my' ? 2.6 : 2} />
+          <div className={`px-3.5 py-1 rounded-xl transition-colors ${activeTab === 'my' ? 'bg-[#7A9D8C]/15' : ''}`}>
+            <Compass size={20} strokeWidth={activeTab === 'my' ? 2.5 : 2} />
           </div>
-          <span className="text-[11px] font-extrabold tracking-tight">自分たちの旅</span>
+          <span className="text-[11px] font-extrabold">自分たちの旅</span>
         </button>
-
         <button
           type="button"
           onClick={() => setActiveTab('discover')}
-          className={`flex-1 py-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+          className={`flex-1 py-2.5 flex flex-col justify-center items-center gap-1 transition-colors ${
             activeTab === 'discover' ? 'text-[#7A9D8C]' : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <div className={`px-3.5 py-0.5 rounded-full transition-colors ${activeTab === 'discover' ? 'bg-[#7A9D8C]/15' : ''}`}>
-            <Globe size={20} strokeWidth={activeTab === 'discover' ? 2.6 : 2} />
+          <div className={`px-3.5 py-1 rounded-xl transition-colors ${activeTab === 'discover' ? 'bg-[#7A9D8C]/15' : ''}`}>
+            <Globe size={20} strokeWidth={activeTab === 'discover' ? 2.5 : 2} />
           </div>
-          <span className="text-[11px] font-extrabold tracking-tight">みんなの旅</span>
+          <span className="text-[11px] font-extrabold">みんなの旅</span>
         </button>
-
         <button
           type="button"
           onClick={() => setActiveTab('badges')}
-          className={`flex-1 py-1 flex flex-col items-center justify-center gap-0.5 transition-colors relative ${
+          className={`flex-1 py-2.5 flex flex-col justify-center items-center gap-1 transition-colors ${
             activeTab === 'badges' ? 'text-[#7A9D8C]' : 'text-stone-400 hover:text-stone-600'
           }`}
         >
-          <div className={`px-3.5 py-0.5 rounded-full transition-colors flex items-center gap-1 ${activeTab === 'badges' ? 'bg-[#7A9D8C]/15' : ''}`}>
-            <MapIcon size={20} strokeWidth={activeTab === 'badges' ? 2.6 : 2} />
-            {ENABLE_BADGE_MAP_FEATURE && (currentUser?.badges || []).length > 0 && (
-              <span className="text-[9px] font-extrabold bg-amber-400 text-stone-950 px-1.5 py-0.2 rounded-full leading-none">
-                {(currentUser?.badges || []).length}
-              </span>
-            )}
+          <div className={`px-3.5 py-1 rounded-xl transition-colors ${activeTab === 'badges' ? 'bg-[#7A9D8C]/15' : ''}`}>
+            <MapPin size={20} strokeWidth={activeTab === 'badges' ? 2.5 : 2} />
           </div>
-          <span className="text-[11px] font-extrabold tracking-tight">日本地図・バッジ</span>
+          <span className="text-[11px] font-extrabold">日本地図</span>
         </button>
       </nav>
 
@@ -5425,38 +5426,49 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
           onComplete={(newTrip) => {
             setShowCreateModal(false);
             setTrips([newTrip, ...trips]);
+            if (!newTrip.isSoloTrip) {
+              syncSharedTripToCloud(newTrip);
+            }
             handleOpenTripWithScroll(newTrip.id, false);
           }}
         />
       )}
-      {showJoinModal && <JoinTripWizard currentUser={currentUser} trips={trips} setTrips={setTrips} onClose={() => setShowJoinModal(false)} onOpenTrip={handleOpenTripWithScroll} />}
+
+      {showJoinModal && (
+        <JoinTripWizard
+          currentUser={currentUser}
+          trips={trips}
+          setTrips={setTrips}
+          onClose={() => setShowJoinModal(false)}
+          onOpenTrip={handleOpenTripWithScroll}
+        />
+      )}
+
       {showProfileModal && (
         <UserSettingsModal
           currentUser={currentUser}
           publicTrips={publicTrips}
           onToggleFollow={onToggleFollow}
-          onOpenUserProfile={(profile) => {
-            setShowProfileModal(false);
-            setViewingUserProfile(profile);
-          }}
           onUpgradeUser={onUpgradeUser}
           onClose={() => setShowProfileModal(false)}
           onLogout={onLogout}
         />
       )}
+
       {viewingUserProfile && (
         <PublicUserProfileModal
           userProfile={viewingUserProfile}
           publicTrips={publicTrips}
           currentUser={currentUser}
           onToggleFollow={onToggleFollow}
-          onOpenTrip={(tripId) => {
+          onOpenTrip={(id) => {
             setViewingUserProfile(null);
-            handleOpenTripWithScroll(tripId, true);
+            handleOpenTripWithScroll(id, true);
           }}
           onClose={() => setViewingUserProfile(null)}
         />
       )}
+
       {dashboardCopyTarget && (
         <CopyModal
           type={dashboardCopyTarget.type}
@@ -5464,512 +5476,17 @@ function Dashboard({ currentUser, onUpgradeUser, onLogout, trips, publicTrips, s
           currentUser={currentUser}
           myTrips={trips}
           onClose={() => setDashboardCopyTarget(null)}
-          onOpenRegister={() => {
-            setDashboardCopyTarget(null);
-            setShowProfileModal(true);
-          }}
           onComplete={(newTrip, updatedTrip) => {
-            if (onCopySave) onCopySave(newTrip, updatedTrip);
+            if (newTrip && !newTrip.isSoloTrip) {
+              syncSharedTripToCloud(newTrip);
+            } else if (updatedTrip && !updatedTrip.isSoloTrip) {
+              syncSharedTripToCloud(updatedTrip);
+            }
+            onCopySave(newTrip, updatedTrip);
             setDashboardCopyTarget(null);
           }}
         />
       )}
-    </div>
-  );
-}
-
-function TripCard({ trip, onOpenTrip, isPast = false }) {
-  return (
-    <div onClick={() => onOpenTrip(trip.id, false)} className={`bg-white p-5 rounded-3xl shadow-sm cursor-pointer border border-stone-100 hover:shadow-md transition-all active:scale-[0.99] ${isPast ? 'opacity-85 grayscale-[15%]' : ''}`}>
-      <div className="flex justify-between items-start mb-2"><h3 className="font-extrabold text-base text-stone-800 pr-2 leading-snug">{trip.title}</h3>{trip.isSoloTrip && <span className="text-xs bg-stone-100 text-stone-500 px-2.5 py-0.5 rounded-full font-bold whitespace-nowrap">👤 ひとり旅</span>}</div>
-      <div className="flex items-center gap-3 text-sm font-bold text-stone-500 mb-3.5"><span className="flex items-center gap-1"><MapPin size={14} className="text-[#7A9D8C]" /> {trip.destination || '未設定'}</span><span className="flex items-center gap-1"><Calendar size={14} /> {trip.startDate.replace(/-/g, '/')}</span></div>
-      <div className="flex -space-x-2 pt-1.5 border-t border-stone-50 items-center justify-between">
-        <div className="flex -space-x-2">{(trip.members || []).map((m, i) => (<div key={m.id || i} className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm overflow-hidden" style={{ backgroundColor: m.color, zIndex: 10 - i }} title={m.name}>{m.avatar ? <img src={m.avatar} alt="member" className="w-full h-full object-cover" /> : m.name.charAt(0)}</div>))}</div>
-        <span className="text-xs font-extrabold text-stone-500 flex items-center gap-0.5">開く <ChevronRight size={15} /></span>
-      </div>
-    </div>
-  );
-}
-
-function CreateTripWizard({ currentUser, onClose, onComplete }) {
-  useLockBodyScroll(true);
-  const [step, setStep] = useState(1);
-  const [showAiModal, setShowAiModal] = useState(false);
-  const [selectedAiEvents, setSelectedAiEvents] = useState([]);
-  const [isSoloStyle, setIsSoloStyle] = useState(Boolean(currentUser?.isGuest));
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedInviteMsg, setCopiedInviteMsg] = useState(false);
-  const [destinationError, setDestinationError] = useState(false);
-  const destinationInputRef = useRef(null);
-  const tripCodeRef = useRef(generateTripCode());
-  const myColor = PRESET_COLORS[0];
-
-  const defaultOrigin = useMemo(() => getHomeDepartureLabel(currentUser), [currentUser]);
-
-  const [tripData, setTripData] = useState({
-    title: '',
-    departurePoint: defaultOrigin,
-    destination: '',
-    transportMethod: 'shinkansen_train',
-    transportPriority: 'cost',
-    startDate: getTodayString(),
-    endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    budget: 50000
-  });
-  const [saveOriginForNext, setSaveOriginForNext] = useState(false);
-
-  const validateDestinationBeforeProceed = () => {
-    if (!tripData.destination || !tripData.destination.trim()) {
-      setDestinationError(true);
-      customAlert('⚠️ 行き先（エリア）を入力してください！');
-      destinationInputRef.current?.focus();
-      return false;
-    }
-    setDestinationError(false);
-    return true;
-  };
-
-  const handleCreate = (isSolo = false) => {
-    if (!validateDestinationBeforeProceed()) return;
-    if (saveOriginForNext && tripData.departurePoint.trim()) {
-      addSavedDeparturePoint(tripData.departurePoint.trim());
-    }
-    const initialEvents = (selectedAiEvents || []).map(ev => ({
-      ...ev,
-      id: generateId(),
-      status: isSolo ? 'approved' : 'proposed',
-      authorId: currentUser.id,
-      photos: []
-    }));
-    onComplete({
-      id: tripCodeRef.current,
-      title: tripData.title || `${tripData.destination.trim()}の旅`,
-      departurePoint: tripData.departurePoint.trim() || defaultOrigin,
-      destination: tripData.destination.trim(),
-      transportMethod: tripData.transportMethod,
-      transportPriority: tripData.transportPriority,
-      startDate: tripData.startDate,
-      endDate: tripData.endDate,
-      budget: Number(tripData.budget) || 50000,
-      members: [{ ...currentUser, color: myColor }],
-      isSoloTrip: isSolo,
-      events: initialEvents,
-      photos: []
-    });
-  };
-
-  const getInviteShareText = () => {
-    const tripTitle = tripData.title || `${tripData.destination || '新しい'}旅行`;
-    return `「${tripTitle}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${tripCodeRef.current}\n\n▼ アプリはこちら\nhttps://tabitabi.app/dl`;
-  };
-
-  const handleCopyInviteCode = (e) => {
-    if (e) e.stopPropagation();
-    copyToClipboard(
-      tripCodeRef.current,
-      `招待コード「${tripCodeRef.current}」をコピーしました！`
-    );
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 3500);
-  };
-
-  const handleCopyInviteWithAppUrl = (e) => {
-    if (e) e.stopPropagation();
-    copyToClipboard(
-      getInviteShareText(),
-      'アプリ紹介URL付きの招待文をコピーしました！'
-    );
-    setCopiedInviteMsg(true);
-    setTimeout(() => setCopiedInviteMsg(false), 3500);
-  };
-
-  const handleShareViaLine = () => {
-    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(getInviteShareText())}`;
-    window.open(lineUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleShareViaNative = async () => {
-    const shareText = getInviteShareText();
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${tripData.title || '新しい旅行'}のしおり招待`,
-          text: shareText
-        });
-        return;
-      } catch (e) {}
-    }
-    handleShareViaLine();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-[200] flex justify-center items-end sm:items-center p-0 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
-      <div
-        style={{ touchAction: 'pan-y' }}
-        className="bg-white w-full max-w-md rounded-t-[28px] sm:rounded-[32px] p-4 sm:p-5 shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 max-h-[90dvh] flex flex-col overflow-hidden pb-safe"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center mb-3 shrink-0">
-          <h3 className="font-extrabold text-base sm:text-lg text-stone-800">{step === 1 ? '新しい旅のしおり作成' : 'メンバーの招待・共有コード'}</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
-        </div>
-
-        {step === 1 ? (
-          <>
-            <div
-              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
-              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain no-scrollbar space-y-3 pr-0.5 pb-2"
-            >
-              {/* AIおまかせプラン作成バナーボタン */}
-              <button
-                type="button"
-                onClick={() => setShowAiModal(true)}
-                className="w-full py-3 px-4 bg-gradient-to-r from-sky-100 via-sky-200/80 to-cyan-100 hover:from-sky-200/90 hover:to-cyan-200/90 text-sky-950 font-extrabold rounded-2xl shadow-2xs border border-sky-300/80 text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all"
-              >
-                <Sparkles size={16} className="text-sky-600 shrink-0" />
-                <span className="truncate">AIにおまかせでプランを提案してもらう</span>
-              </button>
-
-              {/* 旅のタイトル ＆ 行き先（必須バリデーション付き） */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="min-w-0">
-                  <label className="text-xs font-extrabold text-stone-600 mb-1 block pl-1">旅のタイトル</label>
-                  <input
-                    type="text"
-                    value={tripData.title}
-                    onChange={e => setTripData({ ...tripData, title: e.target.value })}
-                    placeholder="例: 秋の京都旅"
-                    className="w-full min-w-0 p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label className="text-xs font-extrabold text-stone-600 mb-1 flex items-center justify-between pl-1">
-                    <span>行き先（エリア）</span>
-                    <span className="text-[9px] font-extrabold text-rose-500 bg-rose-50 px-1.5 py-0.2 rounded-full border border-rose-200">必須</span>
-                  </label>
-                  <input
-                    ref={destinationInputRef}
-                    type="text"
-                    value={tripData.destination}
-                    onChange={e => {
-                      setTripData({ ...tripData, destination: e.target.value });
-                      if (destinationError && e.target.value.trim()) setDestinationError(false);
-                    }}
-                    placeholder="例: 京都府"
-                    className={`w-full min-w-0 p-2.5 rounded-xl text-xs sm:text-sm font-bold text-stone-800 focus:outline-none focus:ring-2 transition-all ${
-                      destinationError
-                        ? 'bg-rose-50/80 border-2 border-rose-400 focus:ring-rose-400'
-                        : 'bg-stone-50 border border-stone-200 focus:ring-[#7A9D8C]'
-                    }`}
-                  />
-                </div>
-              </div>
-              {destinationError && (
-                <p className="text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-1 -mt-1 animate-in fade-in">
-                  <AlertCircle size={13} className="shrink-0 text-rose-500" />
-                  <span>行き先（都道府県やエリア名）を入力してください！</span>
-                </p>
-              )}
-
-              {/* 出発地点（🏠自宅 / ⭐登録先 / ✏️その他） */}
-              <DepartureSelectorBox
-                user={currentUser}
-                value={tripData.departurePoint}
-                onChange={(val) => setTripData({ ...tripData, departurePoint: val })}
-                saveForNext={saveOriginForNext}
-                onChangeSaveForNext={setSaveOriginForNext}
-                label="出発地点"
-                compact
-              />
-
-              {/* 出発日 ＆ 最終日（ドラムロール式ホイール選択） */}
-              <WheelDateRangePicker
-                startDate={tripData.startDate}
-                endDate={tripData.endDate}
-                onChangeStart={(nextStart) =>
-                  setTripData((prev) => ({
-                    ...prev,
-                    startDate: nextStart,
-                    endDate: prev.endDate < nextStart ? nextStart : prev.endDate
-                  }))
-                }
-                onChangeEnd={(nextEnd) =>
-                  setTripData((prev) => ({ ...prev, endDate: nextEnd }))
-                }
-              />
-
-              {/* 1人あたり予算（横スライドバー＋クイック選択ピル） */}
-              <div className="p-3 bg-stone-50/90 border border-stone-200/90 rounded-2xl space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1.5">
-                    <Banknote size={14} className="text-[#7A9D8C]" /> 1人あたりの予算目安
-                  </label>
-                  <div className="flex items-center gap-1 bg-white px-2.5 py-1 rounded-xl border border-stone-200 shadow-2xs">
-                    <span className="text-xs font-bold text-stone-400">¥</span>
-                    <input
-                      type="number"
-                      step="1000"
-                      value={tripData.budget}
-                      onChange={e => setTripData({ ...tripData, budget: Math.max(0, Number(e.target.value) || 0) })}
-                      className="w-24 text-right text-sm font-extrabold text-[#4A6B5D] font-mono focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* 左右に動かせる横タイプの予算スライダーバー */}
-                <div className="px-0.5 pt-0.5">
-                  <input
-                    type="range"
-                    min="5000"
-                    max="150000"
-                    step="5000"
-                    value={Math.min(150000, Math.max(5000, Number(tripData.budget) || 5000))}
-                    onChange={e => setTripData({ ...tripData, budget: Number(e.target.value) })}
-                    style={{
-                      background: `linear-gradient(to right, #7A9D8C 0%, #7A9D8C ${Math.round(
-                        ((Math.min(150000, Math.max(5000, Number(tripData.budget) || 5000)) - 5000) / (150000 - 5000)) * 100
-                      )}%, #E7E5E4 ${Math.round(
-                        ((Math.min(150000, Math.max(5000, Number(tripData.budget) || 5000)) - 5000) / (150000 - 5000)) * 100
-                      )}%, #E7E5E4 100%)`
-                    }}
-                    className="w-full h-2.5 rounded-full appearance-none cursor-pointer accent-[#7A9D8C]"
-                  />
-                  <div className="flex justify-between text-[9px] font-bold text-stone-400 mt-1 px-0.5">
-                    <span>¥5,000</span>
-                    <span>3万円</span>
-                    <span>5万円</span>
-                    <span>10万円</span>
-                    <span>15万円</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[20000, 30000, 50000, 100000].map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setTripData({ ...tripData, budget: amt })}
-                      className={`py-1.5 rounded-lg text-xs font-extrabold border transition-all ${
-                        Number(tripData.budget) === amt
-                          ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
-                          : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
-                      }`}
-                    >
-                      {(amt / 10000)}万円
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* しおりの操作スタイル（左：👤 1人旅（代表者のみ管理） / 右：👥 みんなで共有） */}
-              {!currentUser.isGuest && (
-                <div className="p-2.5 bg-stone-50/90 border border-stone-200/90 rounded-2xl space-y-1.5">
-                  <label className="text-xs font-extrabold text-stone-700 block pl-0.5">
-                    しおりの操作スタイル
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5 bg-stone-200/75 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setIsSoloStyle(true)}
-                      className={`py-2 px-2 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                        isSoloStyle
-                          ? 'bg-white text-[#4A6B5D] shadow-xs ring-1 ring-[#7A9D8C]/35'
-                          : 'text-stone-600 hover:text-stone-800'
-                      }`}
-                    >
-                      <span>👤 1人旅（代表者のみ管理）</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsSoloStyle(false)}
-                      className={`py-2 px-2 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                        !isSoloStyle
-                          ? 'bg-white text-[#4A6B5D] shadow-xs ring-1 ring-[#7A9D8C]/35'
-                          : 'text-stone-600 hover:text-stone-800'
-                      }`}
-                    >
-                      <span>👥 みんなで共有</span>
-                    </button>
-                  </div>
-                  <p className="text-[10px] font-bold text-stone-500 pl-1 leading-snug">
-                    {isSoloStyle
-                      ? '💡 招待コードを発行せず、あなた（代表者）1人だけでしおりをサクサク作成・管理します'
-                      : '💡 作成後に招待コードを発行し、同行メンバー全員でしおりを共有・共同編集できます'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* 下部作成ボタン（常時固定で見切れない） */}
-            <div className="pt-2.5 mt-1 border-t border-stone-100 shrink-0 flex flex-col gap-2">
-              {currentUser.isGuest || isSoloStyle ? (
-                <button
-                  type="button"
-                  onClick={() => handleCreate(true)}
-                  className="w-full py-3 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
-                >
-                  <Check size={16} className="pointer-events-none" />
-                  <span className="pointer-events-none">しおりを作成する（代表者のみ管理）</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!validateDestinationBeforeProceed()) return;
-                    setStep(2);
-                  }}
-                  className="w-full py-3 bg-[#7A9D8C] text-white font-extrabold rounded-2xl shadow-sm text-sm hover:bg-[#688a79] transition-colors flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
-                >
-                  <span className="pointer-events-none">しおりを作成してメンバー招待へ</span>
-                  <ChevronRight size={16} className="pointer-events-none" />
-                </button>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="space-y-4 text-center animate-in slide-in-from-right-4 overflow-y-auto no-scrollbar">
-            <div className="bg-[#7A9D8C]/10 p-5 rounded-3xl border border-[#7A9D8C]/20 space-y-2.5">
-              <p className="text-xs font-bold text-[#7A9D8C]">しおりの共有・招待コード</p>
-              <div className="flex items-center justify-between gap-2 bg-white py-2.5 px-3.5 rounded-2xl border border-stone-200/80 shadow-2xs">
-                <span className="text-lg sm:text-xl font-mono font-extrabold tracking-widest text-stone-800 select-all flex-1 text-center pl-2">
-                  {tripCodeRef.current}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyInviteCode}
-                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1 transition-colors active:scale-95 ${
-                    copiedCode
-                      ? 'bg-[#7A9D8C] text-white'
-                      : 'bg-[#7A9D8C]/15 hover:bg-[#7A9D8C]/25 text-[#557465]'
-                  }`}
-                  title="招待コードをコピー"
-                >
-                  {copiedCode ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedCode ? '✓ コピー済み' : 'コピー'}</span>
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleCopyInviteWithAppUrl}
-                className={`w-full py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
-                  copiedInviteMsg
-                    ? 'bg-[#7A9D8C] text-white border-[#7A9D8C]'
-                    : 'bg-white hover:bg-stone-50 text-[#557465] border-[#7A9D8C]/30 shadow-2xs'
-                }`}
-              >
-                {copiedInviteMsg ? <Check size={14} /> : <Copy size={14} />}
-                <span>{copiedInviteMsg ? '✓ 招待文をコピー済み！' : 'アプリ紹介リンク付きで招待文をコピー'}</span>
-              </button>
-
-              {/* LINEや他のアプリで直接送れる別ボタン */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleShareViaLine}
-                  className="py-2.5 px-3 rounded-xl bg-[#06C755] hover:brightness-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-                >
-                  <MessageCircle size={14} />
-                  <span>LINEで送る</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShareViaNative}
-                  className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-900 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-                >
-                  <Share2 size={14} />
-                  <span>他のアプリで共有</span>
-                </button>
-              </div>
-            </div>
-            <p className="text-xs text-stone-500 leading-relaxed">
-              友達やパートナーにこのコードを共有すると、<br />一緒にしおりの予定を編集できるようになります。
-            </p>
-            <div className="space-y-2.5 pt-1">
-              <button
-                type="button"
-                onClick={() => handleCreate(false)}
-                className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 hover:bg-[#688a79] transition-colors"
-              >
-                しおりを開く <ChevronRight size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCreate(true)}
-                className="w-full py-3 bg-stone-100 text-stone-600 font-bold rounded-2xl text-xs hover:bg-stone-200 transition-colors"
-              >
-                👤 招待せず「ひとり旅行」としてしおりを開く
-              </button>
-            </div>
-          </div>
-        )}
-
-        {showAiModal && (
-          <AiPlanSuggestModal
-            currentUser={currentUser}
-            onClose={() => setShowAiModal(false)}
-            onSelectPlan={(plan) => {
-              const isSolo = Boolean(currentUser.isGuest || plan.isSoloPlan);
-              const planEvents = (plan.events || []).map(ev => ({
-                ...ev,
-                id: generateId(),
-                status: isSolo ? 'approved' : 'proposed',
-                authorId: currentUser.id,
-                photos: []
-              }));
-
-              setShowAiModal(false);
-              onComplete({
-                id: tripCodeRef.current,
-                title: plan.title || '新しい旅行',
-                departurePoint: plan.departurePoint || tripData.departurePoint || defaultOrigin,
-                destination: plan.destination || '行き先未定',
-                transportMethod: plan.transportMethod || tripData.transportMethod,
-                transportPriority: plan.transportPriority || tripData.transportPriority,
-                startDate: plan.startDate,
-                endDate: plan.endDate,
-                budget: Number(plan.budget) || 50000,
-                members: [{ ...currentUser, color: myColor }],
-                isSoloTrip: isSolo,
-                events: planEvents,
-                photos: []
-              });
-              customAlert(
-                isSolo
-                  ? 'AI提案プランでしおりを作成しました！'
-                  : `AI提案プランでしおりを作成しました！（招待コード: ${tripCodeRef.current}）`
-              );
-            }}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
-  useLockBodyScroll(true);
-  const [step, setStep] = useState(1); const [joinCode, setJoinCode] = useState(''); const [foundTrip, setFoundTrip] = useState(null); const [myColor, setMyColor] = useState(PRESET_COLORS[1]);
-  const handleCheckCode = () => {
-    const code = joinCode.trim().toUpperCase(); if (!code) return;
-    const existing = trips.find(t => t.id === code);
-    if (existing) { setFoundTrip(existing); setStep(2); } else { setFoundTrip({ id: code, title: '友達の旅行計画', destination: '京都府', startDate: getTodayString(), endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], budget: 50000, members: [{ id: 'f1', name: '友達', color: PRESET_COLORS[0] }], isSoloTrip: false, events: [], photos: [] }); setStep(2); }
-  };
-  const handleJoin = () => {
-    const isAlreadyMember = (foundTrip.members || []).some(m => m.id === currentUser.id);
-    const updatedTrip = { ...foundTrip, isSoloTrip: false, members: isAlreadyMember ? foundTrip.members : [...(foundTrip.members || []), { ...currentUser, color: myColor }] };
-    if (trips.some(t => t.id === updatedTrip.id)) setTrips(trips.map(t => t.id === updatedTrip.id ? updatedTrip : t)); else setTrips([updatedTrip, ...trips]);
-    onOpenTrip(updatedTrip.id, false); onClose();
-  };
-  return (
-    <div className="fixed inset-0 bg-black/50 z-[200] flex justify-center items-center p-4 animate-in fade-in" onClick={onClose}>
-      <div className="bg-white w-full max-w-md rounded-[32px] p-6 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-5"><h3 className="font-bold text-lg text-stone-800">{step === 1 ? 'コードで参加' : 'カラーの選択'}</h3><button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button></div>
-        {step === 1 ? (
-          <div><input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="例: TABI-XXXXXXXX" className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-xl uppercase font-mono text-center text-sm font-bold mb-5" /><button onClick={handleCheckCode} className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm">しおりを探す</button></div>
-        ) : (
-          <div><div className="mb-6"><label className="text-[11px] text-stone-500 font-bold mb-2 block text-center">あなたのメンバーカラー</label><div className="flex gap-2.5 justify-center">{PRESET_COLORS.map(color => (<button key={color} onClick={() => setMyColor(color)} className={`w-8 h-8 rounded-full transition-transform ${myColor === color ? 'scale-110 ring-2 ring-offset-2 ring-stone-700' : 'opacity-60'}`} style={{ backgroundColor: color }} />))}</div></div><button onClick={handleJoin} className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm">参加する</button></div>
-        )}
-      </div>
     </div>
   );
 }
@@ -6518,7 +6035,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], onTo
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="例: たびたろう / おみやげ買いすぎ子 / 胃袋無限ちゃん"
+                  placeholder="例: たびたろう"
                   className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
                 />
               </div>
@@ -7548,7 +7065,7 @@ function DiscoverTab({ publicTrips, setPublicTrips, currentUser, dashboardState,
                     />
                   )}
 
-                  {/* 下部アクションバー（いいね・コメント・予算・コピー） */}
+                    {/* 下部アクションバー（いいね・コメント・予算・コピー） */}
                   <div className="px-4 pt-2.5 mt-1 border-t border-stone-100 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <button
@@ -10996,81 +10513,109 @@ function PublishModal({ trip, currentUser, onClose, onPublish }) {
               )}
 
               <div>
-                <span className="text-[10px] font-bold text-stone-400 block mb-1">公開するカバー写真 ({selectedImages.length}枚)</span>
-                <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                  {selectedImages.map((url, i) => (
-                    <img key={i} src={url} alt="cover" className="w-16 h-16 rounded-xl object-cover border border-stone-200 shrink-0" />
-                  ))}
-                </div>
+                <span className="text-[10px] font-bold text-stone-400 block mb-1">公開される予定数</span>
+                <p className="font-bold text-stone-700">全 {(trip.events || []).length} 件（メモ公開: {shareMemos ? 'あり' : 'なし'}）</p>
               </div>
-
-              <div className="pt-2 border-t border-stone-200/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-stone-600">公開される予定数</span>
-                  <span className="font-bold text-stone-800">{(trip.events || []).length}件</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-stone-600">各予定内の写真</span>
-                  {selectedEventPhotoIds.length > 0 ? (
-                    <span className="text-[11px] font-bold text-[#557465] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full">
-                      選択した {selectedEventPhotoIds.length}枚 を公開
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold text-stone-500 bg-stone-200/70 px-2.5 py-0.5 rounded-full">
-                      公開しない（0枚）
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-stone-600">持ち物リスト・出費メモ</span>
-                  <span className="text-[11px] font-bold text-[#557465] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full">自動で非公開（除外）</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-stone-600">各予定のメモ内容</span>
-                  {shareMemos ? (
-                    <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full">
-                      公開する（{eventsWithMemos.length}件）
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold text-[#557465] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full">
-                      共有しない（非公開）
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {shareMemos && eventsWithMemos.length > 0 && (
-                <div className="bg-white p-3 rounded-xl border border-amber-200 space-y-1.5">
-                  <p className="text-[10px] font-bold text-amber-700">▼ 公開されるメモの内容プレビュー</p>
-                  {eventsWithMemos.map(ev => (
-                    <div key={ev.id} className="text-[11px] border-b border-stone-100 pb-1 last:border-none last:pb-0">
-                      <span className="font-bold text-stone-700">{ev.title}：</span>
-                      <span className="text-stone-600">{ev.memo}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
-            <div className="flex gap-2.5 pt-2">
+            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="flex-1 py-3.5 bg-stone-100 text-stone-600 font-bold rounded-2xl text-xs hover:bg-stone-200 transition-colors"
+                className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold rounded-2xl text-xs"
               >
-                戻る（修正する）
+                戻る
               </button>
               <button
                 type="button"
                 onClick={handleFinalPublish}
-                className="flex-[2] py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-md hover:bg-[#688a79] transition-all text-sm flex justify-center items-center gap-1.5"
+                className="flex-[2] py-3 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-bold rounded-2xl text-xs shadow-sm"
               >
-                <Share2 size={16} /> この内容で投稿する
+                この内容で公開する
               </button>
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
+  useLockBodyScroll(true);
+  const [step, setStep] = useState(1);
+  const [joinCode, setJoinCode] = useState('');
+  const [foundTrip, setFoundTrip] = useState(null);
+  const [myColor, setMyColor] = useState(PRESET_COLORS[1]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const handleCheckCode = async () => {
+    const code = joinCode.trim().toUpperCase();
+    if (!code || isSearching) return;
+    setIsSearching(true);
+    try {
+      const localExisting = trips.find(t => t.id === code);
+      if (localExisting) {
+        setFoundTrip(localExisting);
+        setStep(2);
+        return;
+      }
+      const cloudTrip = await fetchSharedTripFromCloud(code);
+      if (cloudTrip) {
+        setFoundTrip(cloudTrip);
+        setStep(2);
+      } else {
+        const { enabled } = getSupabaseCredentials();
+        if (enabled) {
+          customAlert('指定された招待コードのしおりが見つかりませんでした。コードをご確認ください。');
+        } else {
+          setFoundTrip({ id: code, title: '友達の旅行計画', destination: '京都府', startDate: getTodayString(), endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], budget: 50000, members: [{ id: 'f1', name: '友達', color: PRESET_COLORS[0] }], isSoloTrip: false, events: [], photos: [] });
+          setStep(2);
+        }
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleJoin = async () => {
+    const isAlreadyMember = (foundTrip.members || []).some(m => m.id === currentUser.id);
+    const updatedTrip = {
+      ...foundTrip,
+      isSoloTrip: false,
+      members: isAlreadyMember
+        ? foundTrip.members
+        : [...(foundTrip.members || []), { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, color: myColor }]
+    };
+    if (trips.some(t => t.id === updatedTrip.id)) {
+      setTrips(trips.map(t => (t.id === updatedTrip.id ? updatedTrip : t)));
+    } else {
+      setTrips([updatedTrip, ...trips]);
+    }
+    await syncSharedTripToCloud(updatedTrip);
+    onOpenTrip(updatedTrip.id, false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[200] flex justify-center items-center p-4 animate-in fade-in" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-[32px] p-6 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-5"><h3 className="font-bold text-lg text-stone-800">{step === 1 ? 'コードで参加' : 'カラーの選択'}</h3><button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button></div>
+        {step === 1 ? (
+          <div>
+            <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="例: TABI-XXXXXXXX" className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-xl uppercase font-mono text-center text-sm font-bold mb-5" />
+            <button onClick={handleCheckCode} disabled={isSearching} className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm disabled:opacity-60">
+              {isSearching ? 'しおりを検索中...' : 'しおりを探す'}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div className="mb-4 p-3 bg-stone-50 rounded-2xl border border-stone-200/80 text-center">
+              <p className="text-[10px] font-bold text-stone-400">参加するしおり</p>
+              <p className="text-sm font-extrabold text-stone-800 truncate">{foundTrip?.title}</p>
+            </div>
+            <div className="mb-6"><label className="text-[11px] text-stone-500 font-bold mb-2 block text-center">あなたのメンバーカラー</label><div className="flex gap-2.5 justify-center">{PRESET_COLORS.map(color => (<button key={color} onClick={() => setMyColor(color)} className={`w-8 h-8 rounded-full transition-transform ${myColor === color ? 'scale-110 ring-2 ring-offset-2 ring-stone-700' : 'opacity-60'}`} style={{ backgroundColor: color }} />))}</div></div>
+            <button onClick={handleJoin} className="w-full py-3.5 bg-[#7A9D8C] text-white font-bold rounded-2xl shadow-sm text-sm">参加する</button>
           </div>
         )}
       </div>
@@ -12326,9 +11871,9 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                           <button
                             type="button"
                             onClick={() => setIsEditingMemo(true)}
-                            className="text-[10px] font-bold text-[#557465] hover:underline flex items-center gap-0.5"
+                            className="text-[10px] font-bold text-[#557465] underline"
                           >
-                            <Edit2 size={10} /> 編集
+                            編集
                           </button>
                         )}
                         <button
@@ -12337,44 +11882,47 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                             setIsMemoOpen(false);
                             setIsEditingMemo(false);
                           }}
-                          className="text-[10px] font-extrabold text-stone-600 bg-white px-2 py-0.5 rounded-md border border-stone-200 hover:bg-stone-50"
+                          className="text-[10px] font-bold text-stone-400 hover:text-stone-600"
                         >
                           閉じる ▲
                         </button>
                       </div>
                     </div>
 
-                    {isEditingMemo && !isReadOnly ? (
+                    {isEditingMemo ? (
                       <div className="space-y-1.5">
                         <textarea
                           value={memoText}
                           onChange={e => setMemoText(e.target.value)}
-                          rows="3"
-                          placeholder="予約番号やメモを入力..."
-                          className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
+                          rows="2"
+                          className="w-full p-2 bg-white border border-stone-200 rounded-lg text-xs font-bold focus:outline-none"
                         />
                         <div className="flex justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => {
-                              setMemoText(event.memo || '');
+                              const newMemo = memoText.trim();
+                              if (onUpdateMemo) onUpdateMemo(newMemo);
+                              setMemoText(newMemo);
                               setIsEditingMemo(false);
+                              setIsMemoOpen(false);
+                              customAlert('メモを更新しました');
                             }}
-                            className="px-2.5 py-1 bg-stone-200/70 text-stone-600 rounded-lg text-[10px] font-bold"
+                            className="px-2.5 py-1 bg-[#7A9D8C] text-white rounded text-[10px] font-bold"
                           >
-                            キャンセル
+                            保存
                           </button>
                           <button
                             type="button"
-                            onClick={handleSaveMemo}
-                            className="px-2.5 py-1 bg-[#7A9D8C] text-white rounded-lg text-[10px] font-bold"
+                            onClick={() => setIsEditingMemo(false)}
+                            className="px-2.5 py-1 bg-stone-100 text-stone-600 rounded text-[10px] font-bold"
                           >
-                            保存する
+                            キャンセル
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <p className="text-stone-700 font-medium whitespace-pre-wrap leading-relaxed text-[11px]">
+                      <p className="text-xs text-stone-700 whitespace-pre-wrap leading-relaxed">
                         {event.memo}
                       </p>
                     )}
@@ -12383,738 +11931,216 @@ function EventCard({ event, trip, isReadOnly, currentUser, isClosestNow = false,
                   <button
                     type="button"
                     onClick={() => setIsMemoOpen(true)}
-                    className="w-full px-2.5 py-1.5 rounded-xl bg-stone-50 hover:bg-stone-100/90 border border-stone-200/80 text-left flex items-center justify-between gap-2 transition-colors"
+                    className="mt-1.5 text-xs text-stone-500 hover:text-stone-700 font-bold flex items-center gap-1 bg-stone-50 hover:bg-stone-100 px-2 py-1 rounded-lg border border-stone-200/60 transition-colors w-full text-left"
                   >
-                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <FileText size={11} className="text-[#7A9D8C] shrink-0" />
-                      <span className="text-[11px] font-medium text-stone-600 truncate">
-                        {event.memo}
-                      </span>
-                    </div>
-                    <span className="shrink-0 text-[9px] font-extrabold text-[#557465] bg-white border border-stone-200 px-1.5 py-0.2 rounded">
-                      メモ ▼
-                    </span>
+                    <FileText size={12} className="text-[#7A9D8C] shrink-0" />
+                    <span className="truncate flex-1">{event.memo}</span>
+                    <span className="text-[10px] text-stone-400 shrink-0">詳細 ▼</span>
                   </button>
                 )}
               </div>
             )}
 
-            {/* ③ 思い出の写真を貼る機能（「移動」以外のカードは常時表示、「移動」カードは写真がある時またはコンパクトに追加可能） */}
-            {(!isReadOnly || (Array.isArray(event.photos) && event.photos.length > 0)) && (
-              <div className={`${isTransportEvent ? 'mt-1.5 pt-1.5' : 'mt-2 pt-2'} border-t border-stone-100/90`}>
-                {Array.isArray(event.photos) && event.photos.length > 0 && (
-                  <div
-                    data-no-swipe="true"
-                    style={{ touchAction: 'pan-x pan-y' }}
-                    className="flex gap-2 overflow-x-auto no-scrollbar mb-1.5 pb-0.5"
-                  >
-                    {event.photos.map(p => {
-                      const isMine = canDeletePhoto ? canDeletePhoto(p) : (!p.authorId || p.authorId === currentUser?.id);
-                      const isPublicPhoto = p.isPublic !== false;
-                      return (
-                        <div
-                          key={p.id}
-                          className={`${
-                            isReadOnly ? 'w-24 h-24' : 'w-18 h-18'
-                          } relative rounded-xl overflow-hidden border border-stone-200 shrink-0 group/photo shadow-2xs bg-stone-100`}
-                        >
-                          <img
-                            src={p.url}
-                            alt="memory"
-                            onClick={() => onEnlargeImage && onEnlargeImage(p.url)}
-                            className="w-full h-full object-cover cursor-pointer group-hover/photo:scale-105 transition-transform duration-300"
-                          />
+            {/* ③ 写真表示＆追加セクション */}
+            <div className="mt-2.5 pt-2 border-t border-stone-100 space-y-2">
+              {Array.isArray(event.photos) && event.photos.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                  {event.photos.map(photo => {
+                    const isMine = canDeletePhoto ? canDeletePhoto(photo) : true;
+                    return (
+                      <div key={photo.id || photo.url} className="relative w-16 h-16 rounded-xl overflow-hidden border border-stone-200 shadow-2xs shrink-0 group bg-stone-100">
+                        <img
+                          src={photo.url}
+                          alt="event memory"
+                          onClick={() => onEnlargeImage && onEnlargeImage(photo.url)}
+                          className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform"
+                        />
+                        {!isReadOnly && isMine && onRequestDeletePhoto && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRequestDeletePhoto(photo);
+                            }}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
+                            title="写真を削除"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                          {!isReadOnly && ENABLE_PUBLIC_SNS_FEATURES && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (onTogglePhotoPublic) onTogglePhotoPublic(p.id);
-                              }}
-                              className={`absolute top-1 left-1 px-1.5 py-0.5 rounded-md text-[8px] font-extrabold shadow-xs transition-colors flex items-center gap-0.5 ${
-                                isPublicPhoto
-                                  ? 'bg-[#7A9D8C]/95 text-white'
-                                  : 'bg-stone-800/80 text-stone-200'
-                              }`}
-                            >
-                              <span>{isPublicPhoto ? '🌐公開可' : '🔒非公開'}</span>
-                            </button>
-                          )}
-
-                          {p.authorName && (
-                            <span className="absolute bottom-0.5 left-0.5 right-0.5 bg-black/55 text-white text-[8px] font-bold px-1 py-0.2 rounded truncate text-center pointer-events-none">
-                              📷 {p.authorName}
-                            </span>
-                          )}
-
-                          {!isReadOnly && isMine && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (onRequestDeletePhoto) onRequestDeletePhoto(p);
-                              }}
-                              className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors"
-                              title="自分の写真を削除"
-                            >
-                              <X size={10} />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {!isReadOnly && (
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="px-2.5 py-1 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200/80 rounded-xl text-[10px] font-bold inline-flex items-center gap-1 transition-colors"
-                    >
-                      <Camera size={11} className="text-[#7A9D8C]" /> 思い出の写真を貼る
-                    </button>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      ref={photoInputRef}
-                      className="hidden"
-                      onChange={async (e) => {
-                        if (e.target.files?.[0] && onAddPhoto) {
-                          const compressedUrl = await compressImageFile(e.target.files[0], 1200, 0.82);
-                          onAddPhoto(compressedUrl);
-                          e.target.value = '';
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ------------------------------------------
-// 思い出写真アルバム画面 (AlbumView)
-// ------------------------------------------
-function AlbumView({ trip, currentUser, updateTrip, isReadOnly, onEnlargeImage }) {
-  const fileInputRef = useRef(null);
-  const [photoToDelete, setPhotoToDelete] = useState(null);
-  const photos = Array.isArray(trip.photos) ? trip.photos : [];
-
-  // 投稿した本人かどうか判定するヘルパー
-  const isMyPhoto = (photo) => {
-    if (!photo || !currentUser) return false;
-    if (photo.authorId) return photo.authorId === currentUser.id;
-    if (photo.authorName) {
-      return (
-        photo.authorName === currentUser.name ||
-        currentUser.name.startsWith(photo.authorName) ||
-        photo.authorName.startsWith(currentUser.name)
-      );
-    }
-    return true;
-  };
-
-  const handleUpload = async (e) => {
-    if (e.target.files && !isReadOnly) {
-      const files = Array.from(e.target.files);
-      const compressedList = await Promise.all(
-        files.map(async (file) => ({
-          id: generateId(),
-          url: await compressImageFile(file, 1200, 0.82),
-          authorId: currentUser?.id,
-          authorName: currentUser?.name || 'メンバー',
-          createdAt: getTodayString()
-        }))
-      );
-      updateTrip({ ...trip, photos: [...compressedList, ...photos] });
-      customAlert(`${compressedList.length}枚の写真を軽量化して共有アルバムに追加しました！`);
-      e.target.value = '';
-    }
-  };
-
-  const handleConfirmDeletePhoto = () => {
-    if (isReadOnly || !photoToDelete) return;
-    if (!isMyPhoto(photoToDelete)) {
-      customAlert('他のメンバーが投稿した写真は削除できません');
-      setPhotoToDelete(null);
-      return;
-    }
-    const photoId = photoToDelete.id;
-    updateTrip({
-      ...trip,
-      photos: photos.filter(p => p.id !== photoId),
-      events: (trip.events || []).map(ev => ({
-        ...ev,
-        photos: (ev.photos || []).filter(p => p.id !== photoId)
-      }))
-    });
-    setPhotoToDelete(null);
-    customAlert('思い出写真を削除しました');
-  };
-
-  return (
-    <div className="p-5 pb-28 space-y-4 animate-in fade-in duration-200">
-      <div className="bg-white p-5 rounded-3xl shadow-xs border border-stone-100 flex justify-between items-center">
-        <div>
-          <h3 className="font-bold text-sm text-stone-800 flex items-center gap-1.5">
-            <ImageIcon size={16} className="text-[#7A9D8C]" /> 旅の思い出アルバム ({photos.length}枚)
-          </h3>
-          <p className="text-[11px] text-stone-400 font-bold mt-0.5">
-            写真は全員に共有されます（削除は投稿した本人のみ可能）
-          </p>
-        </div>
-        {!isReadOnly && (
-          <>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="px-3.5 py-2 bg-[#7A9D8C] text-white font-bold rounded-xl text-xs shadow-xs hover:bg-[#688a79] transition-colors flex items-center gap-1.5 shrink-0"
-            >
-              <Plus size={14} /> 写真を追加
-            </button>
-            <input type="file" multiple accept="image/*" ref={fileInputRef} className="hidden" onChange={handleUpload} />
-          </>
-        )}
-      </div>
-
-      {photos.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-stone-200">
-          <Camera size={32} className="text-stone-300 mx-auto mb-2" />
-          <p className="text-xs font-bold text-stone-500 mb-1">まだ思い出の写真がありません</p>
-          <p className="text-[11px] text-stone-400">右上の「写真を追加」または各予定の「思い出の写真を貼る」から追加できます</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {photos.map(photo => {
-            const isMine = isMyPhoto(photo);
-            return (
-              <div key={photo.id} className="relative aspect-square rounded-2xl overflow-hidden bg-stone-100 border border-stone-200 shadow-xs group">
-                <img
-                  src={photo.url}
-                  alt="album"
-                  onClick={() => onEnlargeImage && onEnlargeImage(photo.url)}
-                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform duration-300"
-                />
-                {photo.authorName && (
-                  <div className="absolute bottom-2 left-2 bg-black/55 backdrop-blur-2xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 pointer-events-none">
-                    <span>📷 {photo.authorName}</span>
-                  </div>
-                )}
-                {!isReadOnly && isMine && (
+              {!isReadOnly && (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPhotoToDelete(photo);
-                    }}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors shadow-sm"
-                    title="自分が投稿した写真を削除"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
                   >
-                    <Trash2 size={13} />
+                    <Camera size={11} className="text-[#7A9D8C]" /> 思い出の写真を貼る
                   </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* アルバム写真の削除確認モーダル */}
-      {photoToDelete && (
-        <div
-          className="fixed inset-0 bg-black/60 z-[270] flex justify-center items-center p-4 animate-in fade-in"
-          onClick={() => setPhotoToDelete(null)}
-        >
-          <div
-            className="bg-white w-full max-w-sm rounded-[32px] p-6 shadow-2xl animate-in zoom-in-95 text-center"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto mb-3 border border-red-100">
-              <Trash2 size={22} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={photoInputRef}
+                    className="hidden"
+                    onChange={async (e) => {
+                      if (e.target.files?.[0]) {
+                        const compressed = await compressImageFile(e.target.files[0], 1200, 0.82);
+                        if (compressed && onAddPhoto) onAddPhoto(compressed);
+                      }
+                    }}
+                  />
+                </div>
+              )}
             </div>
-            <h3 className="font-bold text-base text-stone-800 mb-2">思い出の写真を削除しますか？</h3>
-            <div className="w-32 h-32 rounded-2xl overflow-hidden mx-auto mb-3 border border-stone-200 shadow-xs bg-stone-100">
-              <img src={photoToDelete.url} alt="削除対象の写真" className="w-full h-full object-cover" />
-            </div>
-            <p className="text-xs text-stone-500 leading-relaxed mb-5">
-              削除した写真はアルバムから消去され、元に戻せません。本当によろしいですか？
-            </p>
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setPhotoToDelete(null)}
-                className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold rounded-2xl text-xs transition-colors"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeletePhoto}
-                className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl text-xs shadow-sm transition-colors flex items-center justify-center gap-1"
-              >
-                <Trash2 size={14} /> 削除する
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-// ------------------------------------------
-// AIおまかせプラン作成モーダル (AiPlanSuggestModal)
-// ------------------------------------------
+const CHAT_QUICK_SUGGESTIONS = [
+  '☕ カフェ巡り',
+  '🍽️ 名物ランチ',
+  '♨️ 温泉と露天風呂',
+  '⛩️ 神社仏閣・歴史',
+  '🚗 絶景ドライブ'
+];
+
+function buildFallbackPlans(dest) {
+  const cleanDest = (dest || '観光地').replace(/[都道府県]$/, '');
+  return [
+    {
+      badge: '👑 王道・口コミ高評価コース',
+      title: `${cleanDest}の王道名所＆名物グルメ満喫コース`,
+      description: `初めての${cleanDest}でも安心！人気の定番スポットと評判の高い飲食店を巡る王道1泊2日プランです。`,
+      events: [
+        { date: getTodayString(), time: '10:00', title: `${cleanDest}駅到着・観光スタート`, type: 'transport', location: `${cleanDest}駅`, cost: 0, memo: '到着したらまずは観光案内所や荷物預かりをチェック！' },
+        { date: getTodayString(), time: '11:30', title: `${cleanDest}名物ランチ（地元で評判の店）`, type: 'meal', location: `${cleanDest} 市街地`, cost: 1800, memo: '地元の食材を活かした名物料理を堪能。' },
+        { date: getTodayString(), time: '13:30', title: `${cleanDest}の代表的名所・絶景スポット巡り`, type: 'sightseeing', location: `${cleanDest} 観光名所`, cost: 1000, memo: '写真撮影や散策を楽しむ定番スポット。' },
+        { date: getTodayString(), time: '18:00', title: `${cleanDest}の温泉宿・ホテルにチェックイン`, type: 'hotel', cost: 16000, memo: '旅の疲れを癒やし、美味しい夕食をいただく。' }
+      ]
+    },
+    {
+      badge: '🍽️ ご当地グルメ＆おしゃれカフェ満喫コース',
+      title: `${cleanDest}の絶品グルメ＆隠れ家カフェ巡り`,
+      description: `地元の食材にこだわった話題の飲食店や、SNSで人気のカフェをめぐるグルメ好きのためのコース。`,
+      events: [
+        { date: getTodayString(), time: '11:00', title: `${cleanDest}のおしゃれカフェでモーニング・ブランチ`, type: 'meal', cost: 1400, memo: 'こだわりのコーヒーと焼き立てパンやスイーツを楽しむ。' },
+        { date: getTodayString(), time: '13:00', title: `${cleanDest}のローカルマーケット・お土産通り散策`, type: 'sightseeing', location: `${cleanDest} 商店街`, cost: 1500, memo: '食べ歩きや特産品のお買い物。' },
+        { date: getTodayString(), time: '15:30', title: `隠れ家カフェでティータイム`, type: 'meal', cost: 1200, memo: 'ゆったりとした時間が流れる空間でひと休み。' },
+        { date: getTodayString(), time: '19:00', title: `地元食材を使ったこだわりディナー`, type: 'meal', cost: 3500, memo: '夜は雰囲気の良いお店でご当地ディナー。' }
+      ]
+    },
+    {
+      badge: '🌿 癒やし・絶景＆穴場ゆったりコース',
+      title: `${cleanDest}の自然と静かな癒やしスポット巡り`,
+      description: `忙しい日常を忘れて、豊かな自然や静かな温泉、穴場の絶景スポットでリフレッシュするゆったり旅。`,
+      events: [
+        { date: getTodayString(), time: '10:30', title: `${cleanDest}の自然公園・散策路で森林浴`, type: 'sightseeing', location: `${cleanDest} 自然公園`, cost: 500, memo: '澄んだ空気を吸いながらのんびりお散歩。' },
+        { date: getTodayString(), time: '12:30', title: `緑を眺める絶景ロケーションランチ`, type: 'meal', cost: 1600, memo: '景色を眺めながらいただく心安らぐランチ。' },
+        { date: getTodayString(), time: '15:00', title: `源泉かけ流し温泉・日帰り入浴でリフレッシュ`, type: 'active', cost: 1200, memo: '心身ともにリラックス。' },
+        { date: getTodayString(), time: '17:30', title: `夕暮れの絶景スポットからサンセット鑑賞`, type: 'sightseeing', location: `${cleanDest} 展望台`, cost: 0, memo: '旅の最後に美しい夕日を眺める。' }
+      ]
+    }
+  ];
+}
+
 function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
   useLockBodyScroll(true);
   const defaultOrigin = useMemo(() => getHomeDepartureLabel(currentUser), [currentUser]);
-  const [mode, setMode] = useState('condition'); // 'condition' | 'chat'
-  const [isChatConfigOpen, setIsChatConfigOpen] = useState(true);
-  const chatInputRef = useRef(null);
-  const chatListRef = useRef(null);
-  const conditionScrollRef = useRef(null);
-  const plansResultScrollRef = useRef(null);
+  const [mode, setMode] = useState('condition');
   const [departurePoint, setDeparturePoint] = useState(defaultOrigin);
   const [saveOriginForNext, setSaveOriginForNext] = useState(false);
-  const [destination, setDestination] = useState('京都府');
+  const [destination, setDestination] = useState('');
   const [destinationError, setDestinationError] = useState(false);
-  const [transportMethod, setTransportMethod] = useState('shinkansen_train');
-  const [transportPriority, setTransportPriority] = useState('cost');
-  const [budgetAmount, setBudgetAmount] = useState(30000);
-  const budgetTier = useMemo(() => {
-    if (budgetAmount <= 10000) return `🌱 気軽にお出かけ (〜¥${budgetAmount.toLocaleString()})`;
-    if (budgetAmount <= 25000) return `🍀 節約・コスパ (〜¥${budgetAmount.toLocaleString()})`;
-    if (budgetAmount <= 50000) return `🌷 標準プラン (¥${budgetAmount.toLocaleString()}前後)`;
-    if (budgetAmount <= 80000) return `✨ ちょっと贅沢 (¥${budgetAmount.toLocaleString()}前後)`;
-    return `💎 ご褒美ラグジュアリー (¥${budgetAmount.toLocaleString()}〜)`;
-  }, [budgetAmount]);
+  const destinationInputRef = useRef(null);
+  const [startDate, setStartDate] = useState(getTodayString());
   const [days, setDays] = useState(2);
+  const [transportMethod, setTransportMethod] = useState('shinkansen_train');
+  const [budgetAmount, setBudgetAmount] = useState(35000);
   const [companion, setCompanion] = useState('カップル・夫婦（2名）');
   const [adultCount, setAdultCount] = useState(2);
   const [childCount, setChildCount] = useState(0);
+  const [isSoloPlan, setIsSoloPlan] = useState(false);
   const [theme, setTheme] = useState(TRIP_THEME_OPTIONS[0]);
-  const [startDate, setStartDate] = useState(getTodayString());
-  const [isSoloPlan, setIsSoloPlan] = useState(Boolean(currentUser?.isGuest));
-
   const [generatedPlans, setGeneratedPlans] = useState(null);
-  const [planSourceType, setPlanSourceType] = useState('cache'); // 'cache' | 'gemini'
+  const [expandedPlanIdx, setExpandedPlanIdx] = useState(null);
+  const [editingTitleIdx, setEditingTitleIdx] = useState(null);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [planSourceType, setPlanSourceType] = useState('cache');
   const [quotaStatus, setQuotaStatus] = useState(() => getAiQuotaStatus());
   const [showRewardAdModal, setShowRewardAdModal] = useState(false);
   const [showPopularAreasInfo, setShowPopularAreasInfo] = useState(false);
-  const [expandedPlanIdx, setExpandedPlanIdx] = useState(null);
-  const [editingTitleIdx, setEditingTitleIdx] = useState(null);
-
-  // ★ 選択した予算で目的地まで行けない（交通費＋宿泊費の最低目安を下回る）場合のスマート判定＆代替提案
-  const budgetFeasibility = useMemo(() => {
-    const cleanDest = (destination || '').trim();
-    const cleanOrigin = (departurePoint || '').replace(/（.*?）/g, '').trim();
-    if (!cleanDest) return { isShort: false };
-
-    const isSameArea = cleanOrigin && (cleanDest.includes(cleanOrigin.slice(0, 2)) || cleanOrigin.includes(cleanDest.slice(0, 2)));
-    const isFarFlightArea = /沖縄|宮古|石垣|那覇|北海道|札幌|小樽|函館|富良野|奄美|屋久島|五島/.test(cleanDest) && !isSameArea;
-    const isMidShinkansenArea = /京都|大阪|広島|福岡|博多|金沢|石川|長崎|鹿児島|熊本|大分|別府|由布院|愛媛|高知|青森|仙台|宮城/.test(cleanDest) && !isSameArea;
-
-    // 1人あたりの往復交通費の最低目安
-    let minRoundTripCost = 3000;
-    if (isFarFlightArea) {
-      minRoundTripCost = transportMethod === 'highway_bus' ? 16000 : 24000;
-    } else if (isMidShinkansenArea) {
-      minRoundTripCost = transportMethod === 'highway_bus' ? 8000 : transportMethod === 'car' ? 7000 : 18000;
-    } else if (!isSameArea) {
-      minRoundTripCost = transportMethod === 'highway_bus' ? 3500 : 5000;
-    }
-
-    // 宿泊費の最低目安（1泊あたり約7,000円）＋現地食事・観光最低3,000円
-    const nights = Math.max(0, days - 1);
-    const minHotelCost = nights * 7000;
-    const minTotalRequired = minRoundTripCost + minHotelCost + 3000;
-
-    if (budgetAmount >= minTotalRequired) {
-      return { isShort: false, minTotalRequired };
-    }
-
-    // 出発地から低予算でも行けるおすすめ近場エリア候補
-    const nearAlternatives = /東京|神奈川|埼玉|千葉|横浜|新宿/.test(cleanOrigin)
-      ? ['神奈川県・鎌倉＆江ノ島', '神奈川県・箱根', '埼玉県・川越', '静岡県・熱海']
-      : /大阪|京都|兵庫|奈良|梅田|難波/.test(cleanOrigin)
-      ? ['京都府・嵐山＆東山', '兵庫県・神戸＆有馬', '奈良県・ならまち', '滋賀県・琵琶湖']
-      : /長野|松本/.test(cleanOrigin)
-      ? ['長野県・軽井沢', '長野県・上高地＆松本', '山梨県・河口湖', '石川県・金沢']
-      : ['神奈川県・鎌倉＆江ノ島', '静岡県・熱海', '京都府', '長野県・軽井沢'];
-
-    return {
-      isShort: true,
-      minTotalRequired,
-      shortage: minTotalRequired - budgetAmount,
-      recommendedBudget: Math.ceil(minTotalRequired / 5000) * 5000,
-      canSaveWithBus: transportMethod !== 'highway_bus' && !isFarFlightArea,
-      canSaveWithDayTrip: days > 1 && !isFarFlightArea,
-      nearAlternatives
-    };
-  }, [destination, departurePoint, transportMethod, days, budgetAmount]);
-
+  const [isChatConfigOpen, setIsChatConfigOpen] = useState(true);
   const [chatInput, setChatInput] = useState('');
+  const [chatPendingContext, setChatPendingContext] = useState({
+    dest: '',
+    themeHint: ''
+  });
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'ai',
-      text: 'こんにちは！AI旅行コンシェルジュです✈️\n上部の条件設定バーで「日付・誰と行くか・予算」を選べるほか、下の提案ボタンを押すと入力欄に相談文が入ります！'
+      text: 'こんにちは！AIトラベルコンシェルジュです✈️\n行きたい場所ややりたいことを自由に入力してください！（まだ行き先が決まっていなくても、質問に答えるだけで一緒にプランを作れます✨）'
     }
   ]);
 
-  useEffect(() => {
-    if (generatedPlans && plansResultScrollRef.current) {
-      requestAnimationFrame(() => {
-        if (plansResultScrollRef.current) {
-          plansResultScrollRef.current.scrollTop = 0;
-        }
-      });
-    }
-  }, [generatedPlans]);
+  const conditionScrollRef = useRef(null);
+  const plansResultScrollRef = useRef(null);
+  const chatListRef = useRef(null);
+  const chatInputRef = useRef(null);
 
-  useEffect(() => {
-    if (mode === 'chat' && chatListRef.current) {
-      setTimeout(() => {
-        if (chatListRef.current) {
-          chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
-        }
-      }, 60);
-    }
-  }, [chatMessages, mode, isAiGenerating]);
+  // 交通費・宿泊費から予算が足りるか判定する計算
+  const budgetFeasibility = useMemo(() => {
+    const destName = (destination || '').trim();
+    if (!destName) return { isShort: false, minTotalRequired: 0 };
+    const isDistant = /沖縄|北海道|福岡|九州|青森|宮古|石垣|鹿児島/.test(destName);
+    const isMedium = /金沢|石川|広島|長野|軽井沢|伊勢|三重|高松|香川|大分|別府/.test(destName);
+    const transportEst = isDistant ? 28000 : isMedium ? 14000 : 6000;
+    const hotelEstPerNight = 11000;
+    const nightCount = Math.max(0, days - 1);
+    const minTotal = transportEst + hotelEstPerNight * nightCount + days * 4000;
 
-  const buildPlansForDestination = (
-    destText,
-    numDays,
-    compLabel,
-    themeLabel,
-    baseStartDate,
-    adults = 2,
-    children = 0,
-    originText = '東京駅',
-    transMethod = 'shinkansen_train',
-    transPrio = 'cost',
-    budgetStr = '🌷 標準プラン (¥30,000前後)',
-    rawBudgetAmount = 30000
-  ) => {
-    const cleanDest = (destText || '京都府').trim();
-    const cleanOrigin = (originText || '自宅最寄り駅').replace(/（.*?）/g, '').trim() || '東京駅';
-    const methodObj = TRANSPORT_METHODS.find(m => m.id === transMethod) || TRANSPORT_METHODS[0];
-    const prioObj = TRANSPORT_PRIORITIES.find(p => p.id === transPrio) || TRANSPORT_PRIORITIES[0];
-    const targetAmount = Number(rawBudgetAmount) || 30000;
-    const budgetObj = {
-      id: budgetStr,
-      label: `¥${targetAmount.toLocaleString()}`,
-      amount: targetAmount
+    const isShort = budgetAmount < minTotal;
+    const recommended = Math.ceil((minTotal * 1.15) / 5000) * 5000;
+    const nearAlternatives = isDistant ? ['箱根・湯河原', '熱海・伊豆', '山梨・河口湖'] : isMedium ? ['箱根温泉', '房総半島', '秩父・長瀞'] : ['近郊温泉街', '都内お出かけ'];
+
+    return {
+      isShort,
+      minTotalRequired: minTotal,
+      recommendedBudget: recommended,
+      canSaveWithBus: transportEst > 10000,
+      canSaveWithDayTrip: nightCount > 0 && budgetAmount >= transportEst + 4000,
+      nearAlternatives
     };
-    const isOkinawa = cleanDest.includes('沖縄') || cleanDest.includes('宮古') || cleanDest.includes('石垣') || cleanDest.includes('那覇');
-    const isHokkaido = cleanDest.includes('北海道') || cleanDest.includes('札幌') || cleanDest.includes('小樽') || cleanDest.includes('函館');
-    const isOnsen = cleanDest.includes('箱根') || cleanDest.includes('熱海') || cleanDest.includes('別府') || cleanDest.includes('由布院') || cleanDest.includes('草津') || themeLabel.includes('温泉');
+  }, [destination, days, budgetAmount]);
 
-    const totalPeople = Math.max(1, Number(adults) + Number(children));
-    const hasChildren = Number(children) > 0 || compLabel.includes('家族') || compLabel.includes('子連れ');
-    const isLargeGroup = totalPeople >= 5;
-    const compDetailLabel =
-      compLabel === 'ひとり旅' && totalPeople === 1
-        ? 'ひとり旅（大人1名）'
-        : compLabel.includes('カップル') && totalPeople === 2 && !hasChildren
-        ? 'カップル・夫婦（2名）'
-        : `${compLabel}（大人${adults}名${children > 0 ? `・子ども${children}名` : ''}）`;
-
-    const month = new Date(baseStartDate || getTodayString()).getMonth() + 1;
-    const seasonWord = isOkinawa
-      ? (month >= 6 && month <= 9 ? '美ら海マリン＆絶景' : '快適南国リゾート＆海カフェ')
-      : isHokkaido
-      ? (month >= 12 || month <= 2 ? '白銀の雪景色＆極上海鮮' : '爽快ドライブ＆北海道グルメ')
-      : (month >= 3 && month <= 5 ? '春の絶景と旬グルメ' : month >= 6 && month <= 8 ? '夏の爽快旅とご当地グルメ' : month >= 9 && month <= 11 ? '秋の絶景と旬グルメ' : '冬の温泉と味覚満喫');
-
-    const d1 = baseStartDate || getTodayString();
-    const d2Obj = new Date(d1);
-    d2Obj.setDate(d2Obj.getDate() + 1);
-    const d2 = d2Obj.toISOString().split('T')[0];
-
-    const endObj = new Date(d1);
-    endObj.setDate(endObj.getDate() + Math.max(0, numDays - 1));
-    const endDateStr = endObj.toISOString().split('T')[0];
-
-    // 出発地＆移動手段＆重視スタイル（コスパ・速さ・体験）を反映した出発イベントを作成
-    const transportCostEstimate =
-      transPrio === 'cost' ? 4500 : transPrio === 'speed' ? 12000 : 8500;
-    const departureMemo = `【📍出発: ${cleanOrigin} → ${cleanDest}｜${methodObj.label}（${prioObj.label}）】${prioObj.desc}。`;
-
-    // 構成（子ども連れ / 大人数グループ / 少人数大人）に応じた補足メモ・宿提案の出し分け
-    const groupSizeTip = isLargeGroup
-      ? `【👥${totalPeople}名グループ向け】移動は事前予約制のジャンボタクシーやレンタカー2台体制、食事は個室・座敷の事前予約がスムーズです。`
-      : hasChildren
-      ? `【🧸お子様連れ配慮】ベビーカー移動やトイレ休憩に余裕を持たせた時間配分にしてあります。`
-      : '';
-
-    let spotSets;
-    if (cleanDest.includes('京都')) {
-      spotSets = hasChildren
-        ? [
-            [
-              { date: d1, time: '10:00', title: '京都駅到着・手荷物配送（キャリーサービス）利用', type: 'transport', location: '京都駅', cost: 1000, memo: `お子様連れでも身軽に動けるよう駅地下から宿へ荷物を直送！${groupSizeTip}` },
-              { date: d1, time: '11:00', title: '京都鉄道博物館（SLスチーム号乗車＆運転シミュレータ）', type: 'sightseeing', location: '京都鉄道博物館', cost: 1500, memo: '屋内展示が充実しており、天候を問わず大人も子どもも夢中になれる人気スポット！' },
-              { date: d1, time: '13:30', title: '梅小路公園・京野菜レストラン梅小路コラボでランチ', type: 'meal', location: '京野菜レストラン梅小路コラボ', cost: 2200, memo: '広々とした店内でキッズメニューやソファ席もあり安心です。' },
-              { date: d1, time: '15:00', title: '京都水族館（イルカパフォーマンス＆オオサンショウウオ見学）', type: 'active', location: '京都水族館', cost: 2400, memo: '梅小路公園内で徒歩すぐ！移動負担ゼロで1日楽しめます。' },
-              { date: d1, time: '17:30', title: '梅小路ポテル京都 または 嵐山温泉 花伝抄 チェックイン', type: 'hotel', location: '梅小路ポテル京都', cost: 18500, memo: `【🍽️夕食提案：宿での夕食（ビュッフェ・会席）がおすすめ】大人${adults}名・子ども${children}名なら、移動いらずで子ども向け料理も揃うホテル夕食付きプランが快適です！` },
-              { date: d2, time: '09:30', title: '嵐山・渡月橋さんぽ＆嵯峨野トロッコ列車乗車', type: 'active', location: 'トロッコ嵯峨駅', cost: 880, memo: '保津川渓谷の絶景を眺めながら走る観光列車はお子様にも大人気。' },
-              { date: d2, time: '12:00', title: '嵐山よしむら（お座敷席も選べる手打ち蕎麦ランチ）', type: 'meal', location: '嵐山よしむら', cost: 2200, memo: '渡月橋を眺めながら家族みんなでゆったりランチ。' }
-            ]
-          ]
-        : [
-            [
-              { date: d1, time: '10:00', title: '京都駅到着・手荷物配送サービス利用', type: 'transport', location: '京都駅', cost: 1000, memo: `駅地下のキャリーサービスで宿へ荷物を送ると手ぶらで観光できます。${groupSizeTip}` },
-              { date: d1, time: '11:30', title: '南禅寺 順正（登録有形文化財の庭園で湯豆腐ランチ）', type: 'meal', location: '南禅寺 順正', cost: 3500, memo: '★4.3の人気老舗。食後はすぐ隣の水路閣へ。' },
-              { date: d1, time: '14:00', title: '永観堂＆哲学の道さんぽ', type: 'sightseeing', location: '永観堂 禅林寺', cost: 1000, memo: '庭園と池の景色が美しい定番名所。' },
-              { date: d1, time: '15:30', title: 'ぎおん徳屋（とろける本わらびもち休憩）', type: 'meal', location: 'ぎおん徳屋', cost: 1500, memo: '注文後に練り上げる極上わらびもち。' },
-              { date: d1, time: '18:00', title: '先斗町・祇園エリアで京おばんざいディナー＆ホテル泊', type: 'hotel', location: '先斗町', cost: 16500, memo: `【🍽️夕食提案：外食がおすすめ】大人${adults}名のグループなら、ホテルは朝食付きにして先斗町や木屋町で京料理・地酒を外食するのが大正解！${isLargeGroup ? '（5名以上のため個室席の事前予約が必須です）' : ''}` },
-              { date: d2, time: '09:30', title: '嵐山・竹林の小径＆渡月橋散策', type: 'sightseeing', location: '嵐山 竹林の小径', cost: 0, memo: '朝10時前なら人が少なく静かに撮影できます。' },
-              { date: d2, time: '12:00', title: '嵐山よしむら（渡月橋を一望する手打ち蕎麦）', type: 'meal', location: '嵐山よしむら', cost: 2400, memo: '2階窓際席からの渡月橋ビューが人気。' }
-            ],
-            [
-              { date: d1, time: '10:30', title: '伏見稲荷大社 千本鳥居参拝', type: 'sightseeing', location: '伏見稲荷大社', cost: 0, memo: '朱色の鳥居が連なる幻想的な参道。' },
-              { date: d1, time: '12:30', title: '錦市場で京の台所食べ歩きランチ', type: 'meal', location: '錦市場', cost: 2200, memo: 'だし巻き卵や湯葉、豆乳ドーナツを堪能。' },
-              { date: d1, time: '14:30', title: 'アラビカ京都 東山（% ARABICA）＆八坂の塔散策', type: 'meal', location: 'アラビカ京都 東山', cost: 800, memo: '濃厚ラテ片手に石畳の東山エリアを散策。' },
-              { date: d1, time: '17:30', title: '京都嵐山温泉 花伝抄 チェックイン', type: 'hotel', location: '京都嵐山温泉 花伝抄', cost: 19000, memo: '【🍽️夕食提案：宿での夕食がおすすめ】嵐山エリアは夕方以降に閉まる店が多いため、宿の京会席と5つの貸切露天風呂を満喫するのがおすすめです。' },
-              { date: d2, time: '10:30', title: '宇治・平等院鳳凰堂＆中村藤吉本店で生茶ゼリイ', type: 'sightseeing', location: '中村藤吉本店', cost: 2600, memo: '竹筒に入った濃厚抹茶ゼリイは必食！' },
-              { date: d2, time: '13:30', title: '京都駅ビルで京土産ショッピング', type: 'sightseeing', location: '京都駅', cost: 3000, memo: '阿闍梨餅や抹茶スイーツをチェック。' }
-            ]
-          ];
-    } else if (isOkinawa) {
-      spotSets = [
-        [
-          { date: d1, time: '11:00', title: `那覇空港到着・${isLargeGroup ? 'ワゴン車レンタカー' : 'レンタカー'}出発＆首里そばランチ`, type: 'meal', location: '首里そば', cost: 1000, memo: `澄んだカツオ出汁とコシのある自家製麺の名店。${groupSizeTip}` },
-          { date: d1, time: '13:30', title: '沖縄美ら海水族館＆備瀬のフクギ並木さんぽ', type: 'sightseeing', location: '沖縄美ら海水族館', cost: 2180, memo: hasChildren ? '黒潮の海大水槽のジンベエザメやイルカショー（オキちゃん劇場）は子どもたちも大喜び！' : '黒潮の海大水槽のジンベエザメは圧巻！' },
-          { date: d1, time: '16:00', title: '古宇利大橋ドライブ＆KOURI SHRIMPでガーリックシュリンプ', type: 'meal', location: 'KOURI SHRIMP', cost: 1800, memo: 'エメラルドグリーンの海を渡る絶景ドライブ！' },
-          { date: d1, time: '18:30', title: '恩納村リゾートホテル宿泊＆島唄ライブ居酒屋でアグー豚ディナー', type: 'hotel', location: '恩納村', cost: 19500, memo: hasChildren ? `【🍽️夕食提案：ホテル内のファミリー向けビュッフェ または 座敷のある沖縄料理店へ外食】大人${adults}名・子ども${children}名なら早めの18時台スタートが安心です。` : `【🍽️夕食提案：外食がおすすめ】恩納村〜那覇エリアは沖縄料理居酒屋やステーキ名店が充実しているため、外に食べに行くのがおすすめです！` },
-          { date: d2, time: '10:00', title: hasChildren ? '体験王国むら咲むら（シーサー絵付け体験）＆瀬長島ウミカジテラス' : '万座毛・絶景断崖ビュー＆瀬長島ウミカジテラス', type: 'sightseeing', location: '瀬長島ウミカジテラス', cost: 2000, memo: '白いテラスカフェが並ぶ海辺のスポットでマンゴースイーツを堪能。' },
-          { date: d2, time: '13:00', title: 'ジャッキーステーキハウスで名物テンダーロインステーキ', type: 'meal', location: 'ジャッキーステーキハウス', cost: 3200, memo: '沖縄の締めに欠かせない老舗ステーキハウス！' }
-        ]
-      ];
-    } else if (isOnsen) {
-      spotSets = [
-        [
-          { date: d1, time: '11:00', title: `${cleanDest}エリア到着・駅前食べ歩き＆名物ランチ`, type: 'meal', location: cleanDest, cost: 2000, memo: `まずは地元で人気の名物ランチと温泉まんじゅうを満喫。${groupSizeTip}` },
-          { date: d1, time: '13:30', title: hasChildren ? `${cleanDest}の自然公園・ロープウェイ＆動物ふれあい体験` : `${cleanDest}の絶景スポット＆美術館・庭園めぐり`, type: 'sightseeing', location: cleanDest, cost: 1800, memo: hasChildren ? '乗り物や自然体験で子どもも飽きずに楽しめるコースです。' : '自然の景色とアートをゆっくり鑑賞。' },
-          { date: d1, time: '16:00', title: `${cleanDest} ${hasChildren ? '和洋室・貸切風呂付き温泉宿' : '露天風呂付き温泉宿'} チェックイン`, type: 'hotel', location: cleanDest, cost: 22000, memo: `【🍽️夕食提案：宿での夕食（1泊2食付き）が断然おすすめ】${cleanDest}の温泉街は夜になると周辺の飲食店が早く閉まるため、${hasChildren ? 'お子様膳やビュッフェが選べる' : '宿自慢の'}1泊2食付きプランを予約しておくのが安心です！` },
-          { date: d2, time: '10:30', title: '朝の温泉街さんぽ＆人気のベーカリーカフェでブランチ', type: 'meal', location: cleanDest, cost: 1800, memo: 'チェックアウト後は景色が良いテラスカフェでひと休み。' },
-          { date: d2, time: '13:00', title: 'ご当地お土産ショッピング＆帰路へ', type: 'sightseeing', location: cleanDest, cost: 2500, memo: '名物の和菓子や地酒をお土産に。' }
-        ]
-      ];
-    } else {
-      spotSets = [
-        [
-          { date: d1, time: '10:30', title: `${cleanDest}到着・駅周辺の人気ご当地ランチ`, type: 'meal', location: `${cleanDest} 駅`, cost: 2000, memo: `口コミ評価の高い名店で地元の旬の味覚を堪能。${groupSizeTip}` },
-          { date: d1, time: '13:00', title: hasChildren ? `${cleanDest}の体験ミュージアム・水族館・公園スポット` : `${cleanDest}の定番観光名所・歴史スポット散策`, type: 'sightseeing', location: cleanDest, cost: 1200, memo: hasChildren ? '大人も子どもも一緒に楽しめる体験型スポットを中心にセレクト。' : '初めて訪れるなら外せない王道の絶景・文化スポット。' },
-          { date: d1, time: '15:30', title: `${cleanDest}の隠れ家カフェでご当地スイーツ休憩`, type: 'meal', location: cleanDest, cost: 1400, memo: '歩き疲れたら評判のカフェで一息。' },
-          { date: d1, time: '18:00', title: `${cleanDest} 中心エリアのホテル宿泊＆地元名物ディナー`, type: 'hotel', location: cleanDest, cost: 16000, memo: hasChildren ? `【🍽️夕食提案：座敷・個室のある郷土料理店へ外食 または ホテル夕食】大人${adults}名・子ども${children}名でゆったり座れるお店を予約するのがおすすめ！` : `【🍽️夕食提案：ホテルは朝食のみにして外食がおすすめ】${cleanDest}の繁華街・駅周辺には地元食材を使った名店が集まっているため、夜は外に食べに行くのがおすすめです！` },
-          { date: d2, time: '10:00', title: `${cleanDest}の朝市・マーケット＆体験アクティビティ`, type: 'active', location: cleanDest, cost: 2500, memo: '2日目の午前中はその土地ならではの体験や散策を満喫。' },
-          { date: d2, time: '12:30', title: '人気ランチ＆お土産ショッピング', type: 'meal', location: cleanDest, cost: 2500, memo: '帰りの電車・フライト前にお土産を購入。' }
-        ]
-      ];
-    }
-
-    // 選択された日数（numDays）に合わせて日程イベントを組み立てるヘルパー
-    const expandEventsForDays = (baseEvents, variantIdx = 0) => {
-      if (numDays <= 1) {
-        // 日帰り（1日）の場合は1日目の観光・グルメ・体験のみ（宿泊を除く）
-        return baseEvents
-          .filter(ev => ev.date === d1 && ev.type !== 'hotel')
-          .map(ev => ({ ...ev }));
-      }
-      if (numDays === 2) {
-        return baseEvents.map(ev => ({ ...ev }));
-      }
-
-      // 3日間以上の場合は、1日目＋中間日（Day 2 〜 Day N-1）＋最終日（Day N）に展開
-      const day1Events = baseEvents.filter(ev => ev.date === d1).map(ev => ({ ...ev }));
-      const finalDayTemplate = baseEvents.filter(ev => ev.date === d2);
-      const extraDayTemplates = [
-        [
-          { time: '10:00', title: `${cleanDest} 周辺エリア・絶景スポットへ足を延ばす散策`, type: 'sightseeing', location: cleanDest, cost: 1500, memo: '連泊ならではのゆとりあるスケジュールで人気エリアを深掘り！' },
-          { time: '12:30', title: `${cleanDest} 地元で評判の旬ランチ＆カフェ巡り`, type: 'meal', location: cleanDest, cost: 2200, memo: '口コミ高評価の名店でゆったりランチタイム。' },
-          { time: '15:00', title: `${cleanDest} 体験アクティビティ・温泉・ミュージアム巡り`, type: 'active', location: cleanDest, cost: 2800, memo: 'その土地ならではの文化体験や自然アクティビティを満喫。' },
-          { time: '18:30', title: `${cleanDest} ご当地ディナー＆宿泊`, type: 'hotel', location: cleanDest, cost: 16500, memo: '夜は地元食材を使った名物料理で乾杯！' }
-        ],
-        [
-          { time: '09:30', title: `${cleanDest} 朝市・ローカルマーケット＆朝カフェ散歩`, type: 'meal', location: cleanDest, cost: 1400, memo: '早起きして地元の朝市やベーカリーへ。' },
-          { time: '11:30', title: `${cleanDest} 穴場の景勝地・歴史エリアめぐり`, type: 'sightseeing', location: cleanDest, cost: 1200, memo: '定番とは一味違うフォトジェニックな名所を訪問。' },
-          { time: '14:30', title: `${cleanDest} 老舗甘味処・ロースタリーカフェで休憩`, type: 'meal', location: cleanDest, cost: 1500, memo: '旅の合間にほっと一息つける人気カフェ。' },
-          { time: '18:00', title: `${cleanDest} 宿でゆっくり温泉＆会席ディナー`, type: 'hotel', location: cleanDest, cost: 17500, memo: '連泊の中日は宿でゆっくり疲れを癒やすのもおすすめ。' }
-        ]
-      ];
-
-      const result = [...day1Events];
-      for (let dayIdx = 2; dayIdx < numDays; dayIdx++) {
-        const dtObj = new Date(d1);
-        dtObj.setDate(dtObj.getDate() + (dayIdx - 1));
-        const dateStr = dtObj.toISOString().split('T')[0];
-        const template = extraDayTemplates[(dayIdx + variantIdx) % extraDayTemplates.length];
-        template.forEach(item => {
-          result.push({
-            ...item,
-            date: dateStr,
-            title: `【${dayIdx}日目】${item.title}`
-          });
-        });
-      }
-
-      // 最終日
-      finalDayTemplate.forEach(item => {
-        result.push({
-          ...item,
-          date: endDateStr
-        });
-      });
-
-      return result;
-    };
-
-    const rawSet1WithOrigin = spotSets[0].map((ev, idx) =>
-      idx === 0
-        ? {
-            ...ev,
-            time: '09:00',
-            endTime: '10:30',
-            title: `${cleanOrigin}から${methodObj.short}で${cleanDest}へ出発`,
-            type: 'transport',
-            departureOrigin: cleanOrigin,
-            transportMethod: transMethod,
-            cost: transportCostEstimate,
-            memo: `【📍家から旅先までの移動: ${cleanOrigin} → ${cleanDest}（${methodObj.label}）】 ${ev.memo || ''}`
-          }
-        : ev
-    );
-    const baseSet1 = expandEventsForDays(rawSet1WithOrigin, 0);
-    const rawSet2 = (spotSets[1] || spotSets[0]).map((ev, i) => {
-      if (i === 0) {
-        return {
-          ...ev,
-          time: '09:00',
-          endTime: '10:30',
-          title: `${cleanOrigin}発・${methodObj.short}で行く${cleanDest}`,
-          type: 'transport',
-          departureOrigin: cleanOrigin,
-          transportMethod: transMethod,
-          cost: transportCostEstimate,
-          memo: `【📍家から旅先までの移動: ${cleanOrigin} → ${cleanDest}（${methodObj.label}）】 ${ev.memo || ''}`
-        };
-      }
-      return {
-        ...ev,
-        time: i === 1 ? '12:00' : ev.time,
-        title: i === 1 ? `${cleanDest}の隠れ家名店でこだわりランチ` : ev.title
-      };
-    });
-    const baseSet2 = expandEventsForDays(rawSet2, 1);
-
-    // 子どもがいる場合は1人あたりの平均予算目安（子ども料金考慮）を少し抑えて算出
-    const childDiscountFactor = totalPeople > 0 ? (adults + children * 0.6) / totalPeople : 1;
-    const calcPerPersonBudget = (evList, extra) =>
-      Math.min(
-        budgetObj.amount,
-        Math.round((evList.reduce((s, e) => s + (Number(e.cost) || 0), 0) + extra) * childDiscountFactor)
-      );
-
-    // 予算が足りない場合のアドバイス注記
-    const budgetRescuePrefix = budgetFeasibility.isShort
-      ? `【💡ご予算¥${targetAmount.toLocaleString()}内で収める工夫】通常は往復交通費＋宿泊で約¥${budgetFeasibility.minTotalRequired.toLocaleString()}〜かかりますが、早割・高速バス・LCCやコスパ宿を活用してご予算に近づけたプランです！ `
-      : '';
-
-    return [
-      {
-        badge: `${methodObj.short}で行く王道プラン`,
-        title: `【${seasonWord}】${cleanOrigin}発・${methodObj.short}で行く${cleanDest}${numDays}日間の旅`,
-        description: `${budgetRescuePrefix}📍${cleanOrigin}から${methodObj.label}（予算目安:${budgetObj.label}）で向かう${compDetailLabel}向け最適プラン！実在する高評価の名店と夕食スタイル提案まで収録しています。`,
-        departurePoint: cleanOrigin,
-        destination: cleanDest,
-        transportMethod: transMethod,
-        transportPriority: transPrio,
-        startDate: d1,
-        endDate: endDateStr,
-        budget: calcPerPersonBudget(baseSet1, 3000),
-        isSoloPlan,
-        events: baseSet1
-      },
-      {
-        badge: hasChildren ? 'ファミリー向けゆったり' : '穴場・ゆったりコース',
-        title: `【${hasChildren ? 'ゆったり' : '穴場'}】${cleanOrigin}発・${compDetailLabel}で楽しむ${cleanDest}厳選コース`,
-        description: `${budgetRescuePrefix}${cleanOrigin}からの移動負担を抑え、${compDetailLabel}のペースでゆったり過ごせる実在の名店・ミュージアムを中心に組んだプラン。`,
-        departurePoint: cleanOrigin,
-        destination: cleanDest,
-        transportMethod: transMethod,
-        transportPriority: transPrio,
-        startDate: d1,
-        endDate: endDateStr,
-        budget: calcPerPersonBudget(baseSet2, 3000),
-        isSoloPlan,
-        events: baseSet2
-      },
-      {
-        badge: `体験・${themeLabel.slice(0, 8)}満喫`,
-        title: `【体験】${cleanOrigin}発・${compDetailLabel}で盛り上がる${cleanDest}アクティビティ＆食べ歩き`,
-        description: `${budgetRescuePrefix}${compDetailLabel}にぴったりの写真映えスポット・ご当地ディナーを詰め込んだ充実コース！`,
-        departurePoint: cleanOrigin,
-        destination: cleanDest,
-        transportMethod: transMethod,
-        transportPriority: transPrio,
-        startDate: d1,
-        endDate: endDateStr,
-        budget: calcPerPersonBudget(baseSet1, 4500),
-        isSoloPlan,
-        events: baseSet1.map((ev, i) => i === 2 ? { ...ev, type: 'active', title: `${cleanDest} ご当地体験・クルーズ＆絶景散策` } : ev)
-      }
-    ];
-  };
-
-  // ★ 鉄則①＆②：定番エリアの初回プランや過去キャッシュがある場合はAPIを叩かず0秒・0円で返し、カスタム条件や「AIで別プラン再生成」のときだけGemini APIを呼ぶ
-  const handleGenerate = async (forceGeminiApi = false) => {
-    if (!destination || !destination.trim()) {
+  const handleGenerate = async () => {
+    const trimmedDest = (destination || '').trim();
+    if (!trimmedDest) {
       setDestinationError(true);
-      customAlert('⚠️ 行きたいエリア・目的地を入力してください！');
+      customAlert('⚠️ 「行きたいエリア・目的地」を入力してください！');
+      destinationInputRef.current?.focus();
       return;
     }
     setDestinationError(false);
-    if (saveOriginForNext && departurePoint.trim()) {
-      addSavedDeparturePoint(departurePoint.trim());
-    }
-    const cleanDest = destination.trim();
-    const cleanOrigin = (departurePoint || '自宅最寄り駅').trim();
-    const methodObj = TRANSPORT_METHODS.find(m => m.id === transportMethod) || TRANSPORT_METHODS[0];
-    const prioObj = TRANSPORT_PRIORITIES.find(p => p.id === transportPriority) || TRANSPORT_PRIORITIES[0];
-    const cacheKey = `plan_${cleanOrigin}_${cleanDest}_${transportMethod}_${budgetAmount}_${days}_${companion}_${adultCount}_${childCount}_${theme}`;
-    const isPopularPresetArea = POPULAR_CACHED_AREAS.some(area => cleanDest.includes(area)) && days <= 4;
 
-    if (!forceGeminiApi) {
-      const savedCache = getCachedAiResponse(cacheKey);
-      if (savedCache && Array.isArray(savedCache) && savedCache.length > 0) {
-        setGeneratedPlans(savedCache);
-        setPlanSourceType('cache');
-        setExpandedPlanIdx(null);
-        setEditingTitleIdx(null);
-        return;
-      }
-      if (isPopularPresetArea) {
-        const presetPlans = buildPlansForDestination(cleanDest, days, companion, theme, startDate, adultCount, childCount, cleanOrigin, transportMethod, transportPriority, budgetTier, budgetAmount);
-        setCachedAiResponse(cacheKey, presetPlans);
-        setGeneratedPlans(presetPlans);
-        setPlanSourceType('cache');
-        setExpandedPlanIdx(null);
-        setEditingTitleIdx(null);
-        return;
-      }
+    const cacheKey = `cond_${trimmedDest}_${days}_${budgetAmount}_${theme}`;
+    const cached = getCachedAiResponse(cacheKey);
+
+    if (cached) {
+      setExpandedPlanIdx(null);
+      setGeneratedPlans(cached);
+      setPlanSourceType('cache');
+      return;
     }
 
-    // ここから先は Google Gemini API を実際に呼び出すため、1日5回（＋広告ボーナス）のレート制限をチェック
     const quotaCheck = consumeAiQuota();
     setQuotaStatus(quotaCheck.status);
     if (!quotaCheck.ok) {
@@ -13124,10 +12150,10 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
     setIsAiGenerating(true);
     try {
-      const d1 = startDate || getTodayString();
-      const endObj = new Date(d1);
-      endObj.setDate(endObj.getDate() + Math.max(0, days - 1));
-      const endDateStr = endObj.toISOString().split('T')[0];
+      const parts = (startDate || getTodayString()).split('-').map(Number);
+      const sDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      const eDate = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate() + Math.max(0, days - 1));
+      const endStr = `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, '0')}-${String(eDate.getDate()).padStart(2, '0')}`;
 
       const schema = {
         type: "ARRAY",
@@ -13143,7 +12169,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               items: {
                 type: "OBJECT",
                 properties: {
-                  dayIndex: { type: "INTEGER" },
+                  date: { type: "STRING" },
                   time: { type: "STRING" },
                   title: { type: "STRING" },
                   type: { type: "STRING" },
@@ -13151,7 +12177,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   cost: { type: "INTEGER" },
                   memo: { type: "STRING" }
                 },
-                propertyOrdering: ["dayIndex", "time", "title", "type", "location", "cost", "memo"]
+                propertyOrdering: ["date", "time", "title", "type", "location", "cost", "memo"]
               }
             }
           },
@@ -13159,306 +12185,414 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
         }
       };
 
-      const aiResult = await callGoogleGeminiStructured({
-        systemPrompt: "あなたは日本の旅行プランナーAIです。出発地点から目的地までの指定された移動手段と重視ポイント（コスパ重視・速さ重視・体験重視）を1日目の最初の移動予定に具体的に組み込み、実在する高評価の観光地・飲食店・宿を使った旅行プランを2パターン、JSON配列で返してください。eventsのtypeは transport, meal, sightseeing, active, hotel のいずれか、dayIndexは1始まりの何日目かを指定してください。",
-        userPrompt: `出発地点:${cleanOrigin}、目的地:${cleanDest}、移動手段:${methodObj.label}、移動の重視ポイント:${prioObj.label}（${prioObj.desc}）、1人あたり予算目安:${budgetTier}、日数:${days}日間、同行者:${companion}（大人${adultCount}名・子ども${childCount}名）、テーマ:${theme}。具体的な実在店名とおすすめ理由をmemoに入れて提案してください。`,
+      const aiPlans = await callGoogleGeminiStructured({
+        systemPrompt: "あなたは日本の旅行プラン作成AIです。指定された目的地・日数・予算・テーマに基づき、必ず3つのプラン候補（①王道・名所コース、②ご当地グルメ＆おしゃれカフェ満喫コース、③癒やし・絶景＆穴場ゆったりコース）をJSON配列で返してください。他のエリア（京都など）にすり替えず、指定された目的地に関する実在のスポットや店舗名を入れてください。",
+        userPrompt: `目的地:${trimmedDest}、日程:${startDate}〜${endStr}（${days}日間）、予算目安:¥${budgetAmount}、同行者:${companion}、テーマ:${theme}。この条件に合う3つのプラン候補を作成してください。`,
         responseSchema: schema
       });
 
-      if (Array.isArray(aiResult) && aiResult.length > 0) {
-        const formattedPlans = aiResult.map(p => ({
-          badge: p.badge || `✨ ${methodObj.short}×${prioObj.label}`,
-          title: p.title || `${cleanOrigin}発・${cleanDest} ${days}日間の旅`,
-          description: p.description || '',
-          departurePoint: cleanOrigin,
-          destination: cleanDest,
-          transportMethod,
-          transportPriority,
-          startDate: d1,
-          endDate: endDateStr,
-          budget: Number(p.budget) || 35000,
-          isSoloPlan,
-          events: (p.events || []).map((ev, idx) => {
-            const evDateObj = new Date(d1);
-            evDateObj.setDate(evDateObj.getDate() + Math.max(0, (Number(ev.dayIndex) || 1) - 1));
-            return {
-              date: evDateObj.toISOString().split('T')[0],
-              time: ev.time || '12:00',
-              title: ev.title || '観光スポット',
-              type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type) ? ev.type : 'sightseeing',
-              departureOrigin: idx === 0 ? cleanOrigin : '',
-              transportMethod: idx === 0 ? transportMethod : '',
-              location: ev.location || cleanDest,
-              cost: Number(ev.cost) || 1500,
-              memo: ev.memo || ''
-            };
-          })
-        }));
-        setCachedAiResponse(cacheKey, formattedPlans);
-        setGeneratedPlans(formattedPlans);
-        setPlanSourceType('gemini');
-        setExpandedPlanIdx(null);
-        setEditingTitleIdx(null);
-        return;
+      const fallbackList = buildFallbackPlans(trimmedDest);
+      const normalized = Array.isArray(aiPlans) && aiPlans.length > 0
+        ? aiPlans.slice(0, 3).map((p, idx) => ({
+            badge: p.badge || fallbackList[idx]?.badge || `✨ 候補${idx + 1}`,
+            title: p.title || fallbackList[idx]?.title || `${trimmedDest}プラン候補${idx + 1}`,
+            description: p.description || fallbackList[idx]?.description || '',
+            departurePoint,
+            destination: trimmedDest,
+            transportMethod,
+            startDate,
+            endDate: endStr,
+            budget: Number(p.budget) || budgetAmount,
+            isSoloPlan,
+            events: Array.isArray(p.events) && p.events.length > 0
+              ? p.events.map(ev => ({
+                  date: ev.date || startDate,
+                  time: ev.time || '12:00',
+                  title: ev.title || `${trimmedDest}スポット`,
+                  type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type) ? ev.type : 'sightseeing',
+                  location: ev.location || trimmedDest,
+                  cost: Number(ev.cost) || 0,
+                  memo: ev.memo || ''
+                }))
+              : fallbackList[idx]?.events || []
+          }))
+        : fallbackList;
+
+      while (normalized.length < 3) {
+        normalized.push(fallbackList[normalized.length]);
       }
-      throw new Error('Fallback to preset');
-    } catch (err) {
-      const fallbackPlans = buildPlansForDestination(cleanDest, days, companion, theme, startDate, adultCount, childCount, cleanOrigin, transportMethod, transportPriority, budgetTier, budgetAmount);
-      setGeneratedPlans(fallbackPlans);
+
+      setExpandedPlanIdx(null);
+      setGeneratedPlans(normalized);
+      setCachedAiResponse(cacheKey, normalized);
+      setPlanSourceType('ai');
+    } catch (e) {
+      const fallbackList = buildFallbackPlans(trimmedDest);
+      setExpandedPlanIdx(null);
+      setGeneratedPlans(fallbackList);
       setPlanSourceType('cache');
     } finally {
       setIsAiGenerating(false);
     }
   };
 
-  const CHAT_QUICK_SUGGESTIONS = [
-    '♨️ 温泉と海鮮が美味しい1泊2日',
-    '🧸 子ども連れで楽しめる家族旅行',
-    '🍜 車なしで巡るご当地グルメ旅',
-    '📸 カフェ＆絶景スポット巡り',
-    '🌴 南国リゾートでゆったり休日'
-  ];
-
-  const handleSendChat = async (e, presetText) => {
-    if (e) e.preventDefault();
-    const q = (presetText || chatInput).trim();
-    if (!q || isAiGenerating) return;
-    setChatMessages(prev => [...prev, { role: 'user', text: q }]);
-    if (!presetText) setChatInput('');
-
-    // まず同じ質問のキャッシュがあるか確認（キャッシュヒットならAPI消費0）
-    const chatCacheKey = `chat_${q}_${days}_${startDate}_${adultCount}_${childCount}`;
-    const cachedChat = getCachedAiResponse(chatCacheKey);
-    if (cachedChat) {
-      setChatMessages(prev => [
-        ...prev,
-        {
-          role: 'ai',
-          text: `${cachedChat.text}\n（※保存済みキャッシュから高速表示・本日のAI無料枠は消費していません⚡）`,
-          plan: { ...cachedChat.plan, isSoloPlan }
-        }
-      ]);
-      return;
-    }
-
-    // 自由入力チャットのときは1日5回のレートリミットを消費してGoogle Gemini APIを呼ぶ
-    const quotaCheck = consumeAiQuota();
-    setQuotaStatus(quotaCheck.status);
-    if (!quotaCheck.ok) {
-      setShowRewardAdModal(true);
-      setChatMessages(prev => [
-        ...prev,
-        {
-          role: 'ai',
-          text: `本日のAI無料生成枠（${quotaCheck.status.limit}回）を使い切りました🙏\n上の「🎬 動画広告を見て＋${REWARD_AD_BONUS_COUNT}回増やす」ボタンを押すと、すぐに続きをご相談いただけます！`
-        }
-      ]);
-      return;
-    }
-
-    setIsAiGenerating(true);
-    const matchedPref = PREFECTURES.find(p => q.includes(p.replace(/[都道府県]$/, ''))) ||
-      (q.includes('箱根') || q.includes('温泉') ? '神奈川県・箱根' : q.includes('沖縄') || q.includes('南国') ? '沖縄県' : q.includes('札幌') || q.includes('小樽') ? '北海道' : q.includes('金沢') ? '石川県' : q.includes('カフェ') ? '長野県・軽井沢' : destination);
-    const dayMatch = q.match(/(\d+)\s*泊\s*(\d+)\s*日/) || q.match(/(\d+)\s*日間?/);
-    const parsedDays = dayMatch
-      ? Math.min(10, Math.max(1, Number(dayMatch[2] || dayMatch[1])))
-      : q.includes('日帰り')
-      ? 1
-      : q.includes('1週間') || q.includes('一週間')
-      ? 7
-      : days;
-    const childMatch = q.match(/子ども\s*(\d+)|子供\s*(\d+)|子連れ|家族/);
-    const parsedChildren = childMatch ? Number(childMatch[1] || childMatch[2] || 1) : childCount;
-    const parsedCompanion = parsedChildren > 0 ? '家族・子連れ' : companion;
-
-    const d1 = startDate || getTodayString();
-    const endObj = new Date(d1);
-    endObj.setDate(endObj.getDate() + Math.max(0, parsedDays - 1));
-    const endDateStr = endObj.toISOString().split('T')[0];
-
-    try {
-      const schema = {
-        type: "OBJECT",
-        properties: {
-          replyMessage: { type: "STRING" },
-          destination: { type: "STRING" },
-          title: { type: "STRING" },
-          budget: { type: "INTEGER" },
-          events: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                dayIndex: { type: "INTEGER" },
-                time: { type: "STRING" },
-                title: { type: "STRING" },
-                type: { type: "STRING" },
-                location: { type: "STRING" },
-                cost: { type: "INTEGER" },
-                memo: { type: "STRING" }
-              },
-              propertyOrdering: ["dayIndex", "time", "title", "type", "location", "cost", "memo"]
-            }
-          }
-        },
-        propertyOrdering: ["replyMessage", "destination", "title", "budget", "events"]
-      };
-
-      const aiData = await callGoogleGeminiStructured({
-        systemPrompt: "あなたは親しみやすい日本の旅行コンシェルジュAIです。出発地点・移動手段・重視ポイント（コスパ/速さ/体験）・1人あたり予算を踏まえ、実在する名店・観光地を使った旅行プラン1件と丁寧な返答メッセージ(replyMessage)をJSONで返してください。",
-        userPrompt: `ユーザーの要望:「${q}」 / 出発地点:${departurePoint} / 移動手段:${TRANSPORT_METHODS.find(m => m.id === transportMethod)?.label}（${TRANSPORT_PRIORITIES.find(p => p.id === transportPriority)?.label}） / 1人予算目安:${budgetTier} / 出発日:${d1} / 日数目安:${parsedDays}日間 / 同行者:大人${adultCount}名・子ども${parsedChildren}名`,
-        responseSchema: schema
-      });
-
-      if (aiData && Array.isArray(aiData.events) && aiData.events.length > 0) {
-        const builtPlan = {
-          badge: '✨ Google AI チャット提案',
-          title: aiData.title || `【AI提案】${aiData.destination || matchedPref}の旅`,
-          description: aiData.replyMessage || '',
-          destination: aiData.destination || matchedPref,
-          startDate: d1,
-          endDate: endDateStr,
-          budget: Number(aiData.budget) || 32000,
-          isSoloPlan,
-          events: aiData.events.map(ev => {
-            const evDateObj = new Date(d1);
-            evDateObj.setDate(evDateObj.getDate() + Math.max(0, (Number(ev.dayIndex) || 1) - 1));
-            return {
-              date: evDateObj.toISOString().split('T')[0],
-              time: ev.time || '12:00',
-              title: ev.title,
-              type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type) ? ev.type : 'sightseeing',
-              location: ev.location || aiData.destination || matchedPref,
-              cost: Number(ev.cost) || 1500,
-              memo: ev.memo || ''
-            };
-          })
-        };
-        const replyText = aiData.replyMessage || `ご希望に合わせて「${builtPlan.destination}」のプランを作成しました！`;
-        setCachedAiResponse(chatCacheKey, { text: replyText, plan: builtPlan });
-        setChatMessages(prev => [...prev, { role: 'ai', text: replyText, plan: builtPlan }]);
-        setIsAiGenerating(false);
-        return;
-      }
-      throw new Error('Empty events');
-    } catch (err) {
-      const suggestedList = buildPlansForDestination(matchedPref, parsedDays, parsedCompanion, theme, startDate, adultCount, parsedChildren, departurePoint, transportMethod, transportPriority, budgetTier, budgetAmount);
-      const topPlan = suggestedList[0];
-      const fallbackText = `ご希望に合わせて「${matchedPref}」の具体的な実在スポット＆夕食スタイル提案入りのプランを作成しました！下のボタンからそのまましおりに反映できます✨`;
-      setCachedAiResponse(chatCacheKey, { text: fallbackText, plan: topPlan });
-      setChatMessages(prev => [
-        ...prev,
-        {
-          role: 'ai',
-          text: fallbackText,
-          plan: topPlan
-        }
-      ]);
-      setIsAiGenerating(false);
-    }
-  };
-
-  const handleUpdatePlanTitle = (pIdx, nextTitle) => {
-    setGeneratedPlans(prev =>
-      prev.map((p, idx) => (idx === pIdx ? { ...p, title: nextTitle } : p))
+  const handleUpdatePlanTitle = (pIdx, newTitle) => {
+    if (!generatedPlans) return;
+    setGeneratedPlans(
+      generatedPlans.map((p, i) => (i === pIdx ? { ...p, title: newTitle } : p))
     );
   };
 
   const handleUpdatePlanEvent = (pIdx, eIdx, field, val) => {
-    setGeneratedPlans(prev =>
-      prev.map((p, idx) => {
-        if (idx !== pIdx) return p;
-        const nextEvents = p.events.map((ev, j) => (j === eIdx ? { ...ev, [field]: val } : ev));
-        return { ...p, events: nextEvents };
-      })
+    if (!generatedPlans) return;
+    setGeneratedPlans(
+      generatedPlans.map((p, i) =>
+        i === pIdx
+          ? {
+              ...p,
+              events: p.events.map((ev, j) => (j === eIdx ? { ...ev, [field]: val } : ev))
+            }
+          : p
+      )
     );
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/60 z-[240] flex justify-center items-center p-2.5 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
-      <div
-        style={{ touchAction: 'pan-y' }}
-        className="bg-white w-full max-w-md rounded-[28px] p-4 sm:p-5 shadow-2xl h-[88dvh] max-h-[88dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* ★ 最上段ヘッダー：「AIプラン作成」のすぐ横に i ボタンを配置（残り回数は下の送信・作成ボタンの近くへ移動） */}
-        <div className="flex justify-between items-center gap-1.5 mb-2 shrink-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <h3 className="font-extrabold text-sm sm:text-base text-stone-800 flex items-center gap-1">
-              <Sparkles size={16} className="text-[#5E8473]" /> AIプラン作成
-            </h3>
-            <button
-              type="button"
-              onClick={() => setShowPopularAreasInfo(prev => !prev)}
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-serif italic font-black transition-all active:scale-95 cursor-pointer border ${
-                showPopularAreasInfo
-                  ? 'bg-[#5E8473] text-white border-[#5E8473]'
-                  : 'bg-stone-100 hover:bg-stone-200 text-stone-600 border-stone-300'
-              }`}
-              title="AIプラン作成と定番エリアについて"
-            >
-              i
-            </button>
-          </div>
+  // チャットの文章から行き先（都道府県・地方・主要観光地）を抽出するヘルパー
+  const extractDestinationFromText = (text) => {
+    const raw = (text || '').trim();
+    if (!raw) return '';
+    const KNOWN_CHAT_AREAS = [
+      '北海道', '札幌', '小樽', '函館', '富良野', '旭川', '登別', '知床',
+      '東北', '青森', '弘前', '奥入瀬', '岩手', '盛岡', '平泉', '宮城', '仙台', '松島', '秋田', '角館', '山形', '銀山温泉', '福島', '会津',
+      '関東', '東京', '浅草', 'お台場', '奥多摩', '神奈川', '横浜', '箱根', '鎌倉', '江ノ島', '湯河原', '千葉', '房総', '浦安', '成田', '埼玉', '川越', '秩父', '茨城', '大洗', 'つくば', '栃木', '日光', '鬼怒川', '那須', '群馬', '草津', '伊香保', 'みなかみ',
+      '中部', '北陸', '甲信越', '東海', '新潟', '佐渡', '越後湯沢', '富山', '黒部', '立山', '石川', '金沢', '加賀', '和倉', '能登', '福井', '東尋坊', '芦原', '山梨', '河口湖', '山中湖', '甲府', '長野', '信州', '軽井沢', '松本', '上高地', '白馬', '諏訪', '野沢温泉', '岐阜', '高山', '飛騨', '白川郷', '下呂', '静岡', '熱海', '伊豆', '下田', '浜松', '愛知', '名古屋', '犬山', '日間賀島',
+      '関西', '近畿', '三重', '伊勢', '志摩', '鳥羽', '長島', '滋賀', '琵琶湖', '彦根', '近江八幡', '京都', '嵐山', '宇治', '天橋立', '伊根', '大阪', '難波', '梅田', 'USJ', '兵庫', '神戸', '有馬', '姫路', '城崎', '淡路島', '奈良', '吉野', '和歌山', '白浜', '高野山', '那智勝浦',
+      '中国', '山陰', '山陽', '鳥取', '米子', '皆生', '島根', '出雲', '松江', '玉造', '岡山', '倉敷', '広島', '宮島', '尾道', 'しまなみ', '山口', '下関', '角島', '萩',
+      '四国', '徳島', '鳴門', '祖谷', '香川', '高松', '小豆島', '直島', '琴平', '愛媛', '松山', '道後温泉', '今治', '高知', '四万十', '仁淀川',
+      '九州', '福岡', '博多', '糸島', '太宰府', '門司港', '佐賀', '嬉野', '武雄', '唐津', '長崎', 'ハウステンボス', '雲仙', '五島', '熊本', '阿蘇', '黒川温泉', '天草', '大分', '別府', '由布院', '湯布院', '宮崎', '高千穂', '日南', '鹿児島', '指宿', '霧島', '屋久島', '奄美',
+      '沖縄', '那覇', '恩納村', '美ら海', '宮古島', '石垣島', '竹富島', '西表島'
+    ];
+    for (const area of KNOWN_CHAT_AREAS) {
+      if (raw.includes(area)) return area;
+    }
+    const m = raw.match(/([一-龠ぁ-んァ-ヶー]{2,8}?)(?:に行きたい|へ行く|旅行|ツアー|めぐり|巡り|の旅|で観光|で温泉|でグルメ)/);
+    if (m && m[1] && !['温泉', 'グルメ', 'カフェ', 'どこ', 'おすすめ', '国内', '週末', '家族', '友達', 'カップル', 'ひとり'].includes(m[1])) {
+      return m[1];
+    }
+    return '';
+  };
 
-          <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full shrink-0">
-            <X size={20} />
-          </button>
+  const generateChatPlansForDestination = async (targetDest, userQueryText) => {
+    const quotaCheck = consumeAiQuota();
+    setQuotaStatus(quotaCheck.status);
+    if (!quotaCheck.ok) {
+      setShowRewardAdModal(true);
+      return;
+    }
+
+    setIsAiGenerating(true);
+    try {
+      const parts = (startDate || getTodayString()).split('-').map(Number);
+      const sDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      const eDate = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate() + Math.max(0, days - 1));
+      const endStr = `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, '0')}-${String(eDate.getDate()).padStart(2, '0')}`;
+
+      const schema = {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            badge: { type: 'STRING' },
+            title: { type: 'STRING' },
+            description: { type: 'STRING' },
+            budget: { type: 'INTEGER' },
+            events: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  date: { type: 'STRING' },
+                  time: { type: 'STRING' },
+                  title: { type: 'STRING' },
+                  type: { type: 'STRING' },
+                  location: { type: 'STRING' },
+                  cost: { type: 'INTEGER' },
+                  memo: { type: 'STRING' }
+                },
+                propertyOrdering: ['date', 'time', 'title', 'type', 'location', 'cost', 'memo']
+              }
+            }
+          },
+          propertyOrdering: ['badge', 'title', 'description', 'budget', 'events']
+        }
+      };
+
+      const aiPlans = await callGoogleGeminiStructured({
+        systemPrompt:
+          'あなたは日本の旅行コンシェルジュAIです。ユーザーのチャット要望に厳密に従い、指定された行き先エリアの旅行プラン候補を3つ（①王道コース、②グルメ＆カフェコース、③癒やし・ゆったりコース）JSON配列で返してください。他の無関係な都道府県（京都など）を混ぜないでください。',
+        userPrompt: `ユーザーの要望:「${userQueryText}」 / 目的地エリア:${targetDest} / 出発地:${departurePoint} / 日程:${startDate}〜${endStr}（${days}日間） / 1人予算目安:¥${budgetAmount} / 同行:${companion}（大人${adultCount}名・子ども${childCount}名）`,
+        responseSchema: schema
+      });
+
+      const fallbackList = buildFallbackPlans(targetDest);
+      const normalized = Array.isArray(aiPlans) && aiPlans.length > 0
+        ? aiPlans.slice(0, 3).map((p, idx) => ({
+            badge: p.badge || fallbackList[idx]?.badge || `✨ 候補${idx + 1}`,
+            title: p.title || fallbackList[idx]?.title || `${targetDest}プラン候補${idx + 1}`,
+            description: p.description || fallbackList[idx]?.description || '',
+            departurePoint,
+            destination: targetDest,
+            transportMethod,
+            startDate,
+            endDate: endStr,
+            budget: Number(p.budget) || budgetAmount,
+            isSoloPlan,
+            events:
+              Array.isArray(p.events) && p.events.length > 0
+                ? p.events.map(ev => ({
+                    date: ev.date || startDate,
+                    time: ev.time || '12:00',
+                    title: ev.title || `${targetDest}スポット`,
+                    type: ['transport', 'meal', 'sightseeing', 'active', 'hotel'].includes(ev.type)
+                      ? ev.type
+                      : 'sightseeing',
+                    location: ev.location || targetDest,
+                    cost: Number(ev.cost) || 0,
+                    memo: ev.memo || ''
+                  }))
+                : fallbackList[idx]?.events || []
+          }))
+        : fallbackList;
+
+      while (normalized.length < 3) {
+        normalized.push(fallbackList[normalized.length]);
+      }
+
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `「${targetDest}」でのご希望に合わせて、3つのプラン候補をご用意しました！気になるプランを選んでしおりに反映できます✨`,
+          plans: normalized
+        }
+      ]);
+    } catch (err) {
+      const fallbackList = buildFallbackPlans(targetDest);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `「${targetDest}」でのご希望に合わせて、3つのプラン候補をご用意しました！気になるプランを選んでしおりに反映できます✨`,
+          plans: fallbackList
+        }
+      ]);
+    } finally {
+      setIsAiGenerating(false);
+      setTimeout(() => {
+        if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      }, 60);
+    }
+  };
+
+  const handleSelectChatOption = async (optionItem) => {
+    if (isAiGenerating) return;
+    setIsChatConfigOpen(false);
+    setChatMessages(prev => [...prev, { role: 'user', text: optionItem.label }]);
+
+    if (optionItem.kind === 'region_group') {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `${optionItem.label}ですね！特に気になる県・エリアはどちらですか？（※下のボタンからAI回数を減らさずに選べます）`,
+          isFreeFollowUp: true,
+          options: (optionItem.subAreas || []).map(area => ({
+            kind: 'set_dest',
+            value: area,
+            label: `📍 ${area}`
+          }))
+        }
+      ]);
+      setTimeout(() => {
+        if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      }, 50);
+      return;
+    }
+
+    if (optionItem.kind === 'set_dest') {
+      const chosenDest = optionItem.value;
+      const currentTheme = chatPendingContext.themeHint;
+      setChatPendingContext(prev => ({ ...prev, dest: chosenDest }));
+
+      if (!currentTheme) {
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'ai',
+            text: `「${chosenDest}」へのご旅行ですね！✈️\n${chosenDest}ではどんな過ごし方・テーマをご希望ですか？（※ボタンを押すとプランを作成します）`,
+            isFreeFollowUp: true,
+            options: [
+              { kind: 'finalize', dest: chosenDest, themeHint: '王道観光＆ご当地グルメ満喫', label: '🍽️ 王道観光＆名物グルメ' },
+              { kind: 'finalize', dest: chosenDest, themeHint: '温泉・露天風呂でのんびり癒やし', label: '♨️ 温泉・露天風呂で癒やし' },
+              { kind: 'finalize', dest: chosenDest, themeHint: 'おしゃれカフェ＆写真映えスポット巡り', label: '☕ カフェ＆映えスポット巡り' },
+              { kind: 'finalize', dest: chosenDest, themeHint: '絶景ドライブ＆自然満喫', label: '🚗 絶景ドライブ＆自然' }
+            ]
+          }
+        ]);
+        setTimeout(() => {
+          if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+        }, 50);
+        return;
+      }
+
+      await generateChatPlansForDestination(chosenDest, `${chosenDest}で${currentTheme}`);
+      return;
+    }
+
+    if (optionItem.kind === 'finalize') {
+      const finalDest = optionItem.dest || chatPendingContext.dest || '箱根';
+      const finalTheme = optionItem.themeHint || chatPendingContext.themeHint || '王道観光＆グルメ';
+      setChatPendingContext({ dest: finalDest, themeHint: finalTheme });
+      await generateChatPlansForDestination(finalDest, `${finalDest}で${finalTheme}`);
+    }
+  };
+
+  const handleSendChat = async (e) => {
+    if (e) e.preventDefault();
+    const q = chatInput.trim();
+    if (!q || isAiGenerating) return;
+
+    setIsChatConfigOpen(false);
+    setChatMessages(prev => [...prev, { role: 'user', text: q }]);
+    setChatInput('');
+
+    const detectedDest = extractDestinationFromText(q) || chatPendingContext.dest;
+    const hasThemeKeyword = /温泉|グルメ|海鮮|カフェ|食べ歩き|ドライブ|絶景|自然|歴史|神社|寺|テーマパーク|観光|癒やし|ホテル|ホカンス|ラーメン|肉|お酒/.test(q);
+    const nextThemeHint = hasThemeKeyword ? q : chatPendingContext.themeHint;
+
+    setChatPendingContext({
+      dest: detectedDest,
+      themeHint: nextThemeHint
+    });
+
+    if (!detectedDest) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `「${q}」ですね！✨\nぴったりのプランをご提案するため、まずはご希望のエリア（行き先）を教えてください！（※下の選択肢ボタンはAI残り回数を消費せずに回答できます）`,
+          isFreeFollowUp: true,
+          options: [
+            { kind: 'region_group', label: '🗾 九州・沖縄エリア', subAreas: ['福岡県（博多・糸島）', '大分県（別府・由布院）', '熊本県（阿蘇・黒川温泉）', '長崎県', '鹿児島県', '沖縄県（那覇・宮古島）'] },
+            { kind: 'region_group', label: '⛩️ 関西（京都・大阪・伊勢）', subAreas: ['京都府', '大阪府', '兵庫県（神戸・有馬・城崎）', '三重県（伊勢志摩）', '奈良県', '和歌山県（白浜）'] },
+            { kind: 'region_group', label: '♨️ 関東・近郊（箱根・鎌倉・日光）', subAreas: ['神奈川県（箱根）', '神奈川県（鎌倉・江ノ島）', '栃木県（日光・鬼怒川）', '群馬県（草津・伊香保）', '東京都'] },
+            { kind: 'region_group', label: '🦀 中部・北陸・信州（金沢・軽井沢・熱海）', subAreas: ['石川県（金沢）', '長野県（軽井沢・松本）', '静岡県（熱海・伊豆）', '岐阜県（飛騨高山・白川郷）', '愛知県（名古屋）'] },
+            { kind: 'region_group', label: '🐻 北海道・東北エリア', subAreas: ['北海道（札幌・小樽）', '北海道（函館）', '宮城県（仙台・松島）', '青森県（奥入瀬・弘前）', '山形県（銀山温泉）'] },
+            { kind: 'region_group', label: '🍋 中国・四国エリア', subAreas: ['広島県（宮島・尾道）', '愛媛県（道後温泉）', '香川県（高松・小豆島）', '島根県（出雲・松江）', '山口県'] }
+          ]
+        }
+      ]);
+      setTimeout(() => {
+        if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      }, 50);
+      return;
+    }
+
+    const BROAD_REGION_MAP = {
+      '九州': ['福岡県（博多・糸島）', '大分県（別府・由布院）', '熊本県（阿蘇・黒川温泉）', '長崎県', '鹿児島県', '九州周遊（福岡＆別府・由布院）'],
+      '東北': ['宮城県（仙台・松島）', '青森県（弘前・奥入瀬）', '山形県（銀山温泉）', '福島県（会津若松）', '岩手県（盛岡・平泉）'],
+      '四国': ['愛媛県（松山・道後温泉）', '香川県（高松・小豆島）', '高知県（四万十・桂浜）', '徳島県（鳴門・祖谷）'],
+      '北陸': ['石川県（金沢・加賀温泉）', '富山県（立山黒部・氷見）', '福井県（恐竜博物館・芦原温泉）'],
+      '関東': ['神奈川県（箱根温泉）', '神奈川県（鎌倉・江ノ島）', '栃木県（日光・鬼怒川）', '群馬県（草津温泉）'],
+      '関西': ['京都府', '大阪府', '兵庫県（神戸・有馬温泉）', '三重県（伊勢志摩）', '和歌山県（南紀白浜）']
+    };
+
+    if (BROAD_REGION_MAP[detectedDest]) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `${detectedDest}へのご旅行ですね！✈️\n${detectedDest}の中でも、特にメインで訪れたいエリアはどちらですか？（※下のボタンはAI残り回数を減らさずに選択できます）`,
+          isFreeFollowUp: true,
+          options: BROAD_REGION_MAP[detectedDest].map(sub => ({
+            kind: 'set_dest',
+            value: sub,
+            label: `📍 ${sub}`
+          }))
+        }
+      ]);
+      setTimeout(() => {
+        if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      }, 50);
+      return;
+    }
+
+    if (!nextThemeHint && q.length <= 10) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'ai',
+          text: `「${detectedDest}」ですね！✨\nどんな旅のテーマ・過ごし方をご希望ですか？（※下の選択肢はAI残り回数を減らさずに選べます）`,
+          isFreeFollowUp: true,
+          options: [
+            { kind: 'finalize', dest: detectedDest, themeHint: '王道観光＆ご当地グルメ満喫', label: '🍽️ 王道観光＆名物グルメ' },
+            { kind: 'finalize', dest: detectedDest, themeHint: '温泉・露天風呂でのんびり癒やし', label: '♨️ 温泉・露天風呂で癒やし' },
+            { kind: 'finalize', dest: detectedDest, themeHint: 'おしゃれカフェ＆写真映えスポット巡り', label: '☕ カフェ＆映えスポット巡り' },
+            { kind: 'finalize', dest: detectedDest, themeHint: '絶景ドライブ＆自然満喫', label: '🚗 絶景ドライブ＆自然' }
+          ]
+        }
+      ]);
+      setTimeout(() => {
+        if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      }, 50);
+      return;
+    }
+
+    await generateChatPlansForDestination(detectedDest, q);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[240] flex justify-center items-start sm:items-center pt-2 sm:pt-4 p-2.5 sm:p-4 overflow-hidden animate-in fade-in" onClick={onClose}>
+      <div className="relative bg-white w-full max-w-md rounded-[28px] p-4 sm:p-5 shadow-2xl h-[92dvh] max-h-[92dvh] flex flex-col overflow-hidden animate-in zoom-in-95 pb-safe" onClick={e => e.stopPropagation()}>
+        {isAiGenerating && (
+          <AiThinkingIndicator
+            variant="fullscreen"
+            destination={mode === 'chat' ? chatPendingContext.dest : destination}
+          />
+        )}
+        <div className="flex justify-between items-center mb-2 shrink-0">
+          <h3 className="font-extrabold text-sm sm:text-base text-stone-800 flex items-center gap-1.5">
+            <Sparkles size={17} className="text-[#5E8473]" /> AIおまかせプラン作成
+          </h3>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
         </div>
 
-        {/* ★ iボタンをタップしたときに開く「定番エリア一覧＆AI利用ガイド」ポップオーバー */}
         {showPopularAreasInfo && (
-          <div className="mb-2 p-2.5 rounded-2xl bg-emerald-50/95 border border-emerald-200 text-xs space-y-2 shrink-0 animate-in fade-in slide-in-from-top-1 max-h-48 overflow-y-auto no-scrollbar">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="font-extrabold text-xs text-emerald-900 flex items-center gap-1">
-                  <Info size={14} className="text-emerald-600 shrink-0" />
-                  おすすめ定番エリア一覧（ワンタップ選択）
-                </p>
-                <p className="text-[11px] font-bold text-emerald-800 mt-0.5 leading-snug">
-                  下のエリア名をタップすると目的地に自動セットされます（定番エリアの初回プラン提案は右上の残り回数を消費せずにすぐ作成できます！）
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPopularAreasInfo(false)}
-                className="p-1 text-emerald-700 hover:bg-emerald-100 rounded-full shrink-0"
-              >
+          <div className="mb-2 p-3 bg-emerald-50/90 border border-emerald-200 rounded-2xl text-xs space-y-2 shrink-0">
+            <div className="flex justify-between items-center">
+              <span className="font-extrabold text-emerald-900">⚡ 定番エリア一覧（タップで選択・AI枠消費0）</span>
+              <button type="button" onClick={() => setShowPopularAreasInfo(false)} className="text-stone-400 hover:text-stone-600">
                 <X size={15} />
               </button>
             </div>
-
-            <div className="space-y-1.5">
-              {POPULAR_AREAS_GUIDE.map(group => (
-                <div key={group.region} className="bg-white/95 p-2 rounded-xl border border-emerald-100">
-                  <span className="text-[11px] font-extrabold text-emerald-800 block mb-1">
-                    🗾 {group.region}
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {group.areas.map(areaName => {
-                      const cleanName = areaName.split('（')[0];
-                      const isCurrent = destination.includes(cleanName);
-                      return (
-                        <button
-                          key={areaName}
-                          type="button"
-                          onClick={() => {
-                            setDestination(areaName);
-                            setMode('condition');
-                            setGeneratedPlans(null);
-                            setShowPopularAreasInfo(false);
-                            customAlert(`目的地に「${areaName}」をセットしました！`);
-                          }}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all active:scale-95 ${
-                            isCurrent
-                              ? 'bg-emerald-600 text-white border-emerald-600'
-                              : 'bg-stone-50 hover:bg-emerald-100/70 text-stone-700 border-stone-200'
-                          }`}
-                        >
-                          {areaName}
-                        </button>
-                      );
-                    })}
+            <div className="max-h-36 overflow-y-auto no-scrollbar space-y-1.5">
+              {POPULAR_AREAS_GUIDE.map(g => (
+                <div key={g.region}>
+                  <span className="text-[10px] font-extrabold text-emerald-800 block">{g.region}</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {g.areas.map(area => (
+                      <button
+                        key={area}
+                        type="button"
+                        onClick={() => {
+                          setDestination(area.split('（')[0]);
+                          setShowPopularAreasInfo(false);
+                        }}
+                        className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-[10px] font-bold"
+                      >
+                        {area}
+                      </button>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -13466,7 +12600,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
           </div>
         )}
 
-        {/* タブ切り替え：条件を選んで作成 / AIコンシェルジュに相談 */}
         <div className="flex bg-stone-100 p-1 rounded-2xl mb-2 shrink-0">
           <button
             type="button"
@@ -13492,14 +12625,12 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
         {mode === 'condition' ? (
           !generatedPlans ? (
-            /* ★ スマホで絶対に見切れない「コンパクト入力（スクロール対応）＋下部ボタン固定」レイアウト */
             <>
               <div
                 ref={conditionScrollRef}
                 style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
                 className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain no-scrollbar space-y-2 pr-0.5 pb-2"
               >
-                {/* 1段目：出発地点（コンパクト1行ヘッダー＋切替タブ） */}
                 <DepartureSelectorBox
                   user={currentUser}
                   value={departurePoint}
@@ -13510,13 +12641,11 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   compact
                 />
 
-                {/* 2段目：行きたいエリア・出発日・日数（スマホで文字切れしない2段カード） */}
                 <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2">
                   <div>
                     <label className="text-xs font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
                       <span className="flex items-center gap-1">
                         <MapPin size={13} className="text-[#7A9D8C] shrink-0" /> 行きたいエリア・目的地
-                        <span className="text-[9px] font-extrabold text-rose-500 bg-rose-50 px-1.5 py-0.2 rounded-full border border-rose-200">必須</span>
                       </span>
                       <button
                         type="button"
@@ -13527,13 +12656,14 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       </button>
                     </label>
                     <input
+                      ref={destinationInputRef}
                       type="text"
                       value={destination}
                       onChange={e => {
                         setDestination(e.target.value);
                         if (destinationError && e.target.value.trim()) setDestinationError(false);
                       }}
-                      placeholder="例: 京都府、沖縄、箱根、金沢"
+                      placeholder="例: 京都府、沖縄、箱根、金沢（必須）"
                       className={`w-full min-w-0 px-3 py-2 rounded-xl text-xs sm:text-sm font-extrabold text-stone-800 focus:outline-none focus:ring-2 transition-all ${
                         destinationError
                           ? 'bg-rose-50 border-2 border-rose-400 focus:ring-rose-400'
@@ -13541,13 +12671,12 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       }`}
                     />
                     {destinationError && (
-                      <p className="mt-1 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5">
-                        <AlertCircle size={12} /> 目的地を入力してください！
+                      <p className="mt-1 text-[11px] font-extrabold text-rose-600 flex items-center gap-1 pl-0.5 animate-in fade-in">
+                        <AlertCircle size={12} /> 行きたいエリア・目的地が未入力です。入力してください！
                       </p>
                     )}
                   </div>
 
-                  {/* 出発日・最終日（ドラムロール式ホイール選択・日数とも自動連動） */}
                   {(() => {
                     const baseParts = (startDate || getTodayString()).split('-').map(Number);
                     const safeStartDt =
@@ -13590,7 +12719,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   })()}
                 </div>
 
-                {/* 3段目：移動手段（家から旅先までの移動手段）＋ 1人あたり予算スライダー＋予算不足時の救済提案 */}
                 <div className="p-3 bg-gradient-to-br from-[#FFF9F5] via-[#F4FBF8] to-[#F0F7FF] border border-[#7A9D8C]/30 rounded-[22px] space-y-2.5 shadow-2xs overflow-hidden">
                   <div className="bg-white/90 p-2.5 rounded-2xl border border-sky-200/80 shadow-2xs">
                     <label className="text-xs font-extrabold text-sky-900 flex items-center gap-1.5 mb-1.5 pl-0.5">
@@ -13608,7 +12736,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     </select>
                   </div>
 
-                  {/* 1人あたりの予算スライダー（5,000円スタート＆パステルグラデーション） */}
                   <div className="bg-white/95 p-3 rounded-2xl border border-rose-200/70 shadow-2xs space-y-2">
                     <div className="flex items-center justify-between gap-1.5 flex-wrap">
                       <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1.5">
@@ -13647,7 +12774,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       </div>
                     </div>
 
-                    {/* パステルグラデーションのカスタムスライダー */}
                     <div className="px-0.5 pt-0.5">
                       <input
                         type="range"
@@ -13667,7 +12793,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       />
                     </div>
 
-                    {/* ワンタップで選べる可愛い金額プリセットピル */}
                     <div className="grid grid-cols-5 gap-1 pt-0.5">
                       {[
                         { val: 5000, label: '¥5,000' },
@@ -13694,7 +12819,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       })}
                     </div>
 
-                    {/* ★ 予算で目的地まで行けないときの救済アドバイス＆ワンタップ解決ボタン */}
                     {budgetFeasibility.isShort && (
                       <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300/90 space-y-2 animate-in fade-in">
                         <div className="flex items-start gap-1.5 text-amber-950">
@@ -13762,7 +12886,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   </div>
                 </div>
 
-                {/* 4段目：誰と行く？＆大人・子ども人数カウンター＋しおりの操作スタイル */}
                 <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between gap-2 pl-0.5">
                     <div className="flex items-center gap-1.5">
@@ -13773,7 +12896,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     </div>
                   </div>
 
-                  {/* 4つの同行スタイルボタン */}
                   <div className="grid grid-cols-4 gap-1.5">
                     {[
                       { id: 'ひとり旅', icon: '👤', label: 'ひとり旅' },
@@ -13816,7 +12938,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     ))}
                   </div>
 
-                  {/* どの同行スタイル（ひとり旅・カップル・友達・家族）でも常時表示する大人・子ども2列カウンター */}
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="px-2.5 py-1.5 bg-white border border-stone-200/90 rounded-xl flex items-center justify-between">
                       <div>
@@ -13873,7 +12994,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     </div>
                   </div>
 
-                  {/* しおりの操作スタイル（左：👤 1人旅（代表者のみ管理） / 右：👥 みんなで共有） */}
                   {!currentUser?.isGuest && (
                     <div className="pt-1.5 border-t border-stone-200/70 space-y-1">
                       <div className="flex items-center justify-between px-0.5">
@@ -13915,7 +13035,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   )}
                 </div>
 
-                {/* 5段目：旅のテーマ（全12種類プルダウン） */}
                 <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl">
                   <label className="text-xs font-extrabold text-stone-700 mb-1 flex items-center justify-between pl-0.5">
                     <span>✨ 旅のテーマ・目的</span>
@@ -13932,30 +13051,28 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   </select>
                 </div>
 
-                {/* AI生成中のアニメーションカード表示 */}
                 {isAiGenerating && (
                   <AiThinkingIndicator variant="card" destination={destination} />
                 )}
               </div>
 
-              {/* ★ 一番下に常時固定される提案実行ボタン（ボタンの中に残り回数をわかりやすく表示） */}
               <div className="pt-2 mt-1 border-t border-stone-100 shrink-0">
                 {quotaStatus.remaining > 0 ? (
                   <button
                     type="button"
                     disabled={isAiGenerating}
-                    onClick={() => handleGenerate(false)}
+                    onClick={() => handleGenerate()}
                     className="w-full py-3 px-4 bg-gradient-to-r from-sky-200 via-sky-300/80 to-cyan-200 hover:brightness-105 text-sky-950 border border-sky-300 font-extrabold rounded-2xl shadow-sm text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer select-none disabled:opacity-75"
                   >
                     {isAiGenerating ? (
                       <>
                         <div className="w-4 h-4 border-2 border-sky-900/30 border-t-sky-900 rounded-full animate-spin shrink-0" />
-                        <span>AIが最適プランを考案中...</span>
+                        <span>AIが3つの最適プランを考案中...</span>
                       </>
                     ) : (
                       <>
                         <Sparkles size={16} className="pointer-events-none shrink-0 text-sky-700" />
-                        <span className="pointer-events-none">この条件でプランを提案してもらう</span>
+                        <span className="pointer-events-none">この条件で3つのプランを提案してもらう</span>
                         <span className="pointer-events-none px-2 py-0.5 rounded-full bg-white/85 text-sky-900 text-[10px] font-extrabold border border-sky-300/80">
                           残り{quotaStatus.remaining}回
                         </span>
@@ -13974,68 +13091,17 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               </div>
             </>
           ) : (
-            <div
-              ref={plansResultScrollRef}
-              className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar pr-0.5 space-y-3 pb-2"
-            >
-                <div className="flex items-center justify-between gap-2 sticky top-0 bg-white/95 backdrop-blur-xs py-1.5 z-10 border-b border-stone-100">
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div
+                ref={plansResultScrollRef}
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar pr-0.5 space-y-3 pb-3"
+              >
+                <div className="flex items-center justify-between gap-2 bg-white py-1">
                   <span className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center gap-1">
-                    <Sparkles size={15} className="text-sky-500" /> 提案プラン ({generatedPlans.length}件)
+                    <Sparkles size={15} className="text-sky-500" /> プラン候補 ({generatedPlans.length}件)
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    {quotaStatus.remaining > 0 ? (
-                      <button
-                        type="button"
-                        disabled={isAiGenerating}
-                        onClick={() => handleGenerate(true)}
-                        className="px-2.5 py-1 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-[11px] font-extrabold flex items-center gap-1 disabled:opacity-50"
-                        title="AI無料枠を1回使ってGoogle Gemini APIで別プランを新規生成"
-                      >
-                        {isAiGenerating ? (
-                          <>
-                            <div className="w-3 h-3 border-2 border-sky-700/30 border-t-sky-700 rounded-full animate-spin" />
-                            <span>AIが考案中...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={11} className="text-sky-600" />
-                            <span>別プラン再生成 (残り{quotaStatus.remaining}回)</span>
-                          </>
-                        )}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setShowRewardAdModal(true)}
-                        className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-500 text-stone-950 text-[11px] font-extrabold shadow-2xs animate-pulse"
-                      >
-                        🎬 動画で+{REWARD_AD_BONUS_COUNT}回復活
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setGeneratedPlans(null)}
-                      className="px-2.5 py-1 rounded-full bg-stone-100 hover:bg-stone-200 text-xs font-extrabold text-stone-700"
-                    >
-                      条件変更
-                    </button>
-                  </div>
-                </div>
-
-                {isAiGenerating && (
-                  <AiThinkingIndicator variant="card" destination={destination} />
-                )}
-
-                {/* キャッシュヒット時の節約通知バナー */}
-                <div className={`px-3 py-2 rounded-2xl border text-xs font-bold flex items-center justify-between gap-2 ${
-                  planSourceType === 'cache'
-                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
-                    : 'bg-sky-50 border-sky-200 text-sky-900'
-                }`}>
-                  <span>
-                    {planSourceType === 'cache'
-                      ? '⚡ 定番・保存キャッシュから高速表示しました（本日のAI無料枠は消費していません）'
-                      : '✨ Google Gemini AIでカスタム生成しました（本日のAI枠を1回使用）'}
+                  <span className="text-[11px] font-extrabold text-[#4A6B5D] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full">
+                    📍 {destination}
                   </span>
                 </div>
 
@@ -14123,14 +13189,42 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="pt-2.5 mt-1 border-t border-stone-200/80 bg-white shrink-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGeneratedPlans(null)}
+                  className="flex-1 py-3 px-3 rounded-2xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                >
+                  <ChevronLeft size={15} />
+                  <span>条件を変えて再検索</span>
+                </button>
+                {quotaStatus.remaining > 0 ? (
+                  <button
+                    type="button"
+                    disabled={isAiGenerating}
+                    onClick={() => handleGenerate()}
+                    className="flex-1 py-3 px-3 rounded-2xl bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Sparkles size={14} className="text-sky-600 shrink-0" />
+                    <span>別プラン再生成 (残り{quotaStatus.remaining}回)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowRewardAdModal(true)}
+                    className="flex-1 py-3 px-3 rounded-2xl bg-amber-400 hover:bg-amber-500 text-stone-950 text-xs font-extrabold shadow-2xs animate-pulse cursor-pointer"
+                  >
+                    🎬 動画で+{REWARD_AD_BONUS_COUNT}回復活
+                  </button>
+                )}
+              </div>
             </div>
           )
         ) : (
-          /* ★ チャット相談モード：日付・誰と行く・予算設定メニューを折り畳み可能にし、チャット領域を広く見やすく表示 */
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* 折り畳みできる旅行条件設定メニュー */}
             <div className="mb-1.5 bg-stone-50 border border-stone-200/80 rounded-2xl overflow-hidden shrink-0">
-              {/* 折り畳みヘッダーバー（タップで開閉） */}
               <button
                 type="button"
                 onClick={() => setIsChatConfigOpen(prev => !prev)}
@@ -14149,10 +13243,8 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                 </span>
               </button>
 
-              {/* 展開時の詳細メニュー（日付・日数・誰と行く？・1人予算目安） */}
               {isChatConfigOpen && (
                 <div className="px-2.5 pb-2.5 pt-1 border-t border-stone-200/60 space-y-1.5 animate-in fade-in duration-150">
-                  {/* 1. 出発日 ＆ 最終日（ドラムロール式ホイール選択） */}
                   {(() => {
                     const baseParts = (startDate || getTodayString()).split('-').map(Number);
                     const startDt =
@@ -14186,7 +13278,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     );
                   })()}
 
-                  {/* 2. 誰と行く？（ひとり旅 / カップル / 友達 / 家族 ＋ 人数調整） */}
                   <div className="bg-white p-1.5 rounded-xl border border-stone-200/80 space-y-1.5">
                     <div className="flex items-center justify-between px-1">
                       <span className="text-[10px] font-extrabold text-stone-600">👥 誰と行く？</span>
@@ -14236,7 +13327,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       ))}
                     </div>
 
-                    {/* ひとり旅・カップル・友達・家族どのタブでも常時表示する大人・子ども人数カウンター */}
                     <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                       <div className="px-2 py-1 bg-stone-50 border border-stone-200 rounded-lg flex items-center justify-between">
                         <span className="text-[10px] font-extrabold text-stone-700">大人</span>
@@ -14283,7 +13373,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     </div>
                   </div>
 
-                  {/* 3. 1人あたりの予算選択（¥5,000スタートの可愛いスライダー＆クイック選択ボタン） */}
                   <div className="bg-white p-2 rounded-xl border border-rose-200/70 space-y-1.5">
                     <div className="flex items-center justify-between gap-1.5">
                       <span className="text-[10px] font-extrabold text-stone-700 flex items-center gap-1">
@@ -14367,7 +13456,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
               )}
             </div>
 
-            {/* 広く見やすいメインのチャット履歴エリア */}
             <div
               ref={chatListRef}
               style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
@@ -14386,7 +13474,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   </div>
                   {m.role === 'ai' && idx > 0 && (
                     <div className="mt-1 flex items-center gap-2 px-1 text-[10px] text-stone-400 font-bold">
-                      <span>※AI提案の営業時間・料金は公式情報もご確認ください</span>
+                      <span>{m.isFreeFollowUp ? '⚡ ヒアリング質問（AI回数消費0）' : '※AI提案の営業時間・料金は公式情報もご確認ください'}</span>
                       <button
                         type="button"
                         onClick={() => customAlert('AIの回答内容を運営に報告しました。改善に役立てます。')}
@@ -14396,7 +13484,63 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       </button>
                     </div>
                   )}
-                  {m.plan && (
+
+                  {Array.isArray(m.options) && m.options.length > 0 && (
+                    <div className="mt-2 w-full bg-emerald-50/70 border border-emerald-200 rounded-2xl p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-extrabold text-emerald-800">
+                          👇 タップして回答（AI残り回数は減りません）
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {m.options.map((opt, oIdx) => (
+                          <button
+                            key={oIdx}
+                            type="button"
+                            disabled={isAiGenerating}
+                            onClick={() => handleSelectChatOption(opt)}
+                            className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#7A9D8C] text-stone-800 hover:text-white border border-emerald-300/90 text-xs font-extrabold shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {Array.isArray(m.plans) && m.plans.length > 0 && (
+                    <div className="mt-2 w-full space-y-2.5">
+                      {m.plans.map((planItem, pIdx) => (
+                        <div key={pIdx} className="w-full bg-sky-50/70 border border-sky-200 rounded-2xl p-3 space-y-2">
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200/80 text-[10px] font-extrabold">
+                            {planItem.badge || `✨ 候補${pIdx + 1}`}
+                          </span>
+                          <p className="text-xs sm:text-sm font-extrabold text-stone-800">{planItem.title}</p>
+                          <div className="space-y-1 max-h-32 overflow-y-auto no-scrollbar">
+                            {(planItem.events || []).map((ev, eIdx) => (
+                              <div key={eIdx} className="text-xs bg-white p-1.5 rounded-xl border border-sky-100 flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 text-[10px] font-extrabold shrink-0">
+                                  {ev.date ? ev.date.slice(5).replace('-', '/') : ''}
+                                </span>
+                                <span className="font-mono font-bold text-stone-500 shrink-0 text-[11px]">{ev.time}</span>
+                                <span className="font-bold text-stone-800 truncate">{ev.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onSelectPlan(planItem)}
+                            className="w-full py-2.5 bg-gradient-to-r from-sky-100 via-sky-200/85 to-cyan-100 hover:brightness-95 text-sky-900 border border-sky-300 font-extrabold rounded-xl text-xs sm:text-sm shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Sparkles size={14} className="text-sky-600 pointer-events-none" />
+                            <span className="pointer-events-none">このプランをしおりに反映する</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {m.plan && !m.plans && (
                     <div className="mt-2 w-full bg-sky-50/70 border border-sky-200 rounded-2xl p-3 space-y-2">
                       <p className="text-xs sm:text-sm font-extrabold text-stone-800">{m.plan.title}</p>
                       <div className="space-y-1 max-h-36 overflow-y-auto no-scrollbar">
@@ -14423,13 +13567,11 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                 </div>
               ))}
 
-              {/* ★ AIが考えているときのアニメーションバブル */}
               {isAiGenerating && (
-                <AiThinkingIndicator variant="chat" destination={destination} />
+                <AiThinkingIndicator variant="chat" destination={chatPendingContext.dest} />
               )}
             </div>
 
-            {/* 入力欄のすぐ上に配置した相談例のクイック候補チップ（押すと検索・入力欄に一度入るように変更） */}
             <div
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
               className="flex gap-1.5 overflow-x-auto no-scrollbar [&::-webkit-scrollbar]:hidden py-1.5 shrink-0"
@@ -15490,34 +14632,21 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
                         setActiveSubView('map');
                       }
                     }}
-                    className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                    className={`p-3 rounded-2xl border text-left transition-all ${
                       item.isUnlocked
                         ? isPinned
-                          ? 'border-2 border-amber-400 bg-amber-50/70 shadow-2xs'
-                          : 'border-[#7A9D8C] bg-emerald-50/40 hover:bg-emerald-50'
-                        : 'border-stone-200 bg-stone-50/70 hover:bg-stone-100/80'
+                          ? 'border-amber-400 bg-amber-50/70'
+                          : 'border-[#7A9D8C] bg-white'
+                        : 'border-stone-200 bg-stone-50/70'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full mb-1">
+                    <div className="flex items-center justify-between mb-1">
                       <span className="text-base">{item.icon}</span>
-                      {item.isUnlocked ? (
-                        <span className="text-[8px] font-black px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950">
-                          {isPinned ? '⭐表示中' : '制覇！'}
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-extrabold text-stone-400">
-                          {item.visitedCount}/3都市
-                        </span>
-                      )}
+                      <span className="text-[9px] font-extrabold text-stone-500">{item.visitedCount}/3都市</span>
                     </div>
-                    <p className="text-[11px] font-extrabold text-stone-800 truncate">
-                      {item.pref}コンプリート
-                    </p>
-                    <div className="mt-1.5 w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${item.isUnlocked ? 'bg-amber-400' : 'bg-[#7A9D8C]'}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                    <p className="text-xs font-extrabold text-stone-800 truncate">{item.name}</p>
+                    <div className="mt-1.5 w-full h-1 bg-stone-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-[#7A9D8C]" style={{ width: `${pct}%` }} />
                     </div>
                   </button>
                 );
@@ -15526,123 +14655,158 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, onOpenProfile }) {
           </div>
         </div>
       ) : (
-        /* ③ インタラクティブ日本地図（47都道府県グリッドマップ・閲覧＆進捗確認モード） */
-        <div className="bg-white p-4 rounded-[28px] border border-stone-200/90 shadow-xs space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h3 className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center gap-1.5">
-                🗾 日本列島 47都道府県 制覇マップ
-              </h3>
-              <p className="text-[10px] font-bold text-stone-400 mt-0.5">
-                県をタップすると通過済みの市区町村と県コンプリートまでの残り都市数を確認できます
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-stone-500 shrink-0">
-              <span className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-xs bg-stone-100 border border-stone-300 inline-block" /> 未訪問
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-xs bg-[#7A9D8C] border border-[#5E8473] inline-block" /> 訪問済
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-xs bg-amber-400 border border-amber-500 inline-block" /> 県制覇(3+)
-              </span>
-            </div>
-          </div>
+        <RealisticJapanMapSvg
+          selectedPref={selectedPref}
+          onSelectPref={(pref) => setSelectedPref(pref)}
+          badgesByPref={badgesByPref}
+        />
+      )}
+    </div>
+  );
+}
 
-          {/* 8列×12行のデフォルメ日本列島タイル */}
-          <div className="mt-1">
-            <RealisticJapanMapSvg
-              selectedPref={selectedPref}
-              onSelectPref={(pref) => setSelectedPref(pref)}
-              badgesByPref={badgesByPref}
-            />
-          </div>
+// ------------------------------------------
+// 思い出写真アルバム画面 (AlbumView) ※端末内保存＋AirDrop/LINE直接共有
+// ------------------------------------------
+function AlbumView({ trip, currentUser, updateTrip, isReadOnly, onEnlargeImage }) {
+  const fileInputRef = useRef(null);
+  const [photoToDelete, setPhotoToDelete] = useState(null);
+
+  const photos = useMemo(() => {
+    const map = new Map();
+    (trip.photos || []).forEach(p => {
+      if (p && p.url) map.set(p.id || p.url, p);
+    });
+    (trip.events || []).forEach(ev => {
+      (ev.photos || []).forEach(p => {
+        if (p && p.url) map.set(p.id || p.url, p);
+      });
+    });
+    return Array.from(map.values());
+  }, [trip.photos, trip.events]);
+
+  const isMyPhoto = (photo) => {
+    if (!photo || !currentUser) return false;
+    if (photo.authorId) return photo.authorId === currentUser.id;
+    return true;
+  };
+
+  const handleUpload = async (e) => {
+    if (!e.target.files || isReadOnly) return;
+    const files = Array.from(e.target.files);
+    const compressedList = await Promise.all(files.map(f => compressImageFile(f, 1200, 0.82)));
+    const newPhotos = compressedList.filter(Boolean).map(url => ({
+      id: generateId(),
+      url,
+      createdAt: getTodayString(),
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      isPublic: true
+    }));
+    if (newPhotos.length > 0) {
+      updateTrip({
+        ...trip,
+        photos: [...newPhotos, ...(trip.photos || [])]
+      });
+      customAlert(`${newPhotos.length}枚の思い出写真を端末アルバムに保存しました！`);
+    }
+  };
+
+  const handleDeletePhoto = (targetPhoto) => {
+    const nextTripPhotos = (trip.photos || []).filter(p => p.id !== targetPhoto.id && p.url !== targetPhoto.url);
+    const nextEvents = (trip.events || []).map(ev => ({
+      ...ev,
+      photos: (ev.photos || []).filter(p => p.id !== targetPhoto.id && p.url !== targetPhoto.url)
+    }));
+    updateTrip({ ...trip, photos: nextTripPhotos, events: nextEvents });
+    setPhotoToDelete(null);
+    customAlert('写真を削除しました');
+  };
+
+  return (
+    <div className="p-5 pb-28 space-y-4 animate-in fade-in duration-200">
+      <div className="bg-white p-5 rounded-3xl shadow-xs border border-stone-100 flex justify-between items-center gap-3">
+        <div>
+          <h3 className="font-bold text-sm text-stone-800 flex items-center gap-1.5">
+            <ImageIcon size={16} className="text-[#7A9D8C]" /> 旅の思い出アルバム ({photos.length}枚)
+          </h3>
+          <p className="text-[11px] text-stone-400 font-bold mt-0.5 leading-snug">
+            🔒 写真はクラウドには保存されず、あなたのスマホ内にのみ保存されます（友だちへは「送る」ボタンからLINE / AirDropで共有できます）
+          </p>
+        </div>
+        {!isReadOnly && (
+          <>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3.5 py-2 bg-[#7A9D8C] text-white font-bold rounded-xl text-xs shadow-xs hover:bg-[#688a79] transition-colors flex items-center gap-1.5 shrink-0"
+            >
+              <Plus size={14} /> 写真を追加
+            </button>
+            <input type="file" multiple accept="image/*" ref={fileInputRef} className="hidden" onChange={handleUpload} />
+          </>
+        )}
+      </div>
+
+      {photos.length === 0 ? (
+        <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-stone-200">
+          <Camera size={32} className="text-stone-300 mx-auto mb-2" />
+          <p className="text-xs font-bold text-stone-500 mb-1">まだ思い出の写真がありません</p>
+          <p className="text-[11px] text-stone-400">右上の「写真を追加」または各予定の「思い出の写真を貼る」から追加できます</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {photos.map(photo => {
+            const isMine = isMyPhoto(photo);
+            return (
+              <div key={photo.id || photo.url} className="relative aspect-square rounded-2xl overflow-hidden bg-stone-100 border border-stone-200 shadow-xs group">
+                <img
+                  src={photo.url}
+                  alt="album"
+                  onClick={() => onEnlargeImage && onEnlargeImage(photo.url)}
+                  className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform duration-300"
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    sharePhotoViaNativeSheet(photo.url, `${trip.title}の思い出写真`);
+                  }}
+                  className="absolute bottom-2 right-2 px-2.5 py-1 rounded-full bg-black/65 hover:bg-[#06C755] backdrop-blur-2xs text-white text-[10px] font-extrabold flex items-center gap-1 transition-colors shadow-sm"
+                  title="AirDropやLINEで写真を送る"
+                >
+                  <Share2 size={10} /> 送る
+                </button>
+                {!isReadOnly && isMine && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPhotoToDelete(photo);
+                    }}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-500 transition-colors shadow-sm"
+                    title="自分が投稿した写真を削除"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* ❓ 未解放のシークレット称号をタップした時のヒントモーダル */}
-      {selectedTitleDetail && (
-        <div
-          className="fixed inset-0 bg-black/60 z-[310] flex justify-center items-center p-4 animate-in fade-in"
-          onClick={() => setSelectedTitleDetail(null)}
-        >
-          <div
-            className="bg-white w-full max-w-xs rounded-[32px] p-6 shadow-2xl text-center space-y-3.5 animate-in zoom-in-95"
-            onClick={e => e.stopPropagation()}
-          >
-            <span className="inline-block px-3 py-0.5 rounded-full bg-stone-900 text-amber-300 text-[10px] font-black">
-              {selectedTitleDetail.rarity} MYSTERY BADGE
-            </span>
-            <div className="w-20 h-20 rounded-3xl bg-stone-100 border-2 border-dashed border-stone-300 flex items-center justify-center text-3xl mx-auto">
-              ❓
+      {photoToDelete && (
+        <div className="fixed inset-0 bg-black/60 z-[270] flex justify-center items-center p-4 animate-in fade-in" onClick={() => setPhotoToDelete(null)}>
+          <div className="bg-white w-full max-w-xs rounded-[28px] p-5 shadow-2xl text-center space-y-3" onClick={e => e.stopPropagation()}>
+            <h4 className="font-bold text-sm text-stone-800">この写真を削除しますか？</h4>
+            <div className="w-24 h-24 rounded-xl overflow-hidden mx-auto border border-stone-200">
+              <img src={photoToDelete.url} alt="delete preview" className="w-full h-full object-cover" />
             </div>
-            <div>
-              <h4 className="text-base font-extrabold text-stone-900">
-                {selectedTitleDetail.isMystery ? '？？？【未解放の秘密称号】' : selectedTitleDetail.name}
-              </h4>
-              <p className="text-xs font-bold text-[#557465] mt-1 leading-relaxed">
-                {selectedTitleDetail.condHint}
-              </p>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setPhotoToDelete(null)} className="flex-1 py-2.5 bg-stone-100 rounded-xl text-xs font-bold text-stone-600">キャンセル</button>
+              <button type="button" onClick={() => handleDeletePhoto(photoToDelete)} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-xs font-bold">削除する</button>
             </div>
-            <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-2xl text-[11px] font-bold text-amber-950 leading-relaxed">
-              💡 <strong>こっそり解放条件ネタバレ：</strong><br />
-              {selectedTitleDetail.secretHint}
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedTitleDetail(null)}
-              className="w-full py-2.5 bg-stone-800 text-white font-extrabold rounded-2xl text-xs"
-            >
-              閉じる
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 🎉 複数都市コンプリート・シークレット称号が解放された時のお祝いモーダル */}
-      {newlyUnlockedTitle && (
-        <div
-          className="fixed inset-0 bg-black/65 z-[320] flex justify-center items-center p-4 animate-in fade-in"
-          onClick={() => setNewlyUnlockedTitle(null)}
-        >
-          <div
-            className="bg-white w-full max-w-xs rounded-[32px] p-6 shadow-2xl text-center space-y-4 animate-in zoom-in-95 border-2 border-amber-400"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-rose-400 text-white text-[11px] font-black shadow-xs">
-              <Sparkles size={13} /> SPECIAL TITLE UNLOCKED!
-            </div>
-
-            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-amber-100 via-yellow-50 to-sky-50 border-4 border-amber-300 shadow-inner flex flex-col items-center justify-center mx-auto">
-              <span className="text-4xl">{newlyUnlockedTitle.icon}</span>
-            </div>
-
-            <div>
-              <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                {newlyUnlockedTitle.rarity} 称号バッジ
-              </span>
-              <h3 className="text-lg font-extrabold text-stone-900 mt-1">
-                {newlyUnlockedTitle.name}
-              </h3>
-              <p className="text-[11px] font-bold text-stone-500 mt-1 leading-relaxed">
-                {newlyUnlockedTitle.secretHint} を達成して特別称号を獲得しました！
-              </p>
-            </div>
-
-            <div className="p-2.5 bg-stone-50 rounded-2xl border border-stone-200/80 text-[10px] font-bold text-stone-500 leading-relaxed">
-              {badgesPublic
-                ? '🌐 プロフィール画面に自慢の特別称号として飾られました！'
-                : '🔒 初期設定では「非公開」です。みんなに自慢したい時は上部のスイッチからプロフィール公開をONにできます。'}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setNewlyUnlockedTitle(null)}
-              className="w-full py-3 bg-[#7A9D8C] hover:bg-[#688a79] text-white font-extrabold rounded-2xl text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-            >
-              やったね！閉じる
-            </button>
           </div>
         </div>
       )}
