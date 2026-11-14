@@ -92,7 +92,7 @@ const stripAllEmojis = (str) => {
   return str.replace(EMOJI_STRIP_REGEX, '').replace(/\s{2,}/g, ' ').trim();
 };
 
-// ★ アプリ全体で「移動（type === 'transport'）」を通常のスケジュール件数と分けて「予定〇件（+移動△件）」と表記する共通ヘルパー
+// ★ アプリ全体で「移動（type === 'transport'）」を通常のスケジュール件数と分けて「7件+移動10回」とスッキリ表記する共通ヘルパー
 const getEventBreakdownCounts = (eventsList = []) => {
   const safeList = Array.isArray(eventsList) ? eventsList : [];
   const transportCount = safeList.filter(ev => ev && ev.type === 'transport').length;
@@ -104,9 +104,9 @@ const formatEventCountLabel = (eventsList = [], { unit = '件', prefix = '', emp
   const { scheduleCount, transportCount, total } = getEventBreakdownCounts(eventsList);
   if (total === 0) return `${prefix}${emptyLabel}`;
   if (scheduleCount === 0 && transportCount > 0) {
-    return `${prefix}移動${transportCount}件`;
+    return `${prefix}移動${transportCount}回`;
   }
-  return `${prefix}${scheduleCount}${unit}${transportCount > 0 ? ` (+移動${transportCount}件)` : ''}`;
+  return `${prefix}${scheduleCount}${unit}${transportCount > 0 ? `+移動${transportCount}回` : ''}`;
 };
 
 // ★ 移動手段やカテゴリに応じたシンプルなオリジナルラインSVGアイコンコンポーネント
@@ -169,6 +169,76 @@ const SimpleLineIcon = ({ type = 'pin', size = 13, className = '' }) => {
         <path d="m9 20 3-6 3 6" />
         <path d="m6 8 6 2 6-2" />
         <path d="M12 10v4" />
+      </svg>
+    );
+  }
+  if (type === 'meal') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+        <path d="M7 2v20" />
+        <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+      </svg>
+    );
+  }
+  if (type === 'cafe') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+        <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+        <line x1="6" y1="2" x2="6" y2="4" />
+        <line x1="10" y1="2" x2="10" y2="4" />
+        <line x1="14" y1="2" x2="14" y2="4" />
+      </svg>
+    );
+  }
+  if (type === 'sightseeing') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+        <circle cx="12" cy="13" r="3" />
+      </svg>
+    );
+  }
+  if (type === 'active' || type === 'onsen') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <path d="M8 3c0 2.5-2 2.5-2 5s2 2.5 2 5" />
+        <path d="M12 3c0 2.5-2 2.5-2 5s2 2.5 2 5" />
+        <path d="M16 3c0 2.5-2 2.5-2 5s2 2.5 2 5" />
+        <path d="M4 16c0 2.5 3.6 4.5 8 4.5s8-2 8-4.5" />
+      </svg>
+    );
+  }
+  if (type === 'hotel') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <path d="M2 4v16" />
+        <path d="M2 8h18a2 2 0 0 1 2 2v10" />
+        <path d="M2 17h20" />
+        <path d="M6 8v9" />
+      </svg>
+    );
+  }
+  if (type === 'suitcase') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <rect x="4" y="7" width="16" height="13" rx="2" />
+        <path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" />
+        <path d="M9 7v13" />
+        <path d="M15 7v13" />
+      </svg>
+    );
+  }
+  if (type === 'sliders') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block shrink-0 ${className}`}>
+        <line x1="4" y1="6" x2="20" y2="6" />
+        <line x1="4" y1="12" x2="20" y2="12" />
+        <line x1="4" y1="18" x2="20" y2="18" />
+        <circle cx="9" cy="6" r="2" />
+        <circle cx="15" cy="12" r="2" />
+        <circle cx="10" cy="18" r="2" />
       </svg>
     );
   }
@@ -2990,7 +3060,7 @@ const EXTRA_PUBLIC_TRIP_TEMPLATES = [
     authorId: 'm4',
     authorName: '北陸さんぽ',
     authorAvatar: FEMALE_AVATARS[3],
-    authorBio: '北陸の美味しい海鮮と和菓子を探して旅しています🍣',
+    authorBio: '北陸の美味しい海鮮と和菓子を探して旅しています',
     covers: ['https://images.unsplash.com/photo-1542931287-023b922fa89b?auto=format&fit=crop&w=800&q=80'],
     events: [
       { id: 'ex_k1', date: '2025-10-18', time: '10:30', title: '近江町市場でのどぐろ・海鮮丼ランチ', type: 'meal', cost: 3500, status: 'approved', authorId: 'm4', location: '近江町市場', photos: [{ id: 'pex_k1', url: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=800&q=80', authorId: 'm4', authorName: 'たびたび公式', isPublic: true }] },
@@ -3010,7 +3080,7 @@ const EXTRA_PUBLIC_TRIP_TEMPLATES = [
     authorId: 'm5',
     authorName: 'ちゅら旅',
     authorAvatar: MALE_AVATARS[2],
-    authorBio: '離島と青い海が大好き！年に3回は沖縄に行きます🌺',
+    authorBio: '離島と青い海が大好き！年に3回は沖縄に行きます',
     covers: ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'],
     events: [
       { id: 'ex_o1', date: '2025-07-12', time: '11:00', title: '宮古空港でレンタカー出発＆伊良部大橋ドライブ', type: 'transport', cost: 4500, status: 'approved', authorId: 'm5', location: '伊良部大橋', photos: [] },
@@ -3030,7 +3100,7 @@ const EXTRA_PUBLIC_TRIP_TEMPLATES = [
     authorId: 'm6',
     authorName: 'せとうちライダー',
     authorAvatar: MALE_AVATARS[3],
-    authorBio: '自転車と一緒に全国の海沿いを走っています🚲',
+    authorBio: '自転車と一緒に全国の海沿いを走っています',
     covers: ['https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80'],
     events: [
       { id: 'ex_h1', date: '2025-05-17', time: '10:00', title: '尾道駅前でレンタサイクル貸出', type: 'active', cost: 3000, status: 'approved', authorId: 'm6', location: '尾道駅', photos: [] },
@@ -3049,7 +3119,7 @@ const EXTRA_PUBLIC_TRIP_TEMPLATES = [
     authorId: 'm7',
     authorName: '高原カフェ部',
     authorAvatar: FEMALE_AVATARS[4],
-    authorBio: '信州のカフェとパン屋さん巡りが趣味です🥐',
+    authorBio: '信州のカフェとパン屋さん巡りが趣味です',
     covers: ['https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=800&q=80'],
     events: [
       { id: 'ex_ka1', date: '2025-08-23', time: '09:30', title: 'ベーカリー＆レストラン沢村で高原モーニング', type: 'meal', cost: 2200, status: 'approved', authorId: 'm7', location: 'ベーカリー＆レストラン沢村 旧軽井沢', photos: [{ id: 'pex_ka1', url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=800&q=80', authorId: 'm7', authorName: 'たびたび公式', isPublic: true }] },
@@ -3092,7 +3162,7 @@ const initialPublicTrips = [
     title: '【箱根】彫刻の森美術館＆大涌谷・芦ノ湖畔ベーカリーを巡る温泉休日',
     description: 'ロマンスカーで箱根湯本へ！老舗の自然薯そば、ステンドグラスの塔が映える美術館、強羅の露天風呂付き客室で日頃の疲れをリセットできた1泊2日の実録コース。',
     destination: '神奈川県', region: '関東', authorId: 'm2', authorName: 'たびたろう', authorAvatar: MALE_AVATARS[1],
-    authorBio: '温泉と美味しいお酒が大好き。関東近郊のんびり旅メインです♨️',
+    authorBio: '温泉と美味しいお酒が大好き。関東近郊のんびり旅メインです',
     likes: 389, views: 1890, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80',
@@ -3116,7 +3186,7 @@ const initialPublicTrips = [
     title: '【札幌・小樽】海鮮・ジンギスカン・夜パフェ！北海道グルメ完全制覇2日間',
     description: '二条市場のウニ・イクラ丼から始まり、小樽運河クルーズ、サッポロビール園の生ラム、すすきの夜パフェ、翌朝のスープカレーまで実際に食べ歩いた胃袋大満足プラン！',
     destination: '北海道', region: '北海道・東北', authorId: 'm3', authorName: 'くいしんぼう', authorAvatar: FEMALE_AVATARS[2],
-    authorBio: '食べるために旅をする！全国のローカルグルメ・カフェを開拓中🍰',
+    authorBio: '食べるために旅をする！全国のローカルグルメ・カフェを開拓中',
     likes: 412, views: 2150, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1559314809-0d155014e29e?auto=format&fit=crop&w=800&q=80',
@@ -3139,7 +3209,7 @@ const initialPublicTrips = [
     title: '【金沢】近江町市場ののどぐろ丼・兼六園・21世紀美術館を巡る美と美食の旅',
     description: '北陸新幹線で行った古都・金沢！朝獲れ海鮮、日本三名園の兼六園、ひがし茶屋街の金箔スイーツ、現代アートまで徒歩＆周遊バスでコンパクトに回れました。',
     destination: '石川県', region: '中部', authorId: 'm4', authorName: '北陸さんぽ', authorAvatar: FEMALE_AVATARS[3],
-    authorBio: '北陸の美味しい海鮮と和菓子を探して旅しています🍣',
+    authorBio: '北陸の美味しい海鮮と和菓子を探して旅しています',
     likes: 356, views: 1740, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1542931287-023b922fa89b?auto=format&fit=crop&w=800&q=80',
@@ -3162,7 +3232,7 @@ const initialPublicTrips = [
     title: '【沖縄・宮古島】伊良部大橋ドライブと宮古ブルーの絶景ビーチ・南国カフェ旅',
     description: '東洋一美しい与那覇前浜ビーチ、無料で渡れる日本最長の伊良部大橋、ウミガメと泳いだシュノーケル、完熟マンゴーパフェまで詰め込んだ極上リゾート実録コース。',
     destination: '沖縄県', region: '九州・沖縄', authorId: 'm5', authorName: 'ちゅら旅', authorAvatar: MALE_AVATARS[2],
-    authorBio: '離島と青い海が大好き！年に3回は沖縄に行きます🌺',
+    authorBio: '離島と青い海が大好き！年に3回は沖縄に行きます',
     likes: 520, views: 2890, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
@@ -3185,23 +3255,20 @@ const initialPublicTrips = [
     title: '【福岡・糸島】屋台はしご酒と海辺の糸島カフェドライブ＆もつ鍋満喫コース',
     description: '空港から博多駅まで地下鉄でわずか5分！夜は中洲・天神の屋台と本場もつ鍋、翌日は青い海が広がる糸島エリアで夫婦岩とサンセットカフェを巡った鉄板プラン。',
     destination: '福岡県', region: '九州・沖縄', authorId: 'm6', authorName: '九州グルメ探検隊', authorAvatar: MALE_AVATARS[3],
-    authorBio: '福岡を拠点に九州のうまかもんと温泉を巡っています🍜',
+    authorBio: '福岡を拠点に九州のうまかもんと温泉を巡っています',
     likes: 334, views: 1680, likedBy: [],
     covers: [
-      'https://images.unsplash.com/photo-1554797589-7241bb691973?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80'
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1559314809-0d155014e29e?auto=format&fit=crop&w=800&q=80'
     ],
-    startDate: '2025-09-27', endDate: '2025-09-28', budget: 24900, publishedAt: Date.now() - (12 * 24 * 60 * 60 * 1000),
+    startDate: '2025-06-14', endDate: '2025-06-15', budget: 26800, publishedAt: Date.now() - (12 * 24 * 60 * 60 * 1000),
     members: [{ id: 'm6', name: '九州グルメ探検隊', color: '#E2A98B' }],
     comments: [],
     events: [
-      { id: 'e61', date: '2025-09-27', time: '11:30', title: '博多駅到着！「博多一双 博多駅東本店」で泡系豚骨ラーメン', type: 'meal', cost: 1000, status: 'approved', authorId: 'm6', location: '博多一双 博多駅東本店', memo: '「豚骨カプチーノ」と呼ばれる濃厚クリーミーなスープが絶品の行列店。', photos: [{ id: 'pe_61', url: 'https://images.unsplash.com/photo-1559314809-0d155014e29e?auto=format&fit=crop&w=800&q=80', authorId: 'm6', authorName: 'たびたび公式', isPublic: true }] },
-      { id: 'e62', date: '2025-09-27', time: '14:00', title: '太宰府天満宮 参拝＆かさの家の焼きたて梅ヶ枝餅食べ歩き', type: 'sightseeing', cost: 1200, status: 'approved', authorId: 'm6', location: '太宰府天満宮', memo: '隈研吾氏デザインのスターバックス太宰府天満宮表参道店と、パリッと香ばしい焼きたて梅ヶ枝餅をチェック！', photos: [] },
-      { id: 'e63', date: '2025-09-27', time: '18:30', title: '博多もつ鍋「やま中 本店」でみそ味もつ鍋ディナー', type: 'meal', cost: 4800, status: 'approved', authorId: 'm6', location: '博多もつ鍋 やま中', memo: '福岡のもつ鍋といえばここ！濃厚な特製みそスープとプリプリの国産牛もつ、締めのちゃんぽん麺まで最高。', photos: [{ id: 'pe_63', url: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', authorId: 'm6', authorName: 'たびたび公式', isPublic: true }] },
-      { id: 'e64', date: '2025-09-27', time: '21:00', title: '中洲・天神屋台街で焼きラーメン＆一口餃子のはしご酒', type: 'meal', cost: 2500, status: 'approved', authorId: 'm6', location: '中洲屋台街', memo: '那珂川沿いの夜景を眺めながら、屋台名物の焼きラーメンとおでんを体験。', photos: [{ id: 'pe_64', url: 'https://images.unsplash.com/photo-1554797589-7241bb691973?auto=format&fit=crop&w=800&q=80', authorId: 'm6', authorName: 'たびたび公式', isPublic: true }] },
-      { id: 'e65', date: '2025-09-27', time: '22:30', title: '博多・天神エリア ホテル宿泊', type: 'hotel', cost: 11000, status: 'approved', authorId: 'm6', location: '天神駅周辺', memo: '翌朝の糸島ドライブに備えてゆっくり就寝。', photos: [] },
-      { id: 'e66', date: '2025-09-28', time: '11:00', title: '糸島・桜井二見ヶ浦（海上の白い鳥居と夫婦岩）＆ヤシの木ブランコ', type: 'sightseeing', cost: 2000, status: 'approved', authorId: 'm6', location: '桜井二見ヶ浦', memo: 'エメラルドグリーンの海に立つ白い鳥居は糸島No.1のフォトスポット。', photos: [{ id: 'pe_66', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80', authorId: 'm6', authorName: 'たびたび公式', isPublic: true }] },
-      { id: 'e67', date: '2025-09-28', time: '12:30', title: '糸島「LONDON BUS CAFE」＆海辺カフェでサンセットランチ', type: 'meal', cost: 2400, status: 'approved', authorId: 'm6', location: '糸島サンセットロード', memo: '二見ヶ浦すぐ近くの海沿いカフェでロコモコランチと塩ジェラートを満喫。', photos: [] }
+      { id: 'e61', date: '2025-06-14', time: '11:30', title: '博多一双 博多駅東本店で濃厚豚骨カプチーノラーメン', type: 'meal', cost: 1100, status: 'approved', authorId: 'm6', location: '博多一双 博多駅東本店', memo: '泡立つ濃厚豚骨スープが絶品の行列店。', photos: [] },
+      { id: 'e62', date: '2025-06-14', time: '14:00', title: '太宰府天満宮 参拝＆梅ヶ枝餅食べ歩き', type: 'sightseeing', cost: 1200, status: 'approved', authorId: 'm6', location: '太宰府天満宮', memo: '焼きたての梅ヶ枝餅と隈研吾氏設計のスタバも必見。', photos: [] },
+      { id: 'e63', date: '2025-06-14', time: '19:00', title: '博多もつ鍋 やま中＆中洲屋台はしご酒・博多駅周辺ホテル泊', type: 'hotel', cost: 18500, status: 'approved', authorId: 'm6', location: '博多もつ鍋 やま中 本店', memo: 'ぷりぷりの国産牛もつ鍋のあとは那珂川沿いの屋台街へ！', photos: [] },
+      { id: 'e64', date: '2025-06-15', time: '11:00', title: '糸島・桜井二見ヶ浦の夫婦岩＆海辺カフェランチ', type: 'sightseeing', cost: 6000, status: 'approved', authorId: 'm6', location: '桜井二見ヶ浦', memo: '白い鳥居と青い海のコントラストが最高でした。', photos: [] }
     ]
   },
   {
@@ -3209,7 +3276,7 @@ const initialPublicTrips = [
     title: '【広島・宮島＆尾道】厳島神社の大鳥居と坂の街・尾道レトロ散歩1泊2日',
     description: '世界遺産・宮島の海に浮かぶ大鳥居と揚げもみじ食べ歩き、2日目は映画の舞台のような坂道と猫の街・尾道で絶景ロープウェイと尾道ラーメンを味わった瀬戸内旅。',
     destination: '広島県', region: '中国・四国', authorId: 'm7', authorName: 'せとうちライダー', authorAvatar: MALE_AVATARS[4],
-    authorBio: '瀬戸内の穏やかな海と島旅が大好きです⛩️',
+    authorBio: '瀬戸内の穏やかな海と島旅が大好きです',
     likes: 298, views: 1520, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80',
@@ -3232,7 +3299,7 @@ const initialPublicTrips = [
     title: '【伊勢志摩】お伊勢参りとおかげ横丁食べ歩き＆英虞湾の絶景テラス旅',
     description: '2000年の歴史を誇る伊勢神宮（外宮・内宮）を正式参拝した後は、おかげ横丁で赤福と松阪牛グルメ！翌日は志摩の横山展望台でリアス海岸の絶景を訪ねた実録旅。',
     destination: '三重県', region: '関西', authorId: 'm8', authorName: 'みえ旅ガイド', authorAvatar: FEMALE_AVATARS[4],
-    authorBio: '伊勢志摩のパワースポットと海の幸を発信しています⛩️🦞',
+    authorBio: '伊勢志摩のパワースポットと海の幸を発信しています',
     likes: 315, views: 1610, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1528164344705-475426879c0d?auto=format&fit=crop&w=800&q=80',
@@ -3255,7 +3322,7 @@ const initialPublicTrips = [
     title: '【信州・軽井沢＆松本】森のベーカリー朝食と国宝・松本城＆城下町カフェ巡り',
     description: '緑に囲まれた軽井沢のテラスで高原モーニングを楽しんだあと、国宝・松本城と中町通り・縄手通りのクラフト雑貨＆名物信州そばを巡った爽やかな信州実録コース。',
     destination: '長野県', region: '中部', authorId: 'm9', authorName: '高原カフェ部', authorAvatar: FEMALE_AVATARS[1],
-    authorBio: '信州のカフェとパン屋さん巡りが趣味です🥐',
+    authorBio: '信州のカフェとパン屋さん巡りが趣味です',
     likes: 284, views: 1490, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=800&q=80',
@@ -3278,7 +3345,7 @@ const initialPublicTrips = [
     title: '【別府・由布院】地獄めぐりと金鱗湖の朝霧・由布岳を望む露天風呂と豊後牛旅',
     description: '日本一の湧出量を誇るおんせん県・大分！別府の地獄蒸し体験から、湯布院の湯の坪街道食べ歩き、金鱗湖の幻想的な朝霧まで九州屈指の温泉リゾートを巡った実録旅。',
     destination: '大分県', region: '九州・沖縄', authorId: 'm10', authorName: 'おんせん県めぐり', authorAvatar: MALE_AVATARS[0],
-    authorBio: '九州の秘湯・名湯を100ヶ所以上巡っています♨️',
+    authorBio: '九州の秘湯・名湯を100ヶ所以上巡っています',
     likes: 367, views: 1820, likedBy: [],
     covers: [
       'https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80',
@@ -3307,24 +3374,31 @@ const getTodayString = () => { const d = new Date(); return `${d.getFullYear()}-
 const safeParse = (key, fallback) => { try { const item = localStorage.getItem(key); return item ? JSON.parse(item) : fallback; } catch (e) { return fallback; } };
 
 // ==========================================
-// ★ Supabase クラウド共有エンジン（写真はクラウドに保存せずテキスト＆軽量アバターのみ同期）
+// ★ Supabase クラウド共有エンジン (shared_trips: id text, data jsonb, updated_at timestamptz)
 // ==========================================
+const DEFAULT_SUPABASE_URL =
+  readEnvVar('VITE_SUPABASE_URL') ||
+  readEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
+  'https://czllrscnwxjkpixthkgr.supabase.co';
+
+const DEFAULT_SUPABASE_KEY =
+  readEnvVar('VITE_SUPABASE_ANON_KEY') ||
+  readEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
+  'sb_publishable_iYog7EzdHXDJ97oh-hdJLQ_JfKLRd9v';
+
 const getSupabaseCredentials = () => {
   try {
     const savedLocal = safeParse('tabitabi_supabase_Runtime_config', null);
     const rawUrl =
       savedLocal?.url ||
-      readEnvVar('VITE_SUPABASE_URL') ||
-      readEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
+      DEFAULT_SUPABASE_URL ||
       (typeof window !== 'undefined' && window.__SUPABASE_URL__) ||
       '';
     const rawKey =
       savedLocal?.key ||
-      readEnvVar('VITE_SUPABASE_ANON_KEY') ||
-      readEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
+      DEFAULT_SUPABASE_KEY ||
       (typeof window !== 'undefined' && window.__SUPABASE_ANON_KEY__) ||
       '';
-    // 末尾の /rest/v1/ やスラッシュ・クォーテーション・空白をすべて自動で取り除く
     const url = String(rawUrl)
       .trim()
       .replace(/^['"]|['"]$/g, '')
@@ -3333,12 +3407,254 @@ const getSupabaseCredentials = () => {
     const key = String(rawKey).trim().replace(/^['"]|['"]$/g, '');
     return { url, key, enabled: Boolean(url && key), isRuntimeConfigured: Boolean(savedLocal?.url && savedLocal?.key) };
   } catch (e) {
-    return { url: '', key: '', enabled: false, isRuntimeConfigured: false };
+    return {
+      url: 'https://czllrscnwxjkpixthkgr.supabase.co',
+      key: 'sb_publishable_iYog7EzdHXDJ97oh-hdJLQ_JfKLRd9v',
+      enabled: true,
+      isRuntimeConfigured: false
+    };
   }
 };
 
+// ★ IDと招待コードの正規化（"TABI-LTDRAMLC" でも "LTDRAMLC" でも両方 "TABI-XXXX" 形式に統一）
+export const normalizeTripShareId = (rawInput = '') => {
+  const str = String(rawInput || '')
+    .toUpperCase()
+    .replace(/[ー−―‐]/g, '-')
+    .trim();
+  const match = str.match(/TABI-[A-Z0-9]{4,16}/);
+  if (match) return match[0];
+  const cleaned = str.replace(/[^A-Z0-9-]/g, '');
+  if (!cleaned) return '';
+  return cleaned.startsWith('TABI-') ? cleaned : `TABI-${cleaned}`;
+};
+
+// LINEの招待文まるごとペーストやハイフンなし入力から「TABI-XXXXXXXX」を抜き出す互換ヘルパー
+const normalizeInviteCode = (rawInput) => normalizeTripShareId(rawInput);
+
+// ★ 重要：Supabaseの新しい `sb_publishable_...` キーは JWT ではないため、
+// eyJ... で始まる従来キーの時のみ Authorization ヘッダーを付与し、両方のキー形式に完全対応させます。
+const buildSupabaseHeaders = (key, extraHeaders = {}) => {
+  const headers = {
+    apikey: key,
+    ...extraHeaders
+  };
+  if (key && key.startsWith('eyJ')) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+  return headers;
+};
+
+// クラウドに保存するしおりデータから「思い出写真（photos）」を除外し、メンバーのアバターは軽量サイズで残すサニタイズ関数
+const stripTripPhotosForCloud = (trip) => {
+  if (!trip || typeof trip !== 'object') return trip;
+  const cleanEvents = (trip.events || []).map(({ photos, ...restEvent }) => ({
+    ...restEvent,
+    photos: []
+  }));
+  const cleanMembers = (trip.members || []).map((m) => ({
+    id: m.id,
+    name: m.name,
+    color: m.color || '#7A9D8C',
+    avatar: m.avatar && String(m.avatar).length < 45000 ? m.avatar : ''
+  }));
+  const { photos, ...restTrip } = trip;
+  return {
+    ...restTrip,
+    members: cleanMembers,
+    events: cleanEvents,
+    photos: []
+  };
+};
+
+// クラウドから同期した際、自分のスマホ内に保存されている思い出写真を消さずにマージする関数
+const mergeCloudTripWithLocalPhotos = (cloudTrip, localTrip) => {
+  if (!localTrip) return cloudTrip;
+  const localEventsMap = new Map((localTrip.events || []).map((ev) => [ev.id, ev]));
+  const mergedEvents = (cloudTrip.events || []).map((cEv) => {
+    const lEv = localEventsMap.get(cEv.id);
+    return {
+      ...cEv,
+      photos: Array.isArray(lEv?.photos) ? lEv.photos : []
+    };
+  });
+  return {
+    ...cloudTrip,
+    events: mergedEvents,
+    photos: Array.isArray(localTrip.photos) ? localTrip.photos : []
+  };
+};
+
+// ★ 1. しおりを Supabase (shared_trips: id text, data jsonb, updated_at timestamptz) に保存・更新 (UPSERT)
+export const saveTripToSupabase = async (trip) => {
+  if (!trip || typeof trip !== 'object') {
+    return { ok: false, error: 'しおりデータがありません' };
+  }
+  const { url, key, enabled } = getSupabaseCredentials();
+  const baseCode =
+    (String(trip.id || '').toUpperCase().startsWith('TABI-') ? trip.id : null) ||
+    trip.shareCode ||
+    generateTripCode();
+  const canonicalId = normalizeTripShareId(baseCode);
+  const shortCode = canonicalId.replace(/^TABI-/, '');
+  const nowIso = new Date().toISOString();
+
+  const syncedTrip = stripTripPhotosForCloud({
+    ...trip,
+    id: canonicalId,
+    shareCode: canonicalId,
+    shortShareCode: shortCode,
+    isShared: true,
+    updatedAt: nowIso
+  });
+
+  let supabaseOk = false;
+  let lastErrorText = '';
+
+  if (enabled) {
+    try {
+      const res = await fetch(`${url}/rest/v1/shared_trips?on_conflict=id`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders(key, {
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=representation'
+        }),
+        body: JSON.stringify({
+          id: canonicalId,
+          data: syncedTrip,
+          updated_at: nowIso
+        })
+      });
+
+      if (res.ok) {
+        supabaseOk = true;
+      } else {
+        lastErrorText = await res.text().catch(() => `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      lastErrorText = err?.message || 'Network error';
+    }
+  }
+
+  // バックアップKVにも同時保存
+  let backupOk = false;
+  try {
+    const bucketKey = `tabitabi_trip_v1_${canonicalId}`;
+    const resFallback = await fetch(`https://kvdb.io/6Wa4M8fG5v2pQ9xR3nL7kJ/${encodeURIComponent(bucketKey)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(syncedTrip)
+    });
+    if (resFallback.ok) backupOk = true;
+  } catch (e) {}
+
+  if (supabaseOk || backupOk) {
+    return { ok: true, supabaseOk, backupOk, trip: syncedTrip, shareId: canonicalId };
+  }
+  return { ok: false, error: lastErrorText || 'クラウド保存に失敗しました' };
+};
+
+// ★ 2. 共有コードまたはURLパラメータからしおりを取得 (SELECT)
+export const fetchTripFromSupabase = async (inputCode) => {
+  const raw = String(inputCode || '').trim().toUpperCase();
+  if (!raw) return { ok: false, error: 'コードを入力してください' };
+
+  const withPrefix = normalizeTripShareId(raw);          // 例: "TABI-LTDRAMLC"
+  const withoutPrefix = withPrefix.replace(/^TABI-/, ''); // 例: "LTDRAMLC"
+  const { url, key, enabled } = getSupabaseCredentials();
+
+  const extractTripFromRow = (row) => {
+    if (!row || typeof row !== 'object') return null;
+    const rawData = row.data || row.trip_data || row.trip || null;
+    if (!rawData || typeof rawData !== 'object') return null;
+    const resolvedId = normalizeTripShareId(row.id || rawData.id || withPrefix);
+    return {
+      ...rawData,
+      id: resolvedId,
+      shareCode: resolvedId,
+      shortShareCode: resolvedId.replace(/^TABI-/, ''),
+      isShared: true,
+      isSoloTrip: false
+    };
+  };
+
+  if (enabled) {
+    // ① まず or クエリで id または data->>shareCode が一致するレコードを一括検索
+    try {
+      const orQuery = `or=(id.eq.${encodeURIComponent(withPrefix)},id.eq.${encodeURIComponent(withoutPrefix)},data->>shareCode.eq.${encodeURIComponent(withPrefix)},data->>shareCode.eq.${encodeURIComponent(withoutPrefix)})&limit=1`;
+      const res = await fetch(`${url}/rest/v1/shared_trips?${orQuery}`, {
+        method: 'GET',
+        headers: buildSupabaseHeaders(key)
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const loaded = extractTripFromRow(rows[0]);
+          if (loaded) return { ok: true, trip: loaded };
+        }
+      }
+    } catch (e) {}
+
+    // ② シンプルな id=eq. クエリでのフォールバック検索
+    for (const candidateId of [withPrefix, withoutPrefix]) {
+      try {
+        const res = await fetch(
+          `${url}/rest/v1/shared_trips?id=eq.${encodeURIComponent(candidateId)}&select=*&limit=1`,
+          {
+            method: 'GET',
+            headers: buildSupabaseHeaders(key)
+          }
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            const loaded = extractTripFromRow(rows[0]);
+            if (loaded) return { ok: true, trip: loaded };
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  // ③ バックアップKVからのフォールバック取得
+  try {
+    const bucketKey = `tabitabi_trip_v1_${withPrefix}`;
+    const resFallback = await fetch(`https://kvdb.io/6Wa4M8fG5v2pQ9xR3nL7kJ/${encodeURIComponent(bucketKey)}`);
+    if (resFallback.ok) {
+      const data = await resFallback.json();
+      if (data && data.id) {
+        const resolvedId = normalizeTripShareId(data.id);
+        return {
+          ok: true,
+          trip: {
+            ...data,
+            id: resolvedId,
+            shareCode: resolvedId,
+            isShared: true,
+            isSoloTrip: false
+          }
+        };
+      }
+    }
+  } catch (e) {}
+
+  return { ok: false, error: '該当する共有しおりが見つかりませんでした' };
+};
+
+// 既存関数との互換ラッパー
+const syncSharedTripToCloud = async (trip) => {
+  if (!trip || trip.isSoloTrip) {
+    return { ok: false, reason: 'SOLO_TRIP' };
+  }
+  return await saveTripToSupabase(trip);
+};
+
+const fetchSharedTripFromCloud = async (tripCode) => {
+  const res = await fetchTripFromSupabase(tripCode);
+  return res.ok ? res.trip : null;
+};
+
 // ★ 公式モデルコース（みんなの旅の投稿一覧）を既存の shared_trips テーブルの専用レコード（TABI-OFFICIAL-FEED）に一括保存＆取得する関数
-// これによりSupabase側で新しく別テーブルを作らなくても、今ある shared_trips テーブルだけで公式ネット配信が即座に動きます！
 const OFFICIAL_FEED_CLOUD_CODE = 'TABI-OFFICIAL-FEED';
 
 const buildAllOfficialSeedPosts = () => {
@@ -3402,67 +3718,45 @@ const uploadOfficialFeedToCloud = async (postsList = null) => {
   };
   const nowIso = new Date().toISOString();
 
-  // shared_trips テーブルの3つのカラムパターンすべてに対応して確実に保存
-  const attempts = [
-    {
-      query: 'on_conflict=code',
-      body: {
-        code: OFFICIAL_FEED_CLOUD_CODE,
-        invite_code: OFFICIAL_FEED_CLOUD_CODE,
-        share_code: OFFICIAL_FEED_CLOUD_CODE,
-        data: payload,
-        trip_data: payload,
-        trip: payload,
-        updated_at: nowIso
-      }
-    },
-    {
-      query: 'on_conflict=invite_code',
-      body: {
-        invite_code: OFFICIAL_FEED_CLOUD_CODE,
-        trip_data: payload,
-        updated_at: nowIso
-      }
-    },
-    {
-      query: 'on_conflict=id',
-      body: {
+  try {
+    const res = await fetch(`${url}/rest/v1/shared_trips?on_conflict=id`, {
+      method: 'POST',
+      headers: buildSupabaseHeaders(key, {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      }),
+      body: JSON.stringify({
         id: OFFICIAL_FEED_CLOUD_CODE,
         data: payload,
         updated_at: nowIso
-      }
+      })
+    });
+    if (res.ok) {
+      return { ok: true, count: feedToUpload.length, posts: feedToUpload };
     }
-  ];
+  } catch (e) {}
 
-  for (const attempt of attempts) {
-    try {
-      const res = await fetch(`${url}/rest/v1/shared_trips?${attempt.query}`, {
-        method: 'POST',
-        headers: buildSupabaseHeaders(key, {
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal'
-        }),
-        body: JSON.stringify(attempt.body)
-      });
-      if (res.ok) {
-        return { ok: true, count: feedToUpload.length, posts: feedToUpload };
-      }
-    } catch (e) {
-      // 次のパターンを試行
-    }
-  }
   return { ok: false, reason: 'UPLOAD_FAILED', count: 0 };
 };
 
 // クラウド（Supabase）から公式投稿一覧を取得する関数（まだクラウドに無い場合は初回自動で全件アップロードして初期化）
 const fetchOfficialFeedFromSupabase = async (autoSeedIfEmpty = true) => {
-  const { enabled } = getSupabaseCredentials();
+  const { url, key, enabled } = getSupabaseCredentials();
   if (!enabled || !ENABLE_OFFICIAL_CLOUD_SNS) return null;
 
-  const rowData = await fetchSharedTripFromCloud(OFFICIAL_FEED_CLOUD_CODE);
-  if (rowData && Array.isArray(rowData.posts) && rowData.posts.length > 0) {
-    return rowData.posts;
-  }
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/shared_trips?id=eq.${encodeURIComponent(OFFICIAL_FEED_CLOUD_CODE)}&select=*&limit=1`,
+      { headers: buildSupabaseHeaders(key) }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      const rowData = rows?.[0]?.data;
+      if (rowData && Array.isArray(rowData.posts) && rowData.posts.length > 0) {
+        return rowData.posts;
+      }
+    }
+  } catch (e) {}
 
   if (autoSeedIfEmpty) {
     const seeded = await uploadOfficialFeedToCloud();
@@ -3470,217 +3764,6 @@ const fetchOfficialFeedFromSupabase = async (autoSeedIfEmpty = true) => {
       return seeded.posts;
     }
   }
-  return null;
-};
-
-// ★ 重要：Supabaseの新しい `sb_publishable_...` キーは JWT ではないため、
-// Authorization: Bearer にそのまま入れると 401 Invalid JWT エラーで弾かれます。
-// eyJ... で始まる従来キーの時のみ Authorization ヘッダーを付与し、両方のキー形式に完全対応させます。
-const buildSupabaseHeaders = (key, extraHeaders = {}) => {
-  const headers = {
-    apikey: key,
-    ...extraHeaders
-  };
-  if (key && key.startsWith('eyJ')) {
-    headers.Authorization = `Bearer ${key}`;
-  }
-  return headers;
-};
-
-// LINEの招待文まるごとペーストや全角ハイフン・空白混入から「TABI-XXXXXXXX」を正確に抜き出すヘルパー
-const normalizeInviteCode = (rawInput) => {
-  const str = String(rawInput || '')
-    .toUpperCase()
-    .replace(/[ー−―‐]/g, '-')
-    .trim();
-  const match = str.match(/TABI-[A-Z0-9]{4,12}/);
-  if (match) return match[0];
-  return str.replace(/\s+/g, '');
-};
-
-// クラウドに保存するしおりデータから「思い出写真（photos）」を除外し、メンバーのアバターは軽量サイズで残すサニタイズ関数
-const stripTripPhotosForCloud = (trip) => {
-  if (!trip || typeof trip !== 'object') return trip;
-  const cleanEvents = (trip.events || []).map(({ photos, ...restEvent }) => ({
-    ...restEvent,
-    photos: []
-  }));
-  const cleanMembers = (trip.members || []).map((m) => ({
-    id: m.id,
-    name: m.name,
-    color: m.color || '#7A9D8C',
-    avatar: m.avatar && String(m.avatar).length < 45000 ? m.avatar : ''
-  }));
-  const { photos, ...restTrip } = trip;
-  return {
-    ...restTrip,
-    members: cleanMembers,
-    events: cleanEvents,
-    photos: []
-  };
-};
-
-// クラウドから同期した際、自分のスマホ内に保存されている思い出写真を消さずにマージする関数
-const mergeCloudTripWithLocalPhotos = (cloudTrip, localTrip) => {
-  if (!localTrip) return cloudTrip;
-  const localEventsMap = new Map((localTrip.events || []).map((ev) => [ev.id, ev]));
-  const mergedEvents = (cloudTrip.events || []).map((cEv) => {
-    const lEv = localEventsMap.get(cEv.id);
-    return {
-      ...cEv,
-      photos: Array.isArray(lEv?.photos) ? lEv.photos : []
-    };
-  });
-  return {
-    ...cloudTrip,
-    events: mergedEvents,
-    photos: Array.isArray(localTrip.photos) ? localTrip.photos : []
-  };
-};
-
-const syncSharedTripToCloud = async (trip) => {
-  const { url, key, enabled } = getSupabaseCredentials();
-  if (!trip || trip.isSoloTrip) {
-    return { ok: false, reason: 'SOLO_TRIP' };
-  }
-  const cleanCode = normalizeInviteCode(trip.id);
-  const payload = stripTripPhotosForCloud({ ...trip, id: cleanCode });
-  const nowIso = new Date().toISOString();
-
-  if (enabled) {
-    // パターン1：万能テーブル（idがuuidで、code / invite_code / share_code / data / trip_data カラムがある場合）
-    try {
-      const resUniversal = await fetch(`${url}/rest/v1/shared_trips?on_conflict=code`, {
-        method: 'POST',
-        headers: buildSupabaseHeaders(key, {
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal'
-        }),
-        body: JSON.stringify({
-          code: cleanCode,
-          invite_code: cleanCode,
-          share_code: cleanCode,
-          data: payload,
-          trip_data: payload,
-          trip: payload,
-          updated_at: nowIso
-        })
-      });
-      if (resUniversal.ok) {
-        return { ok: true };
-      }
-    } catch (e) {
-      // フォールバックへ進む
-    }
-
-    // パターン2：invite_code のみがあるテーブル構造の場合
-    try {
-      const resInvite = await fetch(`${url}/rest/v1/shared_trips?on_conflict=invite_code`, {
-        method: 'POST',
-        headers: buildSupabaseHeaders(key, {
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal'
-        }),
-        body: JSON.stringify({
-          invite_code: cleanCode,
-          trip_data: payload,
-          updated_at: nowIso
-        })
-      });
-      if (resInvite.ok) {
-        return { ok: true };
-      }
-    } catch (e) {
-      // フォールバックへ進む
-    }
-
-    // パターン3：id カラムが text 型で主キーになっているテーブル構造の場合
-    try {
-      const resIdText = await fetch(`${url}/rest/v1/shared_trips?on_conflict=id`, {
-        method: 'POST',
-        headers: buildSupabaseHeaders(key, {
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal'
-        }),
-        body: JSON.stringify({
-          id: cleanCode,
-          data: payload,
-          updated_at: nowIso
-        })
-      });
-      if (resIdText.ok) {
-        return { ok: true };
-      }
-    } catch (e) {
-      // フォールバックへ進む
-    }
-  }
-
-  // 環境変数が未設定のプレビュー画面等でも招待コード共有ができるよう公開KVSへフォールバック保存
-  try {
-    const bucketKey = `tabitabi_trip_v1_${cleanCode}`;
-    const resFallback = await fetch(`https://kvdb.io/6Wa4M8fG5v2pQ9xR3nL7kJ/${encodeURIComponent(bucketKey)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (resFallback.ok) {
-      return { ok: true, fallback: true };
-    }
-  } catch (e) {}
-
-  return { ok: false, reason: 'SYNC_FAILED' };
-};
-
-const fetchSharedTripFromCloud = async (tripCode) => {
-  const { url, key, enabled } = getSupabaseCredentials();
-  const cleanCode = normalizeInviteCode(tripCode);
-  if (!cleanCode) return null;
-
-  const extractTripDataFromRow = (row) => {
-    if (!row || typeof row !== 'object') return null;
-    return row.data || row.trip_data || row.trip || null;
-  };
-
-  if (enabled) {
-    // 1) まず code / invite_code / share_code カラムのいずれかで検索（idがuuid型でもエラーにならない安全なクエリ）
-    const candidateQueries = [
-      `code=eq.${encodeURIComponent(cleanCode)}`,
-      `invite_code=eq.${encodeURIComponent(cleanCode)}`,
-      `share_code=eq.${encodeURIComponent(cleanCode)}`,
-      `id=eq.${encodeURIComponent(cleanCode)}`
-    ];
-
-    for (const queryFilter of candidateQueries) {
-      try {
-        const res = await fetch(
-          `${url}/rest/v1/shared_trips?${queryFilter}&select=*&limit=1`,
-          {
-            headers: buildSupabaseHeaders(key)
-          }
-        );
-        if (!res.ok) continue;
-        const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          const extracted = extractTripDataFromRow(rows[0]);
-          if (extracted) return extracted;
-        }
-      } catch (e) {
-        // 次のカラム候補を試す
-      }
-    }
-  }
-
-  // 2) 環境変数が無いプレビュー環境等のフォールバックKVSから取得
-  try {
-    const bucketKey = `tabitabi_trip_v1_${cleanCode}`;
-    const resFallback = await fetch(`https://kvdb.io/6Wa4M8fG5v2pQ9xR3nL7kJ/${encodeURIComponent(bucketKey)}`);
-    if (resFallback.ok) {
-      const data = await resFallback.json();
-      if (data && data.id) return data;
-    }
-  } catch (e) {}
-
   return null;
 };
 
@@ -4368,6 +4451,25 @@ const setCachedAiResponse = (cacheKey, data) => {
   } catch (e) {}
 };
 
+// ==========================================
+// ★ 収益化：AI回数復活リワード動画広告の設定（Web版AdSense / アプリ版AdMob / 旅行アフィリエイトPR枠にワンタッチ切替）
+// ==========================================
+const REWARD_AD_CONFIG = {
+  // 'affiliate_pr': 審査不要・即日使える旅行PRタイアップ枠（楽天トラベル・じゃらん等のアフィリエイトリンク併用可）
+  // 'adsense': Web版 Google AdSense H5 リワード広告（window.adBreak）
+  // 'admob': iOS/Androidアプリ版 Google AdMob リワード動画広告（Capacitor AdMob プラグイン連携）
+  mode: readEnvVar('VITE_REWARD_AD_MODE') || 'affiliate_pr',
+  durationSeconds: 15, // PR表示時のカウントダウン秒数（15秒視聴でAIが+3回復活）
+  admobRewardUnitIdIos: readEnvVar('VITE_ADMOB_REWARD_ID_IOS') || 'ca-app-pub-3940256099942544/1712485313',
+  admobRewardUnitIdAndroid: readEnvVar('VITE_ADMOB_REWARD_ID_ANDROID') || 'ca-app-pub-3940256099942544/5224354917',
+  sponsorTitle: 'たびたび × 楽天トラベル お得なクーポン・宿特集',
+  sponsorDescription: 'しおりを作ったら宿・レンタカーの割引クーポンをチェック！全国の人気温泉宿・ホテル予約はこちら',
+  sponsorCtaLabel: '楽天トラベルでお得な宿・クーポンを見る',
+  sponsorUrl: readEnvVar('VITE_REWARD_SPONSOR_URL') || 'https://a.r10.to/hP0UYz',
+  sponsorBannerHref: 'https://hb.afl.rakuten.co.jp/hsc/5985cdd4.87a9f45f.37cb8be1.b24318b2/?link_type=pict&ut=eyJwYWdlIjoic2hvcCIsInR5cGUiOiJwaWN0IiwiY29sIjoxLCJjYXQiOiIxIiwiYmFuIjoyMTg4NjQ3LCJhbXAiOmZhbHNlfQ%3D%3D',
+  sponsorBannerImgUrl: 'https://hbb.afl.rakuten.co.jp/hsb/5985cdd4.87a9f45f.37cb8be1.b24318b2/?me_id=2100001&me_adv_id=2188647&t=pict'
+};
+
 // Google Gemini API 構造化出力呼び出し（本番はサーバー側の /api/gemini 窓口を経由し、プレビューテスト時は条件反映エンジンへスムーズに連携）
 const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSchema }) => {
   const response = await fetch('/api/gemini', {
@@ -4395,11 +4497,65 @@ const callGoogleGeminiStructured = async ({ systemPrompt, userPrompt, responseSc
   return JSON.parse(cleaned);
 };
 
-// 🎬 動画広告視聴でAI利用回数を＋3回増やすリワード広告モーダル
+// 🎬 動画広告視聴でAI利用回数を＋3回増やすリワード広告モーダル（AdMob / AdSense / 旅行PRアフィリエイト対応）
 function RewardVideoAdModal({ onClose, onCompleteReward }) {
   useLockBodyScroll(true);
-  const [secondsLeft, setSecondsLeft] = useState(3);
+  const totalSec = REWARD_AD_CONFIG.durationSeconds || 5;
+  const [secondsLeft, setSecondsLeft] = useState(totalSec);
   const [completed, setCompleted] = useState(false);
+  const [adSdkStatus, setAdSdkStatus] = useState('playing'); // 'playing' | 'rewarded' | 'skipped'
+
+  // ネイティブAdMob または Web AdSense H5 SDK が入っている場合は公式リワード動画広告を呼び出し、無ければカウントダウンPR動画を再生
+  useEffect(() => {
+    let cancelled = false;
+
+    const tryTriggerRealAdSdk = async () => {
+      try {
+        // 1) iOS / Android アプリ版（Capacitor AdMob プラグインが存在する場合）
+        const admobPlugin = typeof window !== 'undefined' && window.Capacitor?.Plugins?.AdMob;
+        if (REWARD_AD_CONFIG.mode === 'admob' && admobPlugin) {
+          const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+          const adId = isIos ? REWARD_AD_CONFIG.admobRewardUnitIdIos : REWARD_AD_CONFIG.admobRewardUnitIdAndroid;
+          await admobPlugin.prepareRewardVideoAd({ adId, isTesting: adId.includes('3940256099942544') });
+          const rewardItem = await admobPlugin.showRewardVideoAd();
+          if (!cancelled && rewardItem) {
+            setAdSdkStatus('rewarded');
+            setSecondsLeft(0);
+            setCompleted(true);
+            return;
+          }
+        }
+
+        // 2) Web版 Google AdSense H5 Games Ads (window.adBreak が存在する場合)
+        if (REWARD_AD_CONFIG.mode === 'adsense' && typeof window !== 'undefined' && typeof window.adBreak === 'function') {
+          window.adBreak({
+            type: 'reward',
+            name: 'ai_quota_refill',
+            beforeReward: (showAdFn) => showAdFn(),
+            adViewed: () => {
+              if (!cancelled) {
+                setAdSdkStatus('rewarded');
+                setSecondsLeft(0);
+                setCompleted(true);
+              }
+            },
+            adDismissed: () => {
+              if (!cancelled) {
+                setAdSdkStatus('skipped');
+              }
+            }
+          });
+        }
+      } catch (e) {
+        // SDK未導入時や広告在庫切れ時はそのまま内蔵PRタイマーで救済する
+      }
+    };
+
+    tryTriggerRealAdSdk();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (secondsLeft <= 0) {
@@ -4410,23 +4566,86 @@ function RewardVideoAdModal({ onClose, onCompleteReward }) {
     return () => clearTimeout(timer);
   }, [secondsLeft]);
 
+  const progressPct = Math.min(100, Math.round(((totalSec - secondsLeft) / totalSec) * 100));
+
   return (
     <div className="fixed inset-0 bg-black/80 z-[320] flex justify-center items-center p-4 animate-in fade-in" onClick={completed ? onClose : undefined}>
-      <div className="bg-stone-900 text-white w-full max-w-sm rounded-[32px] p-6 shadow-2xl border border-stone-700 text-center space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div className="bg-stone-900 text-white w-full max-w-sm rounded-[32px] p-5 shadow-2xl border border-stone-700 text-center space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center text-[11px] font-bold text-stone-400">
           <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">
-            リワード動画広告
+            スポンサー動画広告（AI回数回復）
           </span>
-          <span>{completed ? '視聴完了！' : `あと ${secondsLeft} 秒`}</span>
+          <div className="flex items-center gap-2">
+            <span>{completed ? '視聴完了！' : `あと ${secondsLeft} 秒`}</span>
+            {!completed && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-[10px] text-stone-500 hover:text-stone-300 underline cursor-pointer"
+                title="途中で閉じると回数は回復しません"
+              >
+                スキップ(報酬なし)
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="py-6 px-4 rounded-2xl bg-gradient-to-br from-stone-800 to-stone-950 border border-stone-700/80 space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center mx-auto">
-            <Sparkles size={24} />
+        {/* 動画・PRスクリーン枠 */}
+        <div className="py-5 px-4 rounded-2xl bg-gradient-to-br from-stone-800 via-stone-900 to-stone-950 border border-stone-700/80 space-y-3 relative overflow-hidden">
+          <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center mx-auto shadow-inner">
+            <Sparkles size={24} className={!completed ? 'animate-pulse' : ''} />
           </div>
-          <p className="text-sm font-extrabold text-white">たびたび プレミアムガイド</p>
-          <p className="text-xs text-stone-400 leading-relaxed">
-            動画の視聴が完了すると、本日のAIプラン生成・相談回数が <strong className="text-amber-300">+{REWARD_AD_BONUS_COUNT}回</strong> 復活します！
+          <div className="space-y-1">
+            <span className="text-[9px] font-extrabold tracking-widest uppercase text-amber-300/90 bg-amber-400/10 px-2 py-0.5 rounded">
+              SPECIAL SPONSOR PR
+            </span>
+            <p className="text-sm font-extrabold text-white leading-snug">
+              {REWARD_AD_CONFIG.sponsorTitle}
+            </p>
+            <p className="text-xs text-stone-300 leading-relaxed">
+              {REWARD_AD_CONFIG.sponsorDescription}
+            </p>
+          </div>
+
+          {/* 楽天トラベル公式バナー画像（アフィリエイト計測タグ付き） */}
+          {REWARD_AD_CONFIG.sponsorBannerImgUrl && (
+            <div className="pt-1 flex justify-center">
+              <a
+                href={REWARD_AD_CONFIG.sponsorBannerHref || REWARD_AD_CONFIG.sponsorUrl}
+                target="_blank"
+                rel="nofollow sponsored noopener noreferrer"
+                className="inline-block rounded-xl overflow-hidden bg-white p-1.5 shadow-md hover:scale-[1.02] transition-transform max-w-full"
+              >
+                <img
+                  src={REWARD_AD_CONFIG.sponsorBannerImgUrl}
+                  alt="Rakuten Travel"
+                  className="max-h-28 w-auto max-w-full object-contain mx-auto rounded-lg"
+                />
+              </a>
+            </div>
+          )}
+
+          {REWARD_AD_CONFIG.sponsorUrl && (
+            <a
+              href={REWARD_AD_CONFIG.sponsorUrl}
+              target="_blank"
+              rel="nofollow sponsored noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#BF0000] hover:bg-[#a30000] text-white text-xs font-extrabold shadow-sm transition-all active:scale-95"
+            >
+              <span>{REWARD_AD_CONFIG.sponsorCtaLabel}</span>
+              <ExternalLink size={12} />
+            </a>
+          )}
+
+          {/* 再生プログレスバー */}
+          <div className="w-full h-1.5 bg-stone-800 rounded-full overflow-hidden mt-2">
+            <div
+              className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-700"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-stone-400">
+            視聴が完了すると、本日のAIプラン生成・相談回数が <strong className="text-amber-300">+{REWARD_AD_BONUS_COUNT}回</strong> 復活します！
           </p>
         </div>
 
@@ -4438,13 +4657,14 @@ function RewardVideoAdModal({ onClose, onCompleteReward }) {
               if (onCompleteReward) onCompleteReward(nextStatus);
               onClose();
             }}
-            className="w-full py-3 bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold rounded-2xl text-xs shadow-md transition-all cursor-pointer"
+            className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold rounded-2xl text-xs sm:text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
           >
-            +{REWARD_AD_BONUS_COUNT}回を受け取って続ける
+            <Check size={16} strokeWidth={3} />
+            <span>+{REWARD_AD_BONUS_COUNT}回を受け取ってAIを続ける</span>
           </button>
         ) : (
           <div className="w-full py-3 bg-stone-800 text-stone-400 font-bold rounded-2xl text-xs">
-            広告を再生中... ({secondsLeft})
+            広告を再生中... あと {secondsLeft} 秒お待ちください
           </div>
         )}
       </div>
@@ -4626,7 +4846,7 @@ const AUTO_SEASONAL_DESTINATIONS = [
     loc3: 'bills 七里ヶ浜',
     spot4: '江の島シーキャンドル＆とびっちょ本店で湘南しらす丼ディナー',
     loc4: 'しらす問屋 とびっちょ 本店',
-    dinnerNote: '【🍽️夕食提案：外食がおすすめ】江ノ島・鎌倉エリアは海沿いの名店が充実しているため、ホテルは素泊まり・朝食付きにして外でしらす料理や海鮮ディナーを楽しむのが正解！',
+    dinnerNote: '【夕食提案：外食がおすすめ】江ノ島・鎌倉エリアは海沿いの名店が充実しているため、ホテルは素泊まり・朝食付きにして外でしらす料理や海鮮ディナーを楽しむのが正解！',
     cover: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80',
     subPhoto: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=800&q=80'
   },
@@ -4641,7 +4861,7 @@ const AUTO_SEASONAL_DESTINATIONS = [
     loc3: '華厳ノ滝',
     spot4: '鬼怒川温泉 あさや（空中庭園露天風呂＆宿の豪華ビュッフェ夕食）',
     loc4: '鬼怒川温泉 あさや',
-    dinnerNote: '【🍽️夕食提案：宿での夕食（1泊2食付き）が断然おすすめ】鬼怒川温泉エリアは夜になると周辺の飲食店が早く閉まるため、宿自慢の和洋中ビュッフェや会席料理を予約しておくのが安心です！',
+    dinnerNote: '【夕食提案：宿での夕食（1泊2食付き）が断然おすすめ】鬼怒川温泉エリアは夜になると周辺の飲食店が早く閉まるため、宿自慢の和洋中ビュッフェや会席料理を予約しておくのが安心です！',
     cover: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?auto=format&fit=crop&w=800&q=80',
     subPhoto: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80'
   },
@@ -4656,7 +4876,7 @@ const AUTO_SEASONAL_DESTINATIONS = [
     loc3: '味蔵天国',
     spot4: '高山グリーンホテル（天然温泉＆飛騨物産館）',
     loc4: '高山グリーンホテル',
-    dinnerNote: '【🍽️夕食提案：宿の飛騨牛会席 または 高山駅前の焼肉名店へ外食】飛騨牛をガッツリ焼肉で味わうなら高山駅近くの「味蔵天国」へ外食、ゆっくり温泉と楽しむなら宿の飛騨牛朴葉みそ会席がおすすめ！',
+    dinnerNote: '【夕食提案：宿の飛騨牛会席 または 高山駅前の焼肉名店へ外食】飛騨牛をガッツリ焼肉で味わうなら高山駅近くの「味蔵天国」へ外食、ゆっくり温泉と楽しむなら宿の飛騨牛朴葉みそ会席がおすすめ！',
     cover: 'https://images.unsplash.com/photo-1545569341-9eb8b30979d9?auto=format&fit=crop&w=800&q=80',
     subPhoto: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80'
   },
@@ -4671,7 +4891,7 @@ const AUTO_SEASONAL_DESTINATIONS = [
     loc3: 'エンジェルロード',
     spot4: '骨付鳥 一鶴 高松店（名物・スパイシーな骨付鳥ディナー）＆高松市内ホテル泊',
     loc4: '骨付鳥 一鶴 高松店',
-    dinnerNote: '【🍽️夕食提案：ホテルは朝食のみにして外食がおすすめ】高松夜は香川名物「骨付鳥 一鶴」や瀬戸内の海鮮居酒屋が徒歩圏内に揃っているため、外に食べに行くのが大正解です！',
+    dinnerNote: '【夕食提案：ホテルは朝食のみにして外食がおすすめ】高松夜は香川名物「骨付鳥 一鶴」や瀬戸内の海鮮居酒屋が徒歩圏内に揃っているため、外に食べに行くのが大正解です！',
     cover: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
     subPhoto: 'https://images.unsplash.com/photo-1559314809-0d155014e29e?auto=format&fit=crop&w=800&q=80'
   },
@@ -4686,7 +4906,7 @@ const AUTO_SEASONAL_DESTINATIONS = [
     loc3: '瑞巌寺',
     spot4: '旨味太助（元祖・炭火焼き厚切り牛たんディナー）＆仙台市内温泉付きホテル',
     loc4: '旨味太助',
-    dinnerNote: '【🍽️夕食提案：外食で本場の炭火焼き牛たんへ！】仙台駅・国分町周辺には「旨味太助」や「閣」など牛たんの名店が集まっているため、夜は外食にして焼きたてを味わうのがおすすめです。',
+    dinnerNote: '【夕食提案：外食で本場の炭火焼き牛たんへ！】仙台駅・国分町周辺には「旨味太助」や「閣」など牛たんの名店が集まっているため、夜は外食にして焼きたてを味わうのがおすすめです。',
     cover: 'https://images.unsplash.com/photo-1542931287-023b922fa89b?auto=format&fit=crop&w=800&q=80',
     subPhoto: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=800&q=80'
   }
@@ -5872,7 +6092,7 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
             )}
           </div>
 
-          {/* 3. 自宅・最寄り駅設定（別ページを開かず、すぐ下に駅候補リストを展開） */}
+          {/* 3. 普段の出発地点（最寄り駅・エリア） */}
           <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2 shrink-0">
             <div className="flex items-center justify-between pl-0.5">
               <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1">
@@ -5880,13 +6100,6 @@ function BetaWelcomeSetupScreen({ initialUser, onComplete }) {
                 <span>③ 普段の出発地点（最寄り駅・エリア）</span>
               </label>
               <span className="text-[10px] font-bold text-stone-400">任意・変更可</span>
-            </div>
-
-            <div className="px-2.5 py-1 bg-emerald-50/90 border border-emerald-200/90 rounded-xl flex items-center gap-1.5">
-              <Info size={12} className="text-emerald-700 shrink-0" />
-              <p className="text-[10px] font-extrabold text-emerald-900 leading-snug">
-                最寄り駅・居住地は他のユーザーには一切公開されません。
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-1.5">
@@ -6051,6 +6264,56 @@ function TabitabiApp() {
     fetchRemoteOfficialFeed(false);
   }, []);
 
+  // アプリ起動時・再読み込み時に、既存のすべての共有しおりを自動でクラウドへ一括アップロードして同期漏れをゼロにする
+  useEffect(() => {
+    if (!Array.isArray(trips) || trips.length === 0) return;
+    const sharedTripsList = trips.filter(t => t && (!t.isSoloTrip || String(t.id || '').startsWith('TABI-')) && t.id);
+    if (sharedTripsList.length === 0) return;
+    Promise.allSettled(sharedTripsList.map(t => saveTripToSupabase(t)));
+  }, []);
+
+  // ★ 初回起動時にURLパラメータ（?trip=TABI-XXXX または ?share=TABI-XXXX または ?code=XXXX）があれば自動でSupabaseから読み込んで開く
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const urlCode = params.get('trip') || params.get('share') || params.get('code');
+    if (!urlCode) return;
+
+    const cleanCode = normalizeTripShareId(urlCode);
+    if (!cleanCode) return;
+
+    let cancelled = false;
+    (async () => {
+      const result = await fetchTripFromSupabase(cleanCode);
+      if (cancelled || !result.ok || !result.trip) return;
+
+      const remoteTrip = result.trip;
+      setTrips(prev => {
+        const existingLocal = prev.find(t => normalizeTripShareId(t.id) === cleanCode);
+        const merged = mergeCloudTripWithLocalPhotos(remoteTrip, existingLocal);
+        const members = Array.isArray(merged.members) ? [...merged.members] : [];
+        if (currentUser && !members.some(m => m.id === currentUser.id)) {
+          members.push({
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            color: PRESET_COLORS[members.length % PRESET_COLORS.length]
+          });
+        }
+        const updatedTrip = { ...merged, id: cleanCode, shareCode: cleanCode, isShared: true, isSoloTrip: false, members };
+        saveTripToSupabase(updatedTrip);
+        const others = prev.filter(t => normalizeTripShareId(t.id) !== cleanCode);
+        return [updatedTrip, ...others];
+      });
+      setIsReadOnlyMode(false);
+      setActiveTripId(cleanCode);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
+
   const activeTrip = useMemo(() => {
     if (!activeTripId) return null;
     if (isReadOnlyMode) {
@@ -6066,10 +6329,33 @@ function TabitabiApp() {
 
   const handleUpdateTripWithCloud = (updatedTrip) => {
     if (!updatedTrip) return;
-    setTrips(prev => prev.map(t => (t.id === updatedTrip.id ? updatedTrip : t)));
-    if (!updatedTrip.isSoloTrip) {
-      syncSharedTripToCloud(updatedTrip);
+    const canonicalId = normalizeTripShareId(updatedTrip.id || updatedTrip.shareCode || generateTripCode());
+    const normalizedTrip = {
+      ...updatedTrip,
+      id: canonicalId,
+      shareCode: canonicalId
+    };
+    setTrips(prev => prev.map(t => (normalizeTripShareId(t.id) === canonicalId ? normalizedTrip : t)));
+    if (!normalizedTrip.isSoloTrip || normalizedTrip.isShared || String(normalizedTrip.id).startsWith('TABI-')) {
+      saveTripToSupabase(normalizedTrip);
     }
+  };
+
+  // ★ しおり詳細ヘッダー等からワンタップでクラウド上の最新データを再取得してマージする関数
+  const handleRefreshSingleTripFromCloud = async (tripIdToRefresh) => {
+    const cleanCode = normalizeTripShareId(tripIdToRefresh);
+    if (!cleanCode) return { ok: false };
+    const res = await fetchTripFromSupabase(cleanCode);
+    if (res.ok && res.trip) {
+      setTrips(prev =>
+        prev.map(t => {
+          if (normalizeTripShareId(t.id) !== cleanCode) return t;
+          return mergeCloudTripWithLocalPhotos(res.trip, t);
+        })
+      );
+      return { ok: true, trip: res.trip };
+    }
+    return { ok: false, error: res.error };
   };
 
   const handleBackFromTrip = () => {
@@ -6208,7 +6494,7 @@ function TabitabiApp() {
                 setDashboardState(prev => ({ ...prev, activeTab: 'my' }));
                 setIsReadOnlyMode(false);
                 setActiveTripId(newTrip.id);
-                customAlert(newTrip.isSoloTrip ? '👤 1人旅のしおりとしてコピーしました！' : '👥 みんなの旅のしおりとしてコピーしました！');
+                customAlert(newTrip.isSoloTrip ? '1人旅のしおりとしてコピーしました！' : 'みんなの旅のしおりとしてコピーしました！');
               } else if (updatedTrip) {
                 setTrips(trips.map(t => t.id === updatedTrip.id ? updatedTrip : t));
                 setDashboardState(prev => ({ ...prev, activeTab: 'my' }));
@@ -6224,6 +6510,7 @@ function TabitabiApp() {
           <TripDetail 
             currentUser={currentUser} trip={activeTrip} isReadOnly={isReadOnlyMode} myTrips={trips}
             updateTrip={handleUpdateTripWithCloud}
+            onRefreshFromCloud={() => handleRefreshSingleTripFromCloud(activeTrip.id)}
             onDeleteTrip={(tripIdToDelete) => {
               setTrips(trips.filter(t => t.id !== tripIdToDelete));
               if (minimizedTripId === tripIdToDelete) setMinimizedTripId(null);
@@ -6239,7 +6526,7 @@ function TabitabiApp() {
                 setDashboardState(prev => ({ ...prev, activeTab: 'my' }));
                 setIsReadOnlyMode(false);
                 setActiveTripId(newTrip.id);
-                customAlert(newTrip.isSoloTrip ? '👤 1人旅のしおりとしてコピーしました！' : '👥 みんなの旅のしおりとしてコピーしました！');
+                customAlert(newTrip.isSoloTrip ? '1人旅のしおりとしてコピーしました！' : 'みんなの旅のしおりとしてコピーしました！');
               } else if (updatedTrip) {
                 setTrips(trips.map(t => t.id === updatedTrip.id ? updatedTrip : t));
                 setDashboardState(prev => ({ ...prev, activeTab: 'my' }));
@@ -7189,6 +7476,8 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
   const [selectedPreset, setSelectedPreset] = useState(user?.avatar || FEMALE_AVATARS[0]);
   const [customAvatar, setCustomAvatar] = useState(null);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [showTestRewardAd, setShowTestRewardAd] = useState(false);
+  const [aiQuotaPreview, setAiQuotaPreview] = useState(() => getAiQuotaStatus());
   const fileInputRef = useRef(null);
 
   // ★ オンライン＆クラウド共有可能ステータスのリアルタイム検知
@@ -7323,10 +7612,10 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
     }
     const PRESET_PROFILES = {
       m1: { id: 'm1', name: 'アクティブ夫婦', avatar: FEMALE_AVATARS[0], bio: '週末は全国の絶景とアクティビティを求めて夫婦で旅しています！' },
-      m2: { id: 'm2', name: 'たびたろう', avatar: MALE_AVATARS[1], bio: '温泉と美味しいお酒が大好き。関東近郊のんびり旅メインです♨️' },
-      m3: { id: 'm3', name: 'くいしんぼう', avatar: FEMALE_AVATARS[2], bio: '食べるために旅をする！全国のローカルグルメ・カフェを開拓中🍰' },
-      m4: { id: 'm4', name: '北陸さんぽ', avatar: FEMALE_AVATARS[3], bio: '北陸の美味しい海鮮と和菓子を探して旅しています🍣' },
-      m5: { id: 'm5', name: 'ちゅら旅', avatar: MALE_AVATARS[2], bio: '離島と青い海が大好き！年に3回は沖縄に行きます🌺' }
+      m2: { id: 'm2', name: 'たびたろう', avatar: MALE_AVATARS[1], bio: '温泉と美味しいお酒が大好き。関東近郊のんびり旅メインです' },
+      m3: { id: 'm3', name: 'くいしんぼう', avatar: FEMALE_AVATARS[2], bio: '食べるために旅をする！全国のローカルグルメ・カフェを開拓中' },
+      m4: { id: 'm4', name: '北陸さんぽ', avatar: FEMALE_AVATARS[3], bio: '北陸の美味しい海鮮と和菓子を探して旅しています' },
+      m5: { id: 'm5', name: 'ちゅら旅', avatar: MALE_AVATARS[2], bio: '離島と青い海が大好き！年に3回は沖縄に行きます' }
     };
     return PRESET_PROFILES[uid] || { id: uid, name: uid, avatar: MALE_AVATARS[0], bio: 'たびたびユーザー' };
   };
@@ -7858,7 +8147,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
                     rows="2"
                     value={bio}
                     onChange={e => setBio(e.target.value)}
-                    placeholder="例: 温泉とご当地グルメ巡りが好きです♨️"
+                    placeholder="例: 温泉とご当地グルメ巡りが好きです"
                     className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C] resize-none"
                   />
                 </div>
@@ -7992,7 +8281,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
             <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-xs font-extrabold text-stone-800">🔑 パスキー（Face ID / Touch ID）</h4>
+                  <h4 className="text-xs font-extrabold text-stone-800">パスキー（Face ID / Touch ID）</h4>
                   <p className="text-[10px] font-bold text-stone-400">生体認証で安全・素早くログインできます</p>
                 </div>
                 <button
@@ -8165,7 +8454,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2">
             {/* アプリの動作・表示設定（しおり自動ミニ化など） */}
             <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
-              <h4 className="text-xs font-extrabold text-stone-800">⚙️ アプリの動作・表示設定</h4>
+              <h4 className="text-xs font-extrabold text-stone-800">アプリの動作・表示設定</h4>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-extrabold text-stone-800">しおりを閉じたときの自動ミニ化</p>
@@ -8190,7 +8479,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
             </div>
 
             <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
-              <h4 className="text-xs font-extrabold text-stone-800">🔔 通知設定</h4>
+              <h4 className="text-xs font-extrabold text-stone-800">通知設定</h4>
               {[
                 { key: 'tripReminder', title: '旅行前日・当日のリマインド通知', desc: '出発前日や予定時刻の前に通知します' },
                 { key: 'memberUpdate', title: '共有メンバーのしおり更新通知', desc: '友達が予定や持ち物を追加・承認した時に通知します' },
@@ -8220,7 +8509,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
             </div>
 
             <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
-              <h4 className="text-xs font-extrabold text-stone-800">📍 位置情報・マップ連携設定</h4>
+              <h4 className="text-xs font-extrabold text-stone-800">位置情報・マップ連携設定</h4>
               {[
                 { key: 'useNearestStation', title: '最寄り駅を出発地点の初期値にする', desc: '新しいしおり作成時に登録した自宅最寄り駅を自動セットします' },
                 { key: 'mapNavIntegration', title: 'Googleマップ経路ナビ連携', desc: '予定カードのピンやナビボタンから直接経路検索を開きます' }
@@ -8263,9 +8552,9 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
                   onChange={e => setContactCategory(e.target.value)}
                   className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-extrabold text-stone-800"
                 >
-                  <option value="不具合の報告">🐞 不具合・バグの報告</option>
-                  <option value="機能のリクエスト">💡 ほしい機能のリクエスト</option>
-                  <option value="その他のお問い合わせ">✉️ その他のお問い合わせ</option>
+                  <option value="不具合の報告">不具合・バグの報告</option>
+                  <option value="機能のリクエスト">ほしい機能のリクエスト</option>
+                  <option value="その他のお問い合わせ">その他のお問い合わせ</option>
                 </select>
               </div>
               <div>
@@ -8300,19 +8589,19 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
         {currentView === 'terms' && (
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-0.5 pb-2 text-xs text-stone-600 leading-relaxed">
             <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
-              <h4 className="font-extrabold text-stone-800">📜 利用規約</h4>
+              <h4 className="font-extrabold text-stone-800">利用規約</h4>
               <p>
                 本アプリ「たびたび」は旅行計画の作成・共有をサポートするサービスです。AIが提案する店舗・施設・料金・営業時間等は最新情報と異なる場合があるため、お出かけ前に公式情報もあわせてご確認ください。
               </p>
             </div>
             <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
-              <h4 className="font-extrabold text-stone-800">🛡️ プライバシーポリシー</h4>
+              <h4 className="font-extrabold text-stone-800">プライバシーポリシー</h4>
               <p>
                 登録された最寄り駅や居住地は端末内およびしおり作成時の出発地点初期セットにのみ利用され、第三者に公開されることはありません。また、思い出写真はクラウドにはアップロードされず、お使いの端末内にのみ保存されます。
               </p>
             </div>
             <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-2">
-              <h4 className="font-extrabold text-stone-800">🚉 駅・地理データ提供元クレジット</h4>
+              <h4 className="font-extrabold text-stone-800">駅・地理データ提供元クレジット</h4>
               <p className="text-[11px]">
                 全国の駅名検索および市区町村・地理データの取得には HeartRails Express / HeartRails Geo API を使用しています。
               </p>
@@ -8351,7 +8640,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
                 disabled={cloudShareDiag.loading}
                 className="px-3 py-1.5 rounded-xl bg-white hover:bg-stone-100 text-[#4A6B5D] border border-stone-200 text-[11px] font-extrabold shadow-2xs shrink-0 cursor-pointer active:scale-95 disabled:opacity-50"
               >
-                {cloudShareDiag.loading ? '確認中...' : '🔄 再チェック'}
+                {cloudShareDiag.loading ? '確認中...' : '再チェック'}
               </button>
             </div>
 
@@ -8440,7 +8729,7 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
               </div>
 
               {/* 3. AIトラベルコンシェルジュ・プラン提案 */}
-              <div className="p-3.5 space-y-1.5">
+              <div className="p-3.5 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Sparkles size={14} className="text-[#7A9D8C] shrink-0" />
@@ -8460,12 +8749,22 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
                         isBrowserOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                       }`}
                     />
-                    {isBrowserOnline ? 'オンライン（利用可能）' : 'オフライン（定番提案のみ）'}
+                    {isBrowserOnline ? `オンライン（残り${aiQuotaPreview.remaining}回）` : 'オフライン'}
                   </span>
                 </div>
                 <p className="text-[10px] font-bold text-stone-500 leading-relaxed pl-5">
                   条件指定およびチャットでの3プラン提案・前後日程に合わせたスケジュール生成が利用可能です。
                 </p>
+                <div className="pl-5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowTestRewardAd(true)}
+                    className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-extrabold inline-flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                  >
+                    <Sparkles size={12} className="text-amber-600" />
+                    <span>PR広告を見てAI回数を+{REWARD_AD_BONUS_COUNT}回復活する（プレビュー）</span>
+                  </button>
+                </div>
               </div>
 
               {/* 4. 駅・市区町村データ＆高精細日本地図 */}
@@ -8533,6 +8832,15 @@ function UserSettingsModal({ currentUser, user: userProp, publicTrips = [], setP
             </div>
           </div>
         )}
+
+        {showTestRewardAd && (
+          <RewardVideoAdModal
+            onClose={() => setShowTestRewardAd(false)}
+            onCompleteReward={(nextStatus) => {
+              setAiQuotaPreview(nextStatus);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -8559,8 +8867,10 @@ function PublicUserProfileModal({ userProfile, publicTrips = [], currentUser, on
         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2.5">
           {userTrips.map(t => (
             <div key={t.id} onClick={() => onOpenTrip(t.id)} className="p-3 rounded-2xl bg-stone-50 hover:bg-stone-100 border border-stone-200/80 cursor-pointer">
-              <p className="text-xs font-extrabold text-stone-800">{t.title}</p>
-              <p className="text-[10px] font-bold text-stone-500 mt-0.5">🗾 {t.destination}</p>
+              <p className="text-xs font-extrabold text-stone-800">{stripAllEmojis(t.title)}</p>
+              <p className="text-[10px] font-bold text-stone-500 mt-0.5 flex items-center gap-1">
+                <MapPin size={10} className="text-[#7A9D8C]" /> {t.destination}
+              </p>
             </div>
           ))}
         </div>
@@ -8725,7 +9035,24 @@ function DiscoverTab({
     } else {
       list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
     }
-    return list.map(t => ({ type: 'trip', data: t }));
+    const baseItems = list.map(t => ({ type: 'trip', data: t }));
+    // ★ 「みんなの旅」タイムラインの2件目の次に、明確な「PR / 広告」表記付きの楽天トラベルPR投稿を1件混ぜる（お気に入りタブが0件のときは除外）
+    if (discoverSort !== 'favorites' && baseItems.length > 0) {
+      const insertPos = Math.min(2, baseItems.length);
+      baseItems.splice(insertPos, 0, {
+        type: 'pr_ad',
+        data: {
+          id: 'PR-RAKUTEN-TRAVEL-FEED-1',
+          sponsorName: '楽天トラベル（Rakuten Travel）',
+          title: 'しおりを作ったら宿＆レンタカーの割引クーポンをチェック！',
+          description: '全国の人気温泉宿・ホテル・新幹線や飛行機セットプラン・レンタカー予約で使えるお得なクーポン配布中！旅行計画とあわせて早割プランをチェックできます。',
+          ctaUrl: REWARD_AD_CONFIG.sponsorUrl,
+          bannerHref: REWARD_AD_CONFIG.sponsorBannerHref || REWARD_AD_CONFIG.sponsorUrl,
+          bannerImgUrl: REWARD_AD_CONFIG.sponsorBannerImgUrl
+        }
+      });
+    }
+    return baseItems;
   }, [publicTrips, selectedRegion, searchQuery, discoverSort, currentUser?.id]);
 
   return (
@@ -8962,6 +9289,76 @@ function DiscoverTab({
             </div>
           ) : (
             feedItems.map((item, idx) => {
+              if (item.type === 'pr_ad') {
+                const ad = item.data;
+                return (
+                  <article
+                    key={ad.id || `pr_${idx}`}
+                    className="bg-gradient-to-br from-white via-rose-50/35 to-amber-50/30 rounded-[26px] border-2 border-rose-200/80 shadow-sm p-4 space-y-3 overflow-hidden"
+                  >
+                    {/* 上部ヘッダー：PR・広告表記を明確に表示（ステマ規制・景表法完全準拠） */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="px-2.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black tracking-wider shrink-0 shadow-2xs">
+                          PR
+                        </span>
+                        <span className="text-xs font-extrabold text-stone-900 truncate">
+                          {ad.sponsorName}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full border border-stone-200 shrink-0">
+                        広告・プロモーション
+                      </span>
+                    </div>
+
+                    {/* 本文＆楽天トラベル公式バナー */}
+                    <div className="space-y-2">
+                      <h3 className="font-extrabold text-[15px] text-stone-900 leading-snug">
+                        {ad.title}
+                      </h3>
+                      <p className="text-xs text-stone-600 leading-relaxed">
+                        {ad.description}
+                      </p>
+
+                      {ad.bannerImgUrl && (
+                        <div className="pt-1 flex justify-center">
+                          <a
+                            href={ad.bannerHref}
+                            target="_blank"
+                            rel="nofollow sponsored noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-block rounded-2xl overflow-hidden bg-white p-2 border border-stone-200/90 shadow-xs hover:scale-[1.02] transition-transform max-w-full"
+                          >
+                            <img
+                              src={ad.bannerImgUrl}
+                              alt="Rakuten Travel PR"
+                              className="max-h-32 w-auto max-w-full object-contain mx-auto rounded-xl"
+                            />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 下部アクションボタン */}
+                    <div className="pt-2 border-t border-rose-100/90 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold text-stone-400">
+                        ※外部サイト（楽天トラベル）へ移動します
+                      </span>
+                      <a
+                        href={ad.ctaUrl}
+                        target="_blank"
+                        rel="nofollow sponsored noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="px-4 py-2 rounded-full bg-[#BF0000] hover:bg-[#a30000] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs active:scale-95 transition-all shrink-0"
+                      >
+                        <span>クーポン・宿を見る</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    </div>
+                  </article>
+                );
+              }
+
               const trip = item.data;
               const hasLiked = Array.isArray(trip.likedBy) && trip.likedBy.includes(currentUser.id);
               const authorId = trip.authorId || trip.members?.[0]?.id || `author_${trip.authorName}`;
@@ -9075,7 +9472,7 @@ function DiscoverTab({
                       </p>
                     )}
 
-                    {/* Xのタイムライン上でどんな行程かわかるコンパクトなルートチップ（移動タグは+移動〇件として集計） */}
+                    {/* Xのタイムライン上でどんな行程かわかるコンパクトなルートチップ（移動タグは+移動〇回として集計） */}
                     {Array.isArray(trip.events) && trip.events.length > 0 && (() => {
                       const spotEvents = trip.events.filter(ev => ev.type !== 'transport');
                       const transportCnt = trip.events.length - spotEvents.length;
@@ -9098,7 +9495,7 @@ function DiscoverTab({
                           )}
                           {transportCnt > 0 && (
                             <span className="whitespace-nowrap text-[10px] text-sky-700 bg-sky-50 border border-sky-200/80 px-1.5 py-0.2 rounded font-extrabold shrink-0">
-                              +移動{transportCnt}件
+                              +移動{transportCnt}回
                             </span>
                           )}
                         </div>
@@ -9359,7 +9756,7 @@ function ReportModal({ trip, onClose, onSubmit }) {
     </div>
   );
 }
-function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDeleteTrip, onToggleAutoMinimize, onPublish, onBack, onEnlargeImage, onCopySave, onOpenAuthUpgrade, onAddComment }) {
+function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onRefreshFromCloud, onDeleteTrip, onToggleAutoMinimize, onPublish, onBack, onEnlargeImage, onCopySave, onOpenAuthUpgrade, onAddComment }) {
   const generateDateArray = (start, end) => {
     const arr = [];
     let dt = new Date(start);
@@ -9437,8 +9834,51 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
   const swipeStartRef = useRef(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [copiedDrawerCode, setCopiedDrawerCode] = useState(false);
-  const [copiedDrawerInviteMsg, setCopiedDrawerInviteMsg] = useState(false);
+  const [copiedDrawerShareUrl, setCopiedDrawerShareUrl] = useState(false);
   const [savedTripInfoBtn, setSavedTripInfoBtn] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState('syncing'); // 'syncing' | 'synced' | 'error'
+  const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
+
+  const canonicalShareId = useMemo(
+    () => normalizeTripShareId(trip?.id || trip?.shareCode || ''),
+    [trip?.id, trip?.shareCode]
+  );
+
+  const shareTripUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !canonicalShareId) return '';
+    return `${window.location.origin}${window.location.pathname}?trip=${encodeURIComponent(canonicalShareId)}`;
+  }, [canonicalShareId]);
+
+  const triggerImmediateCloudSync = async () => {
+    if (!trip || isReadOnly) return;
+    setCloudSyncStatus('syncing');
+    const res = await saveTripToSupabase(trip);
+    setCloudSyncStatus(res?.ok ? 'synced' : 'error');
+    return res;
+  };
+
+  const handleHeaderCloudRefresh = async () => {
+    if (isRefreshingCloud || isReadOnly) return;
+    setIsRefreshingCloud(true);
+    try {
+      if (onRefreshFromCloud) {
+        const res = await onRefreshFromCloud();
+        if (res?.ok) {
+          setCloudSyncStatus('synced');
+          return;
+        }
+      }
+      await triggerImmediateCloudSync();
+    } finally {
+      setTimeout(() => setIsRefreshingCloud(false), 350);
+    }
+  };
+
+  // しおりを開いた瞬間・または右上「︙」を開いた瞬間に自動でクラウドへ即時アップロードする
+  useEffect(() => {
+    if (!trip?.id || isReadOnly) return;
+    triggerImmediateCloudSync();
+  }, [trip.id, isSettingsOpen]);
 
   const handleSwipeStart = (clientX, clientY, target) => {
     if (target && target.closest('input, textarea, select, [data-no-swipe]')) return;
@@ -9584,6 +10024,33 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
           <button onClick={onBack} className="p-1.5 -ml-1.5 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><ChevronLeft size={24} /></button>
           <h2 className="font-bold text-base text-stone-800 truncate flex-1 text-center px-2">{trip.title}</h2>
           <div className="flex items-center gap-1">
+            {/* クラウド最新状態への再取得（同期）ボタン */}
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={handleHeaderCloudRefresh}
+                disabled={isRefreshingCloud}
+                className="p-1.5 rounded-full text-stone-500 hover:text-[#4A6B5D] hover:bg-stone-100 transition-colors cursor-pointer disabled:opacity-50"
+                title="クラウドから最新の変更を再読み込み"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={isRefreshingCloud ? 'animate-spin text-[#7A9D8C]' : ''}
+                >
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
+                </svg>
+              </button>
+            )}
             {/* 自分たちのしおり編集時のみ表示されるAI相談ボタン（目的地未設定時はロック表示） */}
             {!isReadOnly && (
               <button
@@ -9833,13 +10300,13 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
                 ...trip,
                 events: [...otherDaysEvents, ...formattedNewEvents]
               });
-              customAlert(`🗓️ この日の予定（${formatEventCountLabel(formattedNewEvents)}）をまるごと反映しました！`);
+              customAlert(`この日の予定（${formatEventCountLabel(formattedNewEvents)}）をまるごと反映しました！`);
             } else {
               updateTrip({
                 ...trip,
                 events: [...(trip.events || []), ...formattedNewEvents]
               });
-              customAlert(`✨ 提案された予定（${formatEventCountLabel(formattedNewEvents)}）をしおりに追加しました！`);
+              customAlert(`提案された予定（${formatEventCountLabel(formattedNewEvents)}）をしおりに追加しました！`);
             }
           }}
         />
@@ -9857,7 +10324,7 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
           >
             <div className="flex items-center justify-between">
               <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold">
-                🔒 現在AI機能はオフになっています
+                現在AI機能はオフになっています
               </span>
               <button
                 type="button"
@@ -9994,7 +10461,7 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
                 }`}
               >
                 <Check size={14} strokeWidth={savedTripInfoBtn ? 3 : 2.5} />
-                <span>{savedTripInfoBtn ? '✓ 保存しました！' : '基本情報の変更を保存'}</span>
+                <span>{savedTripInfoBtn ? '保存しました！' : '基本情報の変更を保存'}</span>
               </button>
             </div>
 
@@ -10004,7 +10471,7 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
                   <h4 className="font-extrabold text-xs flex items-center gap-1.5 text-[#4A6B5D]">
                     <Globe size={15} className="text-[#7A9D8C]" />
                     {isOfficialAdminAuthenticated(currentUser) && !ENABLE_PUBLIC_SNS_FEATURES
-                      ? '👑 公式ガイドとして「みんなの旅」にネット配信'
+                      ? '公式ガイドとして「みんなの旅」にネット配信'
                       : 'みんなの旅に公開する'}
                   </h4>
                   {isOfficialAdminAuthenticated(currentUser) && !ENABLE_PUBLIC_SNS_FEATURES && (
@@ -10047,55 +10514,120 @@ function TripDetail({ currentUser, trip, isReadOnly, myTrips, updateTrip, onDele
               </div>
               <div className="flex flex-wrap gap-2 mb-3">{(trip.members || []).map((m, i) => (<div key={m.id || i} className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 py-1 px-2.5 rounded-full"><UserAvatar user={m} size="w-5 h-5" /><span className="text-xs font-bold text-stone-700">{m.name}</span></div>))}</div>
               <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80 space-y-2">
-                <div className="flex items-center justify-between gap-2 bg-white py-1.5 px-3 rounded-xl border border-stone-200/80">
-                  <span className="text-xs font-mono font-extrabold tracking-wider text-stone-700 select-all">{trip.id}</span>
+                {/* クラウド同期ステータスバッジ＆「今すぐクラウド同期」ボタン */}
+                <div className="flex items-center justify-between gap-1.5 px-0.5">
+                  <span
+                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                      cloudSyncStatus === 'synced'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : cloudSyncStatus === 'syncing'
+                        ? 'bg-sky-50 text-sky-700 border-sky-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    <CheckCircle2 size={11} className="shrink-0" />
+                    <span>
+                      {cloudSyncStatus === 'synced'
+                        ? 'クラウド同期済み'
+                        : cloudSyncStatus === 'syncing'
+                        ? '同期中...'
+                        : '同期を再試行してください'}
+                    </span>
+                  </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      copyToClipboard(trip.id, `招待コード「${trip.id}」をコピーしました！`);
+                    disabled={cloudSyncStatus === 'syncing'}
+                    onClick={async () => {
+                      await triggerImmediateCloudSync();
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-stone-100 text-[#4A6B5D] border border-stone-200 text-[10px] font-extrabold transition-colors active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    今すぐクラウド同期
+                  </button>
+                </div>
+
+                {/* 共有コード（TABI-XXXX）コピー */}
+                <div className="flex items-center justify-between gap-2 bg-white py-1.5 px-3 rounded-xl border border-stone-200/80">
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-bold text-stone-400 block leading-none">招待コード（ハイフンなしでも参加可）</span>
+                    <span className="text-xs font-mono font-extrabold tracking-wider text-stone-800 select-all">
+                      {canonicalShareId}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      copyToClipboard(canonicalShareId, `招待コード「${canonicalShareId}」をコピーしました！`);
                       setCopiedDrawerCode(true);
                       setTimeout(() => setCopiedDrawerCode(false), 3500);
+                      await triggerImmediateCloudSync();
                     }}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-colors ${
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-colors shrink-0 cursor-pointer ${
                       copiedDrawerCode
                         ? 'bg-[#7A9D8C] text-white'
                         : 'bg-[#7A9D8C]/15 hover:bg-[#7A9D8C]/25 text-[#557465]'
                     }`}
                   >
                     {copiedDrawerCode ? <Check size={12} /> : <Copy size={12} />}
-                    <span>{copiedDrawerCode ? '✓ コピー済み' : 'コピー'}</span>
+                    <span>{copiedDrawerCode ? 'コピー済み' : 'コードコピー'}</span>
                   </button>
                 </div>
+
+                {/* 共有URL（?trip=TABI-XXXX）コピー */}
+                {shareTripUrl && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      copyToClipboard(shareTripUrl, '共有リンク（URL）をコピーしました！');
+                      setCopiedDrawerShareUrl(true);
+                      setTimeout(() => setCopiedDrawerShareUrl(false), 3500);
+                      await triggerImmediateCloudSync();
+                    }}
+                    className={`w-full py-2 px-3 rounded-xl border text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
+                      copiedDrawerShareUrl
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white hover:bg-stone-100 text-[#4A6B5D] border-[#7A9D8C]/40'
+                    }`}
+                  >
+                    {copiedDrawerShareUrl ? <Check size={13} /> : <ExternalLink size={13} />}
+                    <span>{copiedDrawerShareUrl ? '共有URLをコピーしました！' : 'ワンタップ参加用の共有URLをコピー'}</span>
+                  </button>
+                )}
+
                 <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(trip.id)}`, '_blank', 'noopener,noreferrer');
+                    onClick={async () => {
+                      await triggerImmediateCloudSync();
+                      const shareText = `「${trip.title}」のしおりを共有しました！\n招待コード: ${canonicalShareId}\n${shareTripUrl}`;
+                      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
                     }}
-                    className="py-2 px-2.5 bg-[#06C755] hover:brightness-95 text-white rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all"
+                    className="py-2 px-2.5 bg-[#06C755] hover:brightness-95 text-white rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
                   >
                     <MessageCircle size={13} /> LINEで送る
                   </button>
                   <button
                     type="button"
                     onClick={async () => {
+                      await triggerImmediateCloudSync();
+                      const shareText = `「${trip.title}」のしおり\n招待コード: ${canonicalShareId}`;
                       if (navigator.share) {
                         try {
-                          await navigator.share({ title: `${trip.title}の招待コード`, text: trip.id });
+                          await navigator.share({ title: `${trip.title}のしおり`, text: shareText, url: shareTripUrl || undefined });
                           return;
                         } catch (e) {}
                       }
-                      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(trip.id)}`, '_blank', 'noopener,noreferrer');
+                      copyToClipboard(`${shareText}\n${shareTripUrl}`, '共有情報をコピーしました！');
                     }}
-                    className="py-2 px-2.5 bg-stone-800 hover:bg-stone-900 text-white rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all"
+                    className="py-2 px-2.5 bg-stone-800 hover:bg-stone-900 text-white rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
                   >
                     <Share2 size={13} /> 他のアプリで共有
                   </button>
                 </div>
               </div>
             </div>
-            {(trip.members || []).length === 1 && !trip.isSoloTrip && (<div className="mb-4"><button onClick={() => updateTrip({ ...trip, isSoloTrip: true })} className="w-full py-3 bg-stone-100 text-stone-600 font-bold rounded-xl text-xs flex justify-center items-center gap-2 hover:bg-stone-200 transition-colors">👤 ひとり旅行として確定する（承認省略）</button></div>)}
-            {trip.isSoloTrip && (<div className="p-3 bg-stone-100 rounded-xl text-center border border-stone-200 mb-6"><p className="text-xs font-bold text-stone-600">👤 ひとり旅行モード中</p></div>)}
+            {(trip.members || []).length === 1 && !trip.isSoloTrip && (<div className="mb-4"><button onClick={() => updateTrip({ ...trip, isSoloTrip: true })} className="w-full py-3 bg-stone-100 text-stone-600 font-bold rounded-xl text-xs flex justify-center items-center gap-2 hover:bg-stone-200 transition-colors"><User size={14} /> ひとり旅行として確定する（承認省略）</button></div>)}
+            {trip.isSoloTrip && (<div className="p-3 bg-stone-100 rounded-xl text-center border border-stone-200 mb-6"><p className="text-xs font-bold text-stone-600 flex items-center justify-center gap-1"><User size={13} /> ひとり旅行モード中</p></div>)}
 
             <div className="pt-5 mt-5 border-t border-stone-200/80">
               <button
@@ -10667,7 +11199,7 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
             <p className="text-[11px] text-stone-400 font-bold mt-0.5">
               {trip.isSoloTrip
                 ? '忘れ物がないようにチェックしましょう'
-                : '👤 各自の持ち物はあなた専用（他メンバーと独立）で管理されます'}
+                : '各自の持ち物はあなた専用（他メンバーと独立）で管理されます'}
             </p>
           </div>
           <div className="text-right">
@@ -10730,7 +11262,7 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
                     category === 'personal' ? 'bg-white text-stone-800 shadow-2xs' : 'text-stone-500'
                   }`}
                 >
-                  👤 各自の持ち物
+                  各自の持ち物
                 </button>
                 <button
                   type="button"
@@ -10739,7 +11271,7 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
                     category === 'shared' ? 'bg-white text-stone-800 shadow-2xs' : 'text-stone-500'
                   }`}
                 >
-                  👥 みんなの共用
+                  みんなの共用
                 </button>
               </div>
 
@@ -10750,7 +11282,7 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
                 </span>
               ) : (
                 <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                  🔒 {currentUser?.name}さん専用の持ち物に追加
+                  {currentUser?.name}さん専用の持ち物に追加
                 </span>
               )}
             </div>
@@ -10780,8 +11312,8 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
         <div className="flex gap-1.5">
           {[
             { id: 'all', label: `すべて (${myVisiblePackingList.length})` },
-            { id: 'personal', label: `👤 自分専用 (${myVisiblePackingList.filter(i => i.category === 'personal').length})` },
-            { id: 'shared', label: `👥 みんなの共用 (${myVisiblePackingList.filter(i => i.category === 'shared').length})` }
+            { id: 'personal', label: `自分専用 (${myVisiblePackingList.filter(i => i.category === 'personal').length})` },
+            { id: 'shared', label: `みんなの共用 (${myVisiblePackingList.filter(i => i.category === 'shared').length})` }
           ].map(t => (
             <button
               key={t.id}
@@ -10850,12 +11382,12 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
                             className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/70 inline-flex items-center gap-1 transition-colors active:scale-95"
                             title="タップして担当者を変更"
                           >
-                            <span>👥 共用（担当: {item.assigneeName || '未定'}）</span>
+                            <span>共用（担当: {item.assigneeName || '未定'}）</span>
                             {!isReadOnly && <Edit2 size={10} className="opacity-70" />}
                           </button>
                         ) : (
                           <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-500 inline-flex items-center gap-1">
-                            👤 自分専用（{currentUser?.name}）
+                            自分専用（{currentUser?.name}）
                           </span>
                         )}
                       </div>
@@ -10909,7 +11441,7 @@ function PackingListView({ trip, updateTrip, currentUser, isReadOnly }) {
             <div className="bg-stone-50 p-3 rounded-2xl border border-stone-100 mb-4">
               <p className="text-[10px] font-bold text-stone-400 mb-0.5">対象の共用アイテム</p>
               <p className="text-xs font-extrabold text-stone-800 truncate">
-                👥 {assigneeModalState.mode === 'add' ? assigneeModalState.title : assigneeModalState.item?.title}
+                {assigneeModalState.mode === 'add' ? assigneeModalState.title : assigneeModalState.item?.title}
               </p>
             </div>
 
@@ -11070,7 +11602,7 @@ function BudgetView({ trip, updateTrip, currentUser, isReadOnly }) {
     }
     const categories = isReadOnly
       ? QUICK_TAGS
-      : [...QUICK_TAGS, { id: 'souvenir', label: '🎁 おみやげ', icon: Heart }];
+      : [...QUICK_TAGS, { id: 'souvenir', label: 'おみやげ', icon: Heart }];
     return categories.map(tag => ({
       ...tag,
       amount: map[tag.id] || 0,
@@ -11355,11 +11887,11 @@ function BudgetView({ trip, updateTrip, currentUser, isReadOnly }) {
             <p className="text-xs font-extrabold text-stone-800">¥{approvedEventCost.toLocaleString()}</p>
           </div>
           <div className="bg-[#7A9D8C]/12 p-2.5 rounded-2xl border border-[#7A9D8C]/25">
-            <p className="text-[10px] font-bold text-[#4A6B5D] mb-0.5">💡 提案中の予定</p>
+            <p className="text-[10px] font-bold text-[#4A6B5D] mb-0.5">提案中の予定</p>
             <p className="text-xs font-extrabold text-[#365447]">¥{proposedEventCost.toLocaleString()}</p>
           </div>
           <div className="bg-rose-50/70 p-2.5 rounded-2xl border border-rose-100/80">
-            <p className="text-[10px] font-bold text-rose-600 mb-0.5">🎁 おみやげ予算</p>
+            <p className="text-[10px] font-bold text-rose-600 mb-0.5">おみやげ予算</p>
             <p className="text-xs font-extrabold text-rose-700">¥{souvenirCostTotal.toLocaleString()}</p>
           </div>
           <div className="bg-stone-50 p-2.5 rounded-2xl">
@@ -11369,12 +11901,12 @@ function BudgetView({ trip, updateTrip, currentUser, isReadOnly }) {
         </div>
       </div>
 
-      {/* 🎁 おみやげ予算・買い物リスト（ワンタップで簡単追加） */}
+      {/* おみやげ予算・買い物リスト（ワンタップで簡単追加） */}
       <div className="bg-white p-5 rounded-3xl shadow-xs border border-rose-100 space-y-3.5">
         <div className="flex justify-between items-center">
           <div>
             <h4 className="font-bold text-sm text-stone-800 flex items-center gap-1.5">
-              <span className="text-base">🎁</span> おみやげ予算・買い物リスト
+              <Heart size={15} className="text-rose-500" /> おみやげ予算・買い物リスト
             </h4>
             <p className="text-[11px] text-stone-400 font-bold mt-0.5">
               ワンタップで全体の予算におみやげ代を組み込めます
@@ -11391,7 +11923,7 @@ function BudgetView({ trip, updateTrip, currentUser, isReadOnly }) {
             {/* ざっくりおみやげ予算枠ボタン＆定番プリセット */}
             <div className="bg-rose-50/50 p-3 rounded-2xl border border-rose-100/80 space-y-2.5">
               <div className="flex items-center justify-between flex-wrap gap-1.5">
-                <span className="text-[10px] font-bold text-rose-700">⚡ ざっくりおみやげ予算枠を追加：</span>
+                <span className="text-[10px] font-bold text-rose-700">ざっくりおみやげ予算枠を追加：</span>
                 <div className="flex gap-1.5">
                   {[3000, 5000, 10000].map(amt => (
                     <button
@@ -11868,7 +12400,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
 
   const handleCopyInviteWithAppUrl = () => {
     if (!createdGroupTrip) return;
-    const inviteText = `「${createdGroupTrip.title}」の旅行計画を一緒に作ろう！✈️\n\n▼ 招待コード\n${createdGroupTrip.id}\n\n▼ アプリをまだ持っていない方はこちら（インストールURL）\nhttps://tabitabi.app/dl`;
+    const inviteText = `「${createdGroupTrip.title}」の旅行計画を一緒に作ろう！\n\n▼ 招待コード\n${createdGroupTrip.id}\n\n▼ アプリをまだ持っていない方はこちら（インストールURL）\nhttps://tabitabi.app/dl`;
     copyToClipboard(
       inviteText,
       'アプリ紹介URL付きの招待文をコピーしました！'
@@ -11928,7 +12460,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                   }`}
                 >
                   {copiedCode ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedCode ? '✓ コピー済み' : 'コピー'}</span>
+                  <span>{copiedCode ? 'コピー済み' : 'コピー'}</span>
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2 pt-0.5">
@@ -11995,7 +12527,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                     }`}
                   >
                     <div className="flex items-center justify-between w-full mb-1.5">
-                      <span className="text-lg">👤</span>
+                      <User size={16} className="text-[#7A9D8C]" />
                       <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${copyMode === 'solo' ? 'border-[#7A9D8C] bg-[#7A9D8C] text-white' : 'border-stone-300'}`}>
                         {copyMode === 'solo' && <Check size={10} strokeWidth={3} />}
                       </div>
@@ -12025,7 +12557,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                     }`}
                   >
                     <div className="flex items-center justify-between w-full mb-1.5">
-                      <span className="text-lg">👥</span>
+                      <Globe size={16} className="text-[#7A9D8C]" />
                       <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${copyMode === 'group' ? 'border-[#7A9D8C] bg-[#7A9D8C] text-white' : 'border-stone-300'}`}>
                         {copyMode === 'group' && <Check size={10} strokeWidth={3} />}
                       </div>
@@ -12105,7 +12637,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
               <div>
                 <div className="flex items-center justify-between mb-2 pl-1">
                   <label className="block text-xs font-bold text-stone-500">
-                    コピー先のしおり（{copyMode === 'solo' ? '👤 1人旅のみ' : '👥 参加中の共有しおりのみ'}）
+                    コピー先のしおり（{copyMode === 'solo' ? '1人旅のみ' : '参加中の共有しおりのみ'}）
                   </label>
                   <span className="text-[10px] font-bold text-stone-400">※過去の旅は非表示</span>
                 </div>
@@ -12126,7 +12658,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                       <div>
                         <p className="text-xs font-bold">新しいしおりを作成してコピー</p>
                         <p className="text-[10px] text-stone-400 font-medium">
-                          {copyMode === 'solo' ? '👤 1人旅のしおりとして新規作成' : '👥 みんなの旅（複数人用）として新規作成'}
+                          {copyMode === 'solo' ? '1人旅のしおりとして新規作成' : 'みんなの旅（複数人用）として新規作成'}
                         </p>
                       </div>
                     </div>
@@ -12159,7 +12691,7 @@ function CopyModal({ type, sourceData, currentUser, myTrips, onClose, onOpenRegi
                             <div className="flex items-center gap-1.5">
                               <p className={`text-xs font-bold truncate ${isSelected ? 'text-[#557465]' : 'text-stone-800'}`}>{t.title}</p>
                               <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 shrink-0">
-                                {t.isSoloTrip ? '👤 1人旅' : `👥 共有（${(t.members || []).length}人）`}
+                                {t.isSoloTrip ? '1人旅' : `共有（${(t.members || []).length}人）`}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 text-[10px] text-stone-400 font-bold mt-0.5">
@@ -12529,7 +13061,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
           ) : (
             currentEvents.map((event, idx) => {
               const nextEvent = currentEvents[idx + 1];
-              const suggestedMidTime = nextEvent ? getMidpointTime(event.time, nextEvent.time) : null;
+              const suggestedMidTime = nextEvent ? getMidpointTime(event.endTime || event.time, nextEvent.time) : null;
               const isClosestNow = event.id === activeBlinkEventId;
               const isProposed = event.status === 'proposed' && !trip.isSoloTrip && !isReadOnly;
               const canInsertAfter = !isReadOnly && idx < currentEvents.length - 1;
@@ -12537,38 +13069,61 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                 canInsertAfter && event.type !== 'transport' && nextEvent?.type !== 'transport';
 
               const evMin = timeToMinutes(event.time);
+              const evEndMin = timeToMinutes(event.endTime);
               const nextMin = nextEvent ? timeToMinutes(nextEvent.time) : null;
-              const isPassedEvent = evMin !== null && currentNowMinutes > evMin;
-              const isBetweenThisAndNext =
+
+              // この予定カード自体の終了時刻（①終了時刻が設定されていればその時刻、なければ ②次の予定の開始時刻、または ③開始+60分）
+              const cardEndMin =
+                evEndMin !== null && evMin !== null && evEndMin > evMin
+                  ? evEndMin
+                  : nextMin !== null && evMin !== null && nextMin > evMin
+                  ? nextMin
+                  : evMin !== null
+                  ? evMin + 60
+                  : null;
+
+              // 次の予定に移るまでの最終境界時刻
+              const slotEndMin =
+                nextMin !== null && evMin !== null && nextMin > evMin
+                  ? Math.max(cardEndMin || 0, nextMin)
+                  : cardEndMin;
+
+              const isPassedEvent = isTodaySelected && evMin !== null && currentNowMinutes >= evMin;
+              const isCompletedEvent =
+                isTodaySelected && slotEndMin !== null && currentNowMinutes >= slotEndMin && idx < currentEvents.length - 1;
+
+              // 現在この予定が進行中（または次の予定が始まる前の待機中）かどうか
+              const isOngoingThisCard =
+                isTodaySelected &&
                 evMin !== null &&
-                nextMin !== null &&
-                nextMin > evMin &&
-                currentNowMinutes > evMin &&
-                currentNowMinutes < nextMin;
-              const betweenProgress = isBetweenThisAndNext
-                ? Math.min(0.86, Math.max(0.22, (currentNowMinutes - evMin) / (nextMin - evMin)))
-                : null;
+                slotEndMin !== null &&
+                currentNowMinutes >= evMin &&
+                (currentNowMinutes < slotEndMin || idx === currentEvents.length - 1);
+
+              // カード上部の開始時刻ドット（約14%）〜カード下部の終了時刻ドット（約88%）の間を開始〜終了時刻（03:30〜05:00）の経過割合で直感的に進行させる
+              const rawRatio =
+                isOngoingThisCard && cardEndMin !== null && cardEndMin > evMin
+                  ? Math.min(1, Math.max(0, (currentNowMinutes - evMin) / (cardEndMin - evMin)))
+                  : null;
 
               const firstMin = timeToMinutes(currentEvents[0]?.time);
-              const lastMin = timeToMinutes(currentEvents[currentEvents.length - 1]?.time);
-              const showSuitcaseAtTop =
-                idx === 0 && firstMin !== null && currentNowMinutes <= firstMin;
-              const showSuitcaseOnCardTime =
-                evMin !== null && currentNowMinutes === evMin && idx > 0;
-              const showSuitcaseAtBottom =
-                idx === currentEvents.length - 1 &&
-                lastMin !== null &&
-                currentNowMinutes > lastMin;
+              const showSuitcaseBeforeFirst =
+                isTodaySelected && idx === 0 && firstMin !== null && currentNowMinutes < firstMin;
 
-              const suitcasePositionProgress = showSuitcaseAtTop
-                ? 0.02
-                : showSuitcaseOnCardTime
-                ? 0.35
-                : betweenProgress !== null
-                ? betweenProgress
-                : showSuitcaseAtBottom
-                ? 0.88
+              // カード上端の開始ドット位置（14%）〜下端の終了ドット位置（88%）の間で経過時間割合に合わせてアイコン位置を算出
+              const suitcasePositionProgress = showSuitcaseBeforeFirst
+                ? 0.06
+                : rawRatio !== null
+                ? Number((0.14 + rawRatio * 0.74).toFixed(3))
                 : null;
+
+              // 水色の進行ラインがアイコンの中心位置でピタッと止まり、アイコンの下へはみ出さないように制御
+              const betweenProgress =
+                suitcasePositionProgress !== null
+                  ? suitcasePositionProgress
+                  : isCompletedEvent
+                  ? 1
+                  : null;
 
               const prevEvent = idx > 0 ? currentEvents[idx - 1] : null;
 
@@ -12646,22 +13201,22 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                   )}
 
                   {canInsertAfter && insertIndex !== idx && transportInsertState?.idx !== idx && (
-                    <div className="relative flex items-center -my-1.5 py-0 z-20 select-none">
+                    <div className="relative flex items-center -my-1 py-0 h-4 z-20 select-none">
                       <div className="w-[82px] shrink-0 flex items-center">
-                        <span className="w-[62px] pr-2 text-right text-[10px] font-mono font-black text-stone-400 leading-none">
+                        <span className="w-[62px] pr-2 text-right text-[9px] font-mono font-bold text-stone-400 leading-none">
                           {suggestedMidTime || ''}
                         </span>
                         <div className="w-[20px] flex items-center justify-center relative">
                           <span className="w-1.5 h-1.5 rounded-full bg-stone-300 ring-1 ring-[#F4F7F5] z-10" />
-                          <div className="absolute left-1/2 right-0 h-[1.5px] bg-stone-200" />
+                          <div className="absolute left-1/2 -right-4 sm:-right-6 h-[1.5px] bg-stone-200" />
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 pl-4 sm:pl-6">
                         <button
                           type="button"
                           onClick={() => handleOpenInsertBetween(idx, event, nextEvent)}
-                          className="px-2 py-0.5 rounded-full bg-white hover:bg-[#7A9D8C] text-stone-600 hover:text-white border border-stone-200 hover:border-[#7A9D8C] text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer leading-none"
+                          className="px-2.5 py-0.5 rounded-full bg-white hover:bg-[#7A9D8C] text-stone-600 hover:text-white border border-stone-200 hover:border-[#7A9D8C] text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer leading-none"
                         >
                           <Plus size={9} strokeWidth={2.8} className="shrink-0" />
                           <span>ここに予定を追加</span>
@@ -12671,7 +13226,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                           <button
                             type="button"
                             onClick={() => handleOpenTransportInsertBetween(idx, event, nextEvent)}
-                            className="px-2 py-0.5 rounded-full bg-white hover:bg-sky-600 text-sky-700 hover:text-white border border-stone-200 hover:border-sky-600 text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer leading-none"
+                            className="px-2.5 py-0.5 rounded-full bg-white hover:bg-sky-600 text-sky-700 hover:text-white border border-stone-200 hover:border-sky-600 text-[9px] font-extrabold flex items-center gap-0.5 transition-all whitespace-nowrap shadow-2xs active:scale-95 cursor-pointer leading-none"
                           >
                             <Car size={9} strokeWidth={2.5} className="shrink-0" />
                             <span>移動を追加</span>
@@ -12714,9 +13269,9 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
 
                           <div className="px-3 py-2 bg-sky-50 border border-sky-200/80 rounded-xl flex items-center justify-between gap-2 text-[11px] font-extrabold text-sky-950">
                             <div className="flex items-center gap-1.5 min-w-0 truncate">
-                              <span className="truncate">📍 {fromName}</span>
+                              <span className="truncate flex items-center gap-0.5"><MapPin size={11} className="text-sky-600 shrink-0" /> {fromName}</span>
                               <span className="text-sky-500 shrink-0">→</span>
-                              <span className="truncate">🏁 {toName}</span>
+                              <span className="truncate flex items-center gap-0.5"><Navigation size={11} className="text-sky-700 shrink-0" /> {toName}</span>
                             </div>
                             <a
                               href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(fromName)}&destination=${encodeURIComponent(toName)}`}
@@ -12808,7 +13363,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
 
                             <div className="flex items-center justify-between gap-1.5 flex-wrap pt-0.5">
                               <span className="text-[10px] font-extrabold text-stone-500">
-                                💡 おおよその金額候補（タップで反映）:
+                                おおよその金額候補（タップで反映）:
                               </span>
                               <div className="flex items-center gap-1 flex-wrap">
                                 {selectedRoute.costOptions.map(amt => (
@@ -12876,7 +13431,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
                                 };
                                 updateTrip({ ...trip, events: [...(trip.events || []), newTransportEv] });
                                 setTransportInsertState(null);
-                                customAlert(`🚗「${selectedRoute.title}」を追加しました！`);
+                                customAlert(`「${selectedRoute.title}」を追加しました！`);
                               }}
                               className="flex-1 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer"
                             >
@@ -12956,7 +13511,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
 
           <div className="flex items-center justify-end gap-1.5 pt-0.5">
             <span className="text-[10px] font-bold text-stone-400 mr-0.5">
-              {hasValidTripDestination ? '迷ったときは:' : '🔒目的地未設定のためAIオフ:'}
+              {hasValidTripDestination ? '迷ったときは:' : '目的地未設定のためAIオフ:'}
             </span>
             <button
               type="button"
@@ -12968,7 +13523,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
               }`}
             >
               <MessageCircle size={11} className={hasValidTripDestination ? 'text-sky-500' : 'text-stone-400'} />
-              <span>{hasValidTripDestination ? 'AIに相談' : '🔒 AIに相談'}</span>
+              <span>AIに相談</span>
             </button>
             <button
               type="button"
@@ -13001,7 +13556,7 @@ function Timeline({ trip, updateTrip, selectedDate, currentUser, isReadOnly, mai
               }`}
             >
               <Sparkles size={11} className={hasValidTripDestination ? 'text-sky-500' : 'text-stone-400'} />
-              <span>{hasValidTripDestination ? 'スポット候補' : '🔒 スポット候補'}</span>
+              <span>スポット候補</span>
             </button>
           </div>
         </div>
@@ -13297,18 +13852,25 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
       if (event.transportMethod === 'bicycle_walk' || /徒歩|歩き|散策|自転車|レンタサイクル/.test(tStr)) return 'bicycle_walk';
       return 'train';
     }
-    return 'pin';
+    if (event.type === 'meal') {
+      if (/カフェ|喫茶|コーヒー|珈琲|パフェ|スイーツ|プリン|茶屋|ソフト|パン|ベーカリー/.test(tStr)) return 'cafe';
+      return 'meal';
+    }
+    if (event.type === 'hotel') return 'hotel';
+    if (event.type === 'active') return 'active';
+    if (event.type === 'sightseeing') return 'sightseeing';
+    return 'suitcase';
   }, [event.type, event.transportMethod, event.title, event.location, event.memo]);
 
   return (
     <div className="relative flex items-stretch group">
       {/* ① 左側：開始時刻表示＋タイムライン軸＋一番近い予定のピコンピコン点＋予定内容に応じて変化する現在位置アイコン */}
       <div className="w-[82px] shrink-0 flex flex-col justify-between select-none relative">
-        {isPassedEvent && (
+        {isPassedEvent && betweenNowProgress !== null && (
           <div
-            className="absolute left-[73px] top-4 w-[2.5px] bg-sky-400 rounded-full pointer-events-none z-[5]"
+            className="absolute left-[72px] top-0 w-[2.5px] bg-sky-400 rounded-full pointer-events-none z-[5]"
             style={{
-              height: betweenNowProgress !== null ? `${Math.round(betweenNowProgress * 100)}%` : '100%'
+              height: `${Math.min(100, Math.max(0, betweenNowProgress * 100))}%`
             }}
           />
         )}
@@ -13375,13 +13937,15 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
         )}
       </div>
 
-      {/* ② 右側：予定カード本体（提案中カードは少し右にインデント配置） */}
+      {/* ② 右側：予定カード本体（提案中カードは少し右にインデント配置・未確定の移動カードはやさしい薄水色の点線枠に統一） */}
       <div
-        className={`flex-1 min-w-0 my-1.5 rounded-2xl transition-all ${
+        className={`flex-1 min-w-0 my-0.5 rounded-2xl transition-all ${
           isProposed ? 'ml-3.5 sm:ml-5' : ''
         } ${
           isTransportEvent
-            ? 'bg-gradient-to-r from-sky-50/95 via-sky-50/75 to-white border border-sky-200/90 p-2.5 shadow-2xs'
+            ? isProposed
+              ? 'bg-gradient-to-r from-sky-50/95 via-sky-50/75 to-white border-2 border-dashed border-sky-300/80 p-2.5 shadow-2xs'
+              : 'bg-gradient-to-r from-sky-50/95 via-sky-50/75 to-white border border-sky-200/90 p-2.5 shadow-2xs'
             : isProposed
             ? 'bg-[#F6FAF8] border-2 border-dashed border-[#7A9D8C]/75 p-3 shadow-2xs'
             : 'bg-white border border-stone-200/90 p-3 shadow-xs hover:shadow-sm'
@@ -13905,12 +14469,12 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
                 {isProposed && (
                   <div
                     onClick={onApprove}
-                    className="flex items-center justify-between gap-2 bg-[#E6F0EC] hover:bg-[#DCEBE5] border border-[#7A9D8C]/45 px-2.5 py-1 rounded-xl cursor-pointer transition-colors"
+                    className="flex items-center justify-between gap-2 bg-sky-100/85 hover:bg-sky-200/75 border border-sky-400/60 px-2.5 py-1 rounded-xl cursor-pointer transition-colors"
                     title="しおりに参加しているメンバーなら誰でもタップして確定できます"
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       <UserAvatar user={author} size="w-4 h-4" />
-                      <span className="text-[10px] font-extrabold text-[#365447] truncate">
+                      <span className="text-[10px] font-extrabold text-sky-900 truncate">
                         {author?.name || 'メンバー'}が提案中
                       </span>
                     </div>
@@ -13920,7 +14484,7 @@ function EventCard({ event, prevEvent = null, nextEvent = null, trip, isReadOnly
                         e.stopPropagation();
                         onApprove();
                       }}
-                      className="px-2 py-0.5 bg-[#7A9D8C] hover:bg-[#688a79] text-white rounded-lg text-[10px] font-extrabold flex items-center gap-0.5 shadow-2xs transition-colors cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
+                      className="px-2 py-0.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-[10px] font-extrabold flex items-center gap-0.5 shadow-2xs transition-colors cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
                     >
                       <Check size={10} strokeWidth={3} /> タップして確定する
                     </button>
@@ -15356,7 +15920,7 @@ function buildFallbackPlans(
           memo: isLateStart
             ? `到着したらまずは腹ごしらえ！「${lPlaceLabel}」で名物ランチをゆったり堪能します。`
             : isDayDrink
-            ? `【🍻 昼飲みにも最高】「${lPlaceLabel}」で名物グルメとご当地のお酒を堪能します。`
+            ? `【昼飲みにも最高】「${lPlaceLabel}」で名物グルメとご当地のお酒を堪能します。`
             : lCustom?.memo
             ? lCustom.memo
             : `「${lPlaceLabel}」で旬の食材を使った看板ランチを堪能します。`
@@ -15382,7 +15946,7 @@ function buildFallbackPlans(
           mapPinQuery: aPin,
           cost: scaleCost(spotEntryCost),
           memo: isZeroStamina
-            ? `【🚶 疲れないゆる旅】ベンチや休憩スポットを挟みながら「${aPlaceLabel}」をのんびり散策します。`
+            ? `【疲れないゆる旅】ベンチや休憩スポットを挟みながら「${aPlaceLabel}」をのんびり散策します。`
             : aCustom?.memo
             ? aCustom.memo
             : `午後は「${aPlaceLabel}」で名所めぐりを体験します。`
@@ -15408,7 +15972,7 @@ function buildFallbackPlans(
           mapPinQuery: cPin,
           cost: scaleCost(cafeCost),
           memo: isRetroCafe
-            ? `【🍮 レトロ喫茶＆スイーツ】「${cPlaceLabel}」でこだわりの甘味・プリンと珈琲を味わいます。`
+            ? `【レトロ喫茶＆スイーツ】「${cPlaceLabel}」でこだわりの甘味・プリンと珈琲を味わいます。`
             : cCustom?.memo
             ? cCustom.memo
             : `「${cPlaceLabel}」でご当地スイーツとカフェ休憩。`
@@ -15443,7 +16007,7 @@ function buildFallbackPlans(
           mapPinQuery: d2MPin,
           cost: scaleCost(spotEntryCost),
           memo: isLateStart
-            ? `【😴 2日目も朝ゆっくり10:30宿出発！】朝風呂や朝食をゆっくり楽しんでから「${d2MPlaceLabel}」へ。`
+            ? `【2日目も朝ゆっくり10:30宿出発！】朝風呂や朝食をゆっくり楽しんでから「${d2MPlaceLabel}」へ。`
             : isCouple
             ? `${dayIdx + 1}日目の朝は、2人で爽やかな景色を楽しめる「${d2MPlaceLabel}」をゆったり巡ります。`
             : isFamily
@@ -16443,18 +17007,18 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
           isFreeFollowUp: true,
           followUpType: 'ask_region',
           options: [
-            { kind: 'finalize', dest: '箱根', themeHint: combinedTheme, label: '箱根（温泉・ゆる旅）' },
-            { kind: 'finalize', dest: '熱海', themeHint: combinedTheme, label: '熱海・伊豆（海辺＆食べ歩き）' },
-            { kind: 'finalize', dest: '京都府', themeHint: combinedTheme, label: '京都（カフェ＆名所）' },
-            { kind: 'finalize', dest: '軽井沢', themeHint: combinedTheme, label: '軽井沢・松本（高原＆街歩き）' },
-            { kind: 'finalize', dest: '金沢', themeHint: combinedTheme, label: '金沢（海鮮＆アート）' },
-            { kind: 'finalize', dest: '札幌', themeHint: combinedTheme, label: '北海道（札幌・小樽グルメ）' },
-            { kind: 'finalize', dest: '仙台', themeHint: combinedTheme, label: '仙台・松島（牛たん＆絶景）' },
-            { kind: 'finalize', dest: '大阪', themeHint: combinedTheme, label: '大阪（食い倒れ＆観光）' },
-            { kind: 'finalize', dest: '広島', themeHint: combinedTheme, label: '広島（宮島＆尾道レトロ）' },
-            { kind: 'finalize', dest: '福岡', themeHint: combinedTheme, label: '福岡（博多・糸島ドライブ）' },
-            { kind: 'finalize', dest: '別府', themeHint: combinedTheme, label: '大分（別府・由布院温泉）' },
-            { kind: 'finalize', dest: '沖縄', themeHint: combinedTheme, label: '沖縄（那覇・美ら海リゾート）' },
+            { kind: 'finalize', dest: '箱根', iconType: 'active', themeHint: combinedTheme, label: '箱根（温泉・ゆる旅）' },
+            { kind: 'finalize', dest: '熱海', iconType: 'sightseeing', themeHint: combinedTheme, label: '熱海・伊豆（海辺＆食べ歩き）' },
+            { kind: 'finalize', dest: '京都府', iconType: 'cafe', themeHint: combinedTheme, label: '京都（カフェ＆名所）' },
+            { kind: 'finalize', dest: '軽井沢', iconType: 'sightseeing', themeHint: combinedTheme, label: '軽井沢・松本（高原＆街歩き）' },
+            { kind: 'finalize', dest: '金沢', iconType: 'meal', themeHint: combinedTheme, label: '金沢（海鮮＆アート）' },
+            { kind: 'finalize', dest: '札幌', iconType: 'meal', themeHint: combinedTheme, label: '北海道（札幌・小樽グルメ）' },
+            { kind: 'finalize', dest: '仙台', iconType: 'meal', themeHint: combinedTheme, label: '仙台・松島（牛たん＆絶景）' },
+            { kind: 'finalize', dest: '大阪', iconType: 'meal', themeHint: combinedTheme, label: '大阪（食い倒れ＆観光）' },
+            { kind: 'finalize', dest: '広島', iconType: 'ferry', themeHint: combinedTheme, label: '広島（宮島＆尾道レトロ）' },
+            { kind: 'finalize', dest: '福岡', iconType: 'car', themeHint: combinedTheme, label: '福岡（博多・糸島ドライブ）' },
+            { kind: 'finalize', dest: '別府', iconType: 'active', themeHint: combinedTheme, label: '大分（別府・由布院温泉）' },
+            { kind: 'finalize', dest: '沖縄', iconType: 'flight', themeHint: combinedTheme, label: '沖縄（那覇・美ら海リゾート）' },
             {
               kind: 'custom_input',
               inputType: 'region',
@@ -16489,39 +17053,6 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
           </h3>
           <button onClick={onClose} className="p-1 text-stone-400 hover:bg-stone-100 rounded-full"><X size={20} /></button>
         </div>
-
-        {showPopularAreasInfo && (
-          <div className="mb-2 p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs space-y-2 shrink-0">
-            <div className="flex justify-between items-center">
-              <span className="font-extrabold text-stone-800">⚡ 定番エリア一覧（タップで選択）</span>
-              <button type="button" onClick={() => setShowPopularAreasInfo(false)} className="text-stone-400 hover:text-stone-600">
-                <X size={15} />
-              </button>
-            </div>
-            <div className="max-h-36 overflow-y-auto no-scrollbar space-y-1.5">
-              {POPULAR_AREAS_GUIDE.map(g => (
-                <div key={g.region}>
-                  <span className="text-[10px] font-extrabold text-stone-500 block">{g.region}</span>
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {g.areas.map(area => (
-                      <button
-                        key={area}
-                        type="button"
-                        onClick={() => {
-                          setDestination(area.split('（')[0]);
-                          setShowPopularAreasInfo(false);
-                        }}
-                        className="px-2 py-0.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
-                      >
-                        {area}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="flex bg-sky-50/80 border border-sky-100 p-1 rounded-2xl mb-2 shrink-0">
           <button
@@ -16567,6 +17098,43 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   compact
                 />
 
+                {showPopularAreasInfo && (
+                  <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs space-y-2 animate-in fade-in duration-150">
+                    <div className="flex justify-between items-center">
+                      <span className="font-extrabold text-stone-800">定番エリア一覧（タップで選択）</span>
+                      <button type="button" onClick={() => setShowPopularAreasInfo(false)} className="text-stone-400 hover:text-stone-600 cursor-pointer">
+                        <X size={15} />
+                      </button>
+                    </div>
+                    <div className="max-h-36 overflow-y-auto no-scrollbar space-y-1.5">
+                      {POPULAR_AREAS_GUIDE.map(g => (
+                        <div key={g.region}>
+                          <span className="text-[10px] font-extrabold text-stone-500 block">{g.region}</span>
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {g.areas.map(area => (
+                              <button
+                                key={area}
+                                type="button"
+                                onClick={() => {
+                                  setDestination(area.split('（')[0]);
+                                  if (destinationError) {
+                                    setDestinationError(false);
+                                    setDestinationErrorMsg('');
+                                  }
+                                  setShowPopularAreasInfo(false);
+                                }}
+                                className="px-2 py-0.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                              >
+                                {area}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2">
                   <div>
                     <label className="text-xs font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
@@ -16575,10 +17143,10 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                       </span>
                       <button
                         type="button"
-                        onClick={() => setShowPopularAreasInfo(true)}
-                        className="text-[10px] font-extrabold text-stone-600 hover:text-stone-900 underline"
+                        onClick={() => setShowPopularAreasInfo(prev => !prev)}
+                        className="text-[10px] font-extrabold text-stone-600 hover:text-stone-900 underline cursor-pointer"
                       >
-                        ⚡定番エリア一覧から選ぶ
+                        {showPopularAreasInfo ? '定番エリア一覧を閉じる ▲' : '定番エリア一覧から選ぶ ▼'}
                       </button>
                     </label>
                     <input
@@ -16639,7 +17207,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                           compact
                         />
                         <div className="flex items-center justify-between px-1">
-                          <span className="text-[10px] font-bold text-stone-400">🗓️ 旅行日数</span>
+                          <span className="text-[10px] font-bold text-stone-400 flex items-center gap-1"><Calendar size={11} /> 旅行日数</span>
                           <span className="text-[11px] font-extrabold text-stone-700 bg-stone-200/75 px-2.5 py-0.5 rounded-full">
                             {days <= 1 ? '日帰り (1日)' : `${days - 1}泊${days}日`}
                           </span>
@@ -16658,15 +17226,15 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                         : 'border-stone-200/90'
                     }`}
                   >
-                    {/* ① 家から旅先までの移動手段 と ② 旅行中（現地）の移動手段 をシンプルで落ち着いた配色に統一 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[11px] font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
-                          <span className="flex items-center gap-1">
-                            <span className="w-4 h-4 rounded-full bg-stone-100 flex items-center justify-center text-[10px]">🚆</span>
-                            <span>① 行き移動</span>
+                    {/* ① 行き移動 と ② 現地移動 をスマホでも横並び1列に配置 */}
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                      <div className="min-w-0">
+                        <label className="text-[10px] sm:text-[11px] font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5 gap-1">
+                          <span className="flex items-center gap-1 truncate">
+                            <SimpleLineIcon type="train" size={11} className="text-stone-500 shrink-0" />
+                            <span className="truncate">① 行き移動</span>
                           </span>
-                          <span className="text-[9px] font-extrabold text-stone-500 bg-stone-100 px-1.5 py-0.2 rounded-full border border-stone-200">
+                          <span className="text-[8px] sm:text-[9px] font-extrabold text-stone-500 bg-stone-100 px-1 py-0.2 rounded-full border border-stone-200 shrink-0">
                             必須
                           </span>
                         </label>
@@ -16677,7 +17245,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                               setTransportMethod(e.target.value);
                               if (transportError && e.target.value) setTransportError(false);
                             }}
-                            className={`w-full py-2 pl-2 pr-6 rounded-xl text-[11px] font-extrabold focus:outline-none focus:ring-2 cursor-pointer appearance-none transition-all ${
+                            className={`w-full py-2 pl-2 pr-5 rounded-xl text-[11px] font-extrabold focus:outline-none focus:ring-2 cursor-pointer appearance-none transition-all truncate ${
                               transportError
                                 ? 'bg-rose-50 border-2 border-rose-400 text-rose-800 focus:ring-rose-400'
                                 : !transportMethod
@@ -16685,24 +17253,24 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                 : 'bg-stone-50 hover:bg-stone-100/70 border border-stone-200 text-stone-800 focus:ring-[#7A9D8C]'
                             }`}
                           >
-                            <option value="">移動手段を選択 (必須)</option>
+                            <option value="">選択 (必須)</option>
                             {TRANSPORT_METHODS.map(m => (
-                              <option key={m.id} value={m.id}>{m.label}</option>
+                              <option key={m.id} value={m.id}>{m.short}</option>
                             ))}
                           </select>
-                          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-stone-500">
+                          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-extrabold text-stone-500">
                             ▼
                           </span>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="text-[11px] font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5">
-                          <span className="flex items-center gap-1">
-                            <span className="w-4 h-4 rounded-full bg-stone-100 flex items-center justify-center text-[10px]">🚗</span>
-                            <span>② 現地移動</span>
+                      <div className="min-w-0">
+                        <label className="text-[10px] sm:text-[11px] font-extrabold text-stone-700 flex items-center justify-between mb-1 pl-0.5 gap-1">
+                          <span className="flex items-center gap-1 truncate">
+                            <Car size={11} className="text-stone-500 shrink-0" />
+                            <span className="truncate">② 現地移動</span>
                           </span>
-                          <span className="text-[9px] font-extrabold text-stone-500 bg-stone-100 px-1.5 py-0.2 rounded-full border border-stone-200">
+                          <span className="text-[8px] sm:text-[9px] font-extrabold text-stone-500 bg-stone-100 px-1 py-0.2 rounded-full border border-stone-200 shrink-0">
                             必須
                           </span>
                         </label>
@@ -16713,7 +17281,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                               setLocalTransportMethod(e.target.value);
                               if (localTransportError && e.target.value) setLocalTransportError(false);
                             }}
-                            className={`w-full py-2 pl-2 pr-6 rounded-xl text-[11px] font-extrabold focus:outline-none focus:ring-2 cursor-pointer appearance-none transition-all ${
+                            className={`w-full py-2 pl-2 pr-5 rounded-xl text-[11px] font-extrabold focus:outline-none focus:ring-2 cursor-pointer appearance-none transition-all truncate ${
                               localTransportError
                                 ? 'bg-rose-50 border-2 border-rose-400 text-rose-800 focus:ring-rose-400'
                                 : !localTransportMethod
@@ -16721,12 +17289,12 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                 : 'bg-stone-50 hover:bg-stone-100/70 border border-stone-200 text-stone-800 focus:ring-[#7A9D8C]'
                             }`}
                           >
-                            <option value="">移動手段を選択 (必須)</option>
+                            <option value="">選択 (必須)</option>
                             {LOCAL_TRANSPORT_METHODS.map(m => (
-                              <option key={m.id} value={m.id}>{m.label}</option>
+                              <option key={m.id} value={m.id}>{m.short}</option>
                             ))}
                           </select>
-                          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-stone-500">
+                          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-extrabold text-stone-500">
                             ▼
                           </span>
                         </div>
@@ -16745,7 +17313,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     <div className="flex items-center justify-between gap-1.5 flex-wrap">
                       <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-stone-100 text-stone-600 flex items-center justify-center text-xs">
-                          🪙
+                          <Banknote size={12} />
                         </span>
                         <span>1人予算目安（手入力・バー両対応）</span>
                       </label>
@@ -16794,7 +17362,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                           <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
                           <div className="text-[11px] font-bold leading-snug">
                             <p className="font-extrabold text-amber-900">
-                              💡 この予算（¥{budgetAmount.toLocaleString()}）だと「{destination}」までの往復交通費・宿泊費が足りない可能性があります（目安: 約¥{budgetFeasibility.minTotalRequired.toLocaleString()}〜）
+                              この予算（¥{budgetAmount.toLocaleString()}）だと「{destination}」までの往復交通費・宿泊費が足りない可能性があります（目安: 約¥{budgetFeasibility.minTotalRequired.toLocaleString()}〜）
                             </p>
                             <p className="text-[10px] text-amber-800 mt-0.5">
                               そのままでも「早割・LCC・ゲストハウス活用の節約プラン」を作成できますが、下のボタンからワンタップで調整もできます：
@@ -16808,7 +17376,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                             onClick={() => setBudgetAmount(budgetFeasibility.recommendedBudget)}
                             className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-extrabold shadow-2xs active:scale-95"
                           >
-                            🪙 適正予算（¥{budgetFeasibility.recommendedBudget.toLocaleString()}）に合わせる
+                            適正予算（¥{budgetFeasibility.recommendedBudget.toLocaleString()}）に合わせる
                           </button>
                           {budgetFeasibility.canSaveWithBus && (
                             <button
@@ -16816,7 +17384,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                               onClick={() => setTransportMethod('highway_bus')}
                               className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold active:scale-95"
                             >
-                              🚌 高速バスに変更して交通費を抑える
+                              高速バスに変更して交通費を抑える
                             </button>
                           )}
                           {budgetFeasibility.canSaveWithDayTrip && (
@@ -16825,14 +17393,14 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                               onClick={() => setDays(1)}
                               className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold active:scale-95"
                             >
-                              ☀️ 日帰り（宿なし）に短縮する
+                              日帰り（宿なし）に短縮する
                             </button>
                           )}
                         </div>
 
                         <div className="pt-1 border-t border-amber-200/80">
                           <span className="text-[10px] font-extrabold text-amber-900 block mb-1">
-                            🗾 または予算¥{budgetAmount.toLocaleString()}で行ける近場のおすすめ旅行先に変更：
+                            または予算¥{budgetAmount.toLocaleString()}で行ける近場のおすすめ旅行先に変更：
                           </span>
                           <div className="flex flex-wrap gap-1">
                             {budgetFeasibility.nearAlternatives.map(alt => (
@@ -16843,9 +17411,9 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                   setDestination(alt);
                                   customAlert(`目的地を「${alt}」に変更しました！`);
                                 }}
-                                className="px-2 py-0.5 rounded-md bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold active:scale-95"
+                                className="px-2 py-0.5 rounded-md bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold active:scale-95 flex items-center gap-0.5"
                               >
-                                📍 {alt}
+                                <MapPin size={10} /> {alt}
                               </button>
                             ))}
                           </div>
@@ -16857,7 +17425,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
                 <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl">
                   <label className="text-xs font-extrabold text-stone-700 mb-1 flex items-center justify-between pl-0.5">
-                    <span>✨ 旅のテーマ・目的</span>
+                    <span className="flex items-center gap-1"><Sparkles size={12} className="text-[#7A9D8C]" /> 旅のテーマ・目的</span>
                     <span className="text-[10px] font-bold text-[#4A6B5D]">全{TRIP_THEME_OPTIONS.length}種類・選択式 ▼</span>
                   </label>
                   <div className="relative">
@@ -16879,7 +17447,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                 <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between gap-2 pl-0.5">
                     <div className="flex items-center gap-1.5">
-                      <label className="text-xs font-extrabold text-stone-700">👥 誰と行く？</label>
+                      <label className="text-xs font-extrabold text-stone-700 flex items-center gap-1"><User size={12} className="text-[#7A9D8C]" /> 誰と行く？</label>
                       <span className="px-2 py-0.5 rounded-full bg-[#7A9D8C]/15 text-[#4A6B5D] text-[10px] font-extrabold">
                         計 {adultCount + childCount}名（大人{adultCount}{childCount > 0 ? `・子ども${childCount}` : ''}）
                       </span>
@@ -17000,7 +17568,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                           }`}
                         >
                           <span className="pointer-events-none">
-                            {companion === 'ひとり旅' ? '👤 1人旅' : '👤 代表者のみ管理'}
+                            {companion === 'ひとり旅' ? '1人旅' : '代表者のみ管理'}
                           </span>
                         </button>
                         <button
@@ -17012,13 +17580,13 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                               : 'text-stone-600 hover:text-stone-800'
                           }`}
                         >
-                          <span className="pointer-events-none">👥 みんなで共有</span>
+                          <span className="pointer-events-none">みんなで共有</span>
                         </button>
                       </div>
                       <p className="text-[10px] font-bold text-stone-500 pl-0.5 leading-snug">
                         {isSoloPlan
-                          ? '💡 招待コードを発行せず、代表者1人だけでしおりをサクサク編集できます'
-                          : '💡 同行メンバー全員に招待コードを共有して一緒に編集できます'}
+                          ? '招待コードを発行せず、代表者1人だけでしおりをサクサク編集できます'
+                          : '同行メンバー全員に招待コードを共有して一緒に編集できます'}
                       </p>
                     </div>
                   )}
@@ -17073,7 +17641,8 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     onClick={() => setShowRewardAdModal(true)}
                     className="w-full py-3 px-4 bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold rounded-2xl shadow-sm text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer animate-pulse"
                   >
-                    <span>🎬 AI残り0回（動画を見て+{REWARD_AD_BONUS_COUNT}回復活する）</span>
+                    <Sparkles size={15} />
+                    <span>AI残り0回（動画を見て+{REWARD_AD_BONUS_COUNT}回復活する）</span>
                   </button>
                 )}
               </div>
@@ -17088,8 +17657,8 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   <span className="text-xs sm:text-sm font-extrabold text-stone-800 flex items-center gap-1">
                     <Sparkles size={15} className="text-sky-500" /> プラン候補 ({generatedPlans.length}件)
                   </span>
-                  <span className="text-[11px] font-extrabold text-[#4A6B5D] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full">
-                    📍 {destination}
+                  <span className="text-[11px] font-extrabold text-[#4A6B5D] bg-[#7A9D8C]/15 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                    <MapPin size={11} /> {destination}
                   </span>
                 </div>
 
@@ -17151,7 +17720,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                 />
                               </div>
                               <div className="flex items-center justify-between text-xs text-stone-500 font-bold px-1">
-                                <span className="truncate">📍 {ev.location}</span>
+                                <span className="truncate flex items-center gap-0.5"><MapPin size={11} className="text-stone-400 shrink-0" /> {ev.location}</span>
                                 <span className="shrink-0">¥{Number(ev.cost || 0).toLocaleString()}/人</span>
                               </div>
                               {ev.memo && (
@@ -17205,7 +17774,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     onClick={() => setShowRewardAdModal(true)}
                     className="flex-1 py-3 px-3 rounded-2xl bg-amber-400 hover:bg-amber-500 text-stone-950 text-xs font-extrabold shadow-2xs animate-pulse cursor-pointer"
                   >
-                    🎬 動画で+{REWARD_AD_BONUS_COUNT}回復活
+                    動画で+{REWARD_AD_BONUS_COUNT}回復活
                   </button>
                 )}
               </div>
@@ -17220,8 +17789,8 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                 className="w-full px-3 py-2 flex items-center justify-between gap-2 text-left hover:bg-sky-100/60 transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-                  <span className="text-[11px] font-extrabold text-sky-900 shrink-0">
-                    ⚙️ 条件設定
+                  <span className="text-[11px] font-extrabold text-sky-900 shrink-0 inline-flex items-center gap-1">
+                    <SimpleLineIcon type="sliders" size={12} className="text-sky-600 shrink-0" /> 条件設定
                   </span>
                   <span className="text-[10px] font-bold text-sky-900 bg-white px-2 py-0.5 rounded-full border border-sky-200/80 truncate">
                     {startDate.slice(5).replace('-', '/')}・{days === 1 ? '日帰り' : `${days - 1}泊${days}日`} / {companion.split('（')[0]}({adultCount + childCount}名) / ¥{budgetAmount.toLocaleString()}
@@ -17269,7 +17838,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
 
                   <div className="bg-white p-1.5 rounded-xl border border-stone-200/80 space-y-1.5">
                     <div className="flex items-center justify-between px-1">
-                      <span className="text-[10px] font-extrabold text-stone-600">👥 誰と行く？</span>
+                      <span className="text-[10px] font-extrabold text-stone-600 flex items-center gap-1"><User size={11} className="text-[#7A9D8C]" /> 誰と行く？</span>
                       <span className="text-[10px] font-extrabold text-[#4A6B5D] bg-[#7A9D8C]/15 px-2 py-0.2 rounded-full">
                         計{adultCount + childCount}名（大人{adultCount}{childCount > 0 ? `・子ども${childCount}` : ''}）
                       </span>
@@ -17364,7 +17933,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   <div className="bg-white p-2 rounded-xl border border-rose-200/70 space-y-1.5">
                     <div className="flex items-center justify-between gap-1.5">
                       <span className="text-[10px] font-extrabold text-stone-700 flex items-center gap-1">
-                        <span className="w-4 h-4 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center text-[10px]">🪙</span>
+                        <span className="w-4 h-4 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center text-[10px]"><Banknote size={10} /></span>
                         <span>1人予算目安（手入力可）</span>
                       </span>
                       <div className="relative flex items-center">
@@ -17453,7 +18022,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                               type="button"
                               disabled={isAiGenerating}
                               onClick={() => handleSelectChatOption(opt, idx)}
-                              className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
+                              className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 ${
                                 isCustomBtn
                                   ? isCustomOpen
                                     ? 'bg-sky-500 text-white border-sky-500'
@@ -17461,13 +18030,18 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                   : 'bg-white hover:bg-sky-500 text-stone-800 hover:text-white border-sky-300/90'
                               }`}
                             >
-                              {opt.label}
+                              {isCustomBtn ? (
+                                <Edit2 size={12} className="shrink-0 opacity-85" />
+                              ) : (
+                                <SimpleLineIcon type={opt.iconType || 'pin'} size={12} className="shrink-0 opacity-85" />
+                              )}
+                              <span>{opt.label}</span>
                             </button>
                           );
                         })}
                       </div>
 
-                      {/* 「✏️ その他（自由に入力する）」を押した時にその場で開くミニ自由入力ボックス */}
+                      {/* 「その他（自由に入力して即作成）」を押した時にその場で開くミニ自由入力ボックス */}
                       {activeCustomOptionMsgIdx === idx && (
                         <div className="pt-1.5 border-t border-sky-200/80 flex items-center gap-1.5 animate-in fade-in duration-150">
                           <input
@@ -17568,7 +18142,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                                       />
                                     </div>
                                     <div className="flex items-center justify-between text-xs text-stone-500 font-bold px-1">
-                                      <span className="truncate">📍 {ev.location}</span>
+                                      <span className="truncate flex items-center gap-0.5"><MapPin size={11} className="text-stone-400 shrink-0" /> {ev.location}</span>
                                       <span className="shrink-0">¥{Number(ev.cost || 0).toLocaleString()}/人</span>
                                     </div>
                                     {ev.memo && (
@@ -17765,17 +18339,12 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                     }
                   }}
                   title={`メッセージを送信（本日のAI残り${quotaStatus.remaining}回）`}
-                  className="h-10 px-3.5 bg-gradient-to-br from-sky-200 via-sky-300 to-cyan-200 hover:brightness-105 active:scale-95 text-sky-950 border-2 border-white ring-2 ring-sky-300/80 font-extrabold rounded-full disabled:opacity-40 shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                  className="h-9 px-3.5 bg-[#7A9D8C] hover:bg-[#688a79] active:scale-95 text-white font-extrabold rounded-2xl disabled:opacity-40 shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1 text-xs shadow-xs whitespace-nowrap"
                 >
                   {isAiGenerating ? (
-                    <div className="w-4 h-4 border-2 border-sky-900/30 border-t-sky-900 rounded-full animate-spin pointer-events-none" />
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin pointer-events-none" />
                   ) : (
-                    <>
-                      <CutePaperPlaneIcon size={18} className="text-sky-900 pointer-events-none -rotate-6" />
-                      <span className="pointer-events-none px-1.5 py-0.5 rounded-full bg-white/90 text-sky-800 text-[10px] font-black leading-none shadow-2xs">
-                        {quotaStatus.remaining}
-                      </span>
-                    </>
+                    <span>送信 (残{quotaStatus.remaining})</span>
                   )}
                 </button>
               ) : (
@@ -17785,7 +18354,8 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                   className="h-9 px-3 bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold rounded-2xl shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] shadow-xs animate-pulse"
                   title="動画を見てAI回数を+3回復活"
                 >
-                  <span>🎬 +{REWARD_AD_BONUS_COUNT}回復活</span>
+                  <Sparkles size={12} />
+                  <span>+{REWARD_AD_BONUS_COUNT}回復活</span>
                 </button>
               )}
             </form>
@@ -17839,7 +18409,7 @@ function AiPlanSuggestModal({ currentUser, onClose, onSelectPlan }) {
                 <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-stone-200/70">
                   <div>
                     <span className="text-[10px] font-bold text-stone-400 block">目的地・エリア</span>
-                    <p className="font-extrabold text-stone-800 truncate">📍 {pendingConfirmPlan.destination || destination || '未設定'}</p>
+                    <p className="font-extrabold text-stone-800 truncate flex items-center gap-0.5"><MapPin size={11} className="text-[#7A9D8C] shrink-0" /> {pendingConfirmPlan.destination || destination || '未設定'}</p>
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-stone-400 block">予算目安（1人あたり）</span>
@@ -18166,11 +18736,11 @@ function AiConciergeChatModal({
         }
       }
 
-      if (gapEvents.length > 0) {
+      if ( gapEvents.length > 0 ) {
         gapEvents.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
         return {
           isMulti: true,
-          replyText: `${scheduleContext.dayNumber}日目（${targetConsultDate.slice(5).replace('-', '/')}）の既存予定（${formatEventCountLabel(scheduleContext.currentDayEvents)}）と前後の日程を見て、空いている時間帯にぴったりの${formatEventCountLabel(gapEvents)}を組み立てました！\n一括で追加するか、気に入った予定だけ1件ずつ追加できます✨`,
+          replyText: `${scheduleContext.dayNumber}日目（${targetConsultDate.slice(5).replace('-', '/')}）の既存予定（${formatEventCountLabel(scheduleContext.currentDayEvents)}）と前後の日程を見て、空いている時間帯にぴったりの${formatEventCountLabel(gapEvents)}を組み立てました！\n一括で追加するか、気に入った予定だけ1件ずつ追加できます。`,
           events: gapEvents
         };
       }
@@ -18308,7 +18878,7 @@ function AiConciergeChatModal({
 
       return {
         isMulti: true,
-        replyText: `${prevNote}${nextNote}${scheduleContext.dayNumber}日目（${targetConsultDate.slice(5).replace('-', '/')}）の1日まるごとスケジュール（${formatEventCountLabel(fullDayEvents)}・終了時刻＆具体的なマップピン付き）を作成しました！✨\n下のボタンから一括でしおりに組み込むことも、1件ずつ選んで追加することもできます。`,
+        replyText: `${prevNote}${nextNote}${scheduleContext.dayNumber}日目（${targetConsultDate.slice(5).replace('-', '/')}）の1日まるごとスケジュール（${formatEventCountLabel(fullDayEvents)}・終了時刻＆具体的なマップピン付き）を作成しました！\n下のボタンから一括でしおりに組み込むことも、1件ずつ選んで追加することもできます。`,
         events: fullDayEvents
       };
     }
@@ -18391,7 +18961,7 @@ function AiConciergeChatModal({
         ...prev,
         {
           role: 'ai',
-          text: `${cached.replyText}\n（※キャッシュから高速表示・AI枠消費0⚡）`,
+          text: `${cached.replyText}\n（※キャッシュから高速表示・AI枠消費0）`,
           spot: cached.spot || null,
           events: cached.events || null,
           targetDate: targetConsultDate
@@ -18409,7 +18979,7 @@ function AiConciergeChatModal({
         ...prev,
         {
           role: 'ai',
-          text: `本日のAI無料相談枠（${quotaCheck.status.limit}回）を使い切りました🙏\n動画を見ると＋${REWARD_AD_BONUS_COUNT}回すぐに回復できます！`
+          text: `本日のAI無料相談枠（${quotaCheck.status.limit}回）を使い切りました。\n動画を見ると＋${REWARD_AD_BONUS_COUNT}回すぐに回復できます！`
         }
       ]);
       return;
@@ -18602,8 +19172,9 @@ function AiConciergeChatModal({
 
           {/* 前後の日程＆現在の予定状況サマリー */}
           <div className="px-2.5 py-1.5 bg-white rounded-xl border border-sky-200/70 text-[10px] font-bold text-stone-600 flex items-center justify-between gap-2">
-            <div className="truncate">
-              <span className="text-sky-800 font-extrabold">📍 {scheduleContext.dayNumber}日目の状況：</span>
+            <div className="truncate flex items-center gap-1">
+              <MapPin size={11} className="text-sky-700 shrink-0" />
+              <span className="text-sky-800 font-extrabold">{scheduleContext.dayNumber}日目の状況：</span>
               {scheduleContext.currentDayEvents.length === 0 ? (
                 <span>まだ予定なし（1日まるごと提案できます！）</span>
               ) : (
@@ -18889,17 +19460,12 @@ function AiConciergeChatModal({
                 }
               }}
               title={`メッセージを送信（本日のAI残り${quotaStatus.remaining}回）`}
-              className="h-10 px-3.5 bg-gradient-to-br from-sky-200 via-sky-300 to-cyan-200 hover:brightness-105 active:scale-95 text-sky-950 border-2 border-white ring-2 ring-sky-300/80 font-extrabold rounded-full disabled:opacity-40 shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+              className="h-9 px-3.5 bg-[#7A9D8C] hover:bg-[#688a79] active:scale-95 text-white font-extrabold rounded-xl disabled:opacity-40 shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1 text-xs shadow-xs whitespace-nowrap"
             >
               {isAiLoading ? (
-                <div className="w-4 h-4 border-2 border-sky-900/30 border-t-sky-900 rounded-full animate-spin pointer-events-none" />
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin pointer-events-none" />
               ) : (
-                <>
-                  <CutePaperPlaneIcon size={18} className="text-sky-900 pointer-events-none -rotate-6" />
-                  <span className="pointer-events-none px-1.5 py-0.5 rounded-full bg-white/90 text-sky-800 text-[10px] font-black leading-none shadow-2xs">
-                    {quotaStatus.remaining}
-                  </span>
-                </>
+                <span>送信 (残{quotaStatus.remaining})</span>
               )}
             </button>
           ) : (
@@ -18909,7 +19475,8 @@ function AiConciergeChatModal({
               className="px-3 py-2.5 bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold rounded-xl shrink-0 transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] shadow-xs animate-pulse"
               title="動画を見てAI回数を+3回復活"
             >
-              <span>🎬 +{REWARD_AD_BONUS_COUNT}回復活</span>
+              <Sparkles size={12} />
+              <span>+{REWARD_AD_BONUS_COUNT}回復活</span>
             </button>
           )}
         </form>
@@ -18972,7 +19539,7 @@ function AiConciergeChatModal({
                   </div>
                   <p className="font-extrabold text-sm text-stone-900">{pendingActionConfirm.event.title}</p>
                   <div className="flex items-center justify-between text-[11px] font-bold text-stone-500 pt-1 border-t border-stone-200/70">
-                    <span className="truncate">📍 {pendingActionConfirm.event.location}</span>
+                    <span className="truncate flex items-center gap-0.5"><MapPin size={11} className="text-stone-400 shrink-0" /> {pendingActionConfirm.event.location}</span>
                     <span className="shrink-0 text-stone-800">¥{Number(pendingActionConfirm.event.cost || 0).toLocaleString()}/人</span>
                   </div>
                 </div>
@@ -19434,7 +20001,7 @@ function InlineEventForm({
       {type === 'transport' && (
         <div className="p-2.5 bg-sky-50/80 border border-sky-200 rounded-xl space-y-1.5">
           <span className="text-[10px] font-extrabold text-sky-950 block">
-            💰 出発地〜目的地の交通費候補（タップで予算に反映）:
+            出発地〜目的地の交通費候補（タップで予算に反映）:
           </span>
           <div className="grid grid-cols-3 gap-1">
             {estimateTransportCostCandidates(departureOrigin, location || title || trip?.destination, transportMethod).map((cand, i) => (
@@ -19562,7 +20129,7 @@ function EventAiSuggestModal({ trip, routeContext, onClose, onSelect }) {
                 <span className="text-xs font-extrabold text-stone-800">{c.title}</span>
                 <span className="text-[11px] font-mono font-bold text-sky-800">¥{c.cost.toLocaleString()}</span>
               </div>
-              <p className="text-[10px] font-bold text-stone-500">📍 {c.location}</p>
+              <p className="text-[10px] font-bold text-stone-500 flex items-center gap-0.5"><MapPin size={10} className="text-[#7A9D8C] shrink-0" /> {c.location}</p>
               <p className="text-[10px] text-stone-500">{c.memo}</p>
             </button>
           ))}
@@ -19587,31 +20154,32 @@ function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
       .toUpperCase()
       .replace(/[ー−―‐]/g, '-')
       .replace(/[^A-Z0-9-]/g, '')
-      .slice(0, 13);
+      .slice(0, 16);
     setCodeInput(raw);
     if (errorMsg) setErrorMsg('');
   };
 
   const handleJoin = async (e) => {
     e.preventDefault();
-    const cleanCode = codeInput.trim();
-    if (cleanCode.length !== 13 || !/^TABI-[A-Z0-9]{8}$/.test(cleanCode)) {
-      setErrorMsg('招待コードは13文字（例: TABI-1A2B3C4D）で入力してください');
+    const rawTrimmed = codeInput.trim();
+    const canonicalCode = normalizeTripShareId(rawTrimmed);
+    const shortPart = canonicalCode.replace(/^TABI-/, '');
+    if (shortPart.length < 4) {
+      setErrorMsg('招待コード（例: TABI-LTDRAMLC または LTDRAMLC）を入力してください');
       return;
     }
     setErrorMsg('');
     setIsJoining(true);
     try {
-      const existingLocal = (trips || []).find(t => normalizeInviteCode(t.id) === cleanCode);
-      if (existingLocal) {
-        onClose();
-        onOpenTrip(existingLocal.id, false);
-        return;
-      }
+      // 1) まずSupabaseの shared_trips テーブルから最新データを検索・取得
+      const cloudRes = await fetchTripFromSupabase(canonicalCode);
+      if (cloudRes.ok && cloudRes.trip) {
+        const remoteTrip = cloudRes.trip;
+        const resolvedId = normalizeTripShareId(remoteTrip.id || canonicalCode);
+        const existingLocal = (trips || []).find(t => normalizeTripShareId(t.id) === resolvedId);
+        const merged = mergeCloudTripWithLocalPhotos(remoteTrip, existingLocal);
 
-      const remoteTrip = await fetchSharedTripFromCloud(cleanCode);
-      if (remoteTrip) {
-        const members = Array.isArray(remoteTrip.members) ? [...remoteTrip.members] : [];
+        const members = Array.isArray(merged.members) ? [...merged.members] : [];
         if (!members.some(m => m.id === currentUser.id)) {
           members.push({
             id: currentUser.id,
@@ -19620,14 +20188,33 @@ function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
             color: myColor
           });
         }
-        const joinedTrip = { ...remoteTrip, id: cleanCode, isSoloTrip: false, members };
-        setTrips([joinedTrip, ...(trips || [])]);
-        await syncSharedTripToCloud(joinedTrip);
+        const joinedTrip = {
+          ...merged,
+          id: resolvedId,
+          shareCode: resolvedId,
+          isShared: true,
+          isSoloTrip: false,
+          members
+        };
+        const otherTrips = (trips || []).filter(t => normalizeTripShareId(t.id) !== resolvedId);
+        setTrips([joinedTrip, ...otherTrips]);
+        await saveTripToSupabase(joinedTrip);
         onClose();
         onOpenTrip(joinedTrip.id, false);
-      } else {
-        setErrorMsg(`招待コード「${cleanCode}」のしおりが見つかりませんでした。コードをご確認のうえ再度お試しください。`);
+        return;
       }
+
+      // 2) ローカルに一致するしおりがある場合のフォールバック
+      const existingLocal = (trips || []).find(
+        t => normalizeTripShareId(t.id) === canonicalCode || t.id === rawTrimmed
+      );
+      if (existingLocal) {
+        onClose();
+        onOpenTrip(existingLocal.id, false);
+        return;
+      }
+
+      setErrorMsg(`招待コード「${canonicalCode}」のしおりが見つかりませんでした。コードをご確認のうえ再度お試しください。`);
     } finally {
       setIsJoining(false);
     }
@@ -19649,18 +20236,18 @@ function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-extrabold text-stone-600">
-                招待コード
+                招待コード（TABI-省略でも入力可）
               </label>
-              <span className={`text-[10px] font-mono font-extrabold ${codeInput.length === 13 ? 'text-[#557465]' : 'text-stone-400'}`}>
-                {codeInput.length}/13文字
+              <span className="text-[10px] font-mono font-extrabold text-[#557465]">
+                {codeInput ? normalizeTripShareId(codeInput) : 'TABI-XXXXXXXX'}
               </span>
             </div>
             <input
               type="text"
-              maxLength={13}
+              maxLength={16}
               value={codeInput}
               onChange={handleCodeChange}
-              placeholder="例: TABI-1A2B3C4D"
+              placeholder="例: TABI-LTDRAMLC または LTDRAMLC"
               className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono font-extrabold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#7A9D8C]"
             />
             {errorMsg && (
@@ -19673,10 +20260,10 @@ function JoinTripWizard({ currentUser, trips, setTrips, onClose, onOpenTrip }) {
 
           <button
             type="submit"
-            disabled={isJoining || codeInput.length !== 13}
+            disabled={isJoining || codeInput.replace(/^TABI-/, '').trim().length < 4}
             className="w-full py-3 bg-[#7A9D8C] hover:bg-[#688a79] disabled:opacity-45 text-white font-extrabold rounded-2xl text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition-all"
           >
-            {isJoining ? 'しおりを検索中...' : 'しおりに参加する'}
+            {isJoining ? 'クラウドからしおりを検索中...' : 'しおりに参加する'}
           </button>
         </form>
       </div>
@@ -20069,8 +20656,27 @@ function TravelBadgesMapPage({ currentUser, onUpdateUser, hideChrome = false }) 
 // Default Export App (ErrorBoundary Wrapper)
 // ==========================================
 export default function App() {
+  // スマホ（iOS Safari / Android Chrome）で文字入力欄タップ時に画面が勝手にズーム拡大されるのを防止
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'viewport';
+      document.head.appendChild(meta);
+    }
+    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+  }, []);
+
   return (
     <ErrorBoundary>
+      <style>{`
+        @media screen and (max-width: 768px) {
+          input, textarea, select {
+            font-size: 16px !important;
+          }
+        }
+      `}</style>
       <TabitabiApp />
     </ErrorBoundary>
   );
